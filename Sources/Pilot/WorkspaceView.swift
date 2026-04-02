@@ -205,7 +205,7 @@ final class BrowserState {
     var isLoading: Bool = false
     var showDevTools: Bool = false
     var appearanceMode: AppearanceMode = .system
-    var devToolsHTML: String = ""
+    var needsInspectorToggle: Bool = false
 
     init() {
         pendingURL = URL(string: urlText)
@@ -314,6 +314,7 @@ struct BrowserPaneView: View {
             // Dev Tools
             Button {
                 state.showDevTools.toggle()
+                state.needsInspectorToggle = true
             } label: {
                 Image(systemName: "hammer")
                     .font(.system(size: 11))
@@ -334,47 +335,8 @@ struct BrowserPaneView: View {
         }
     }
 
-    @ViewBuilder
     private var browserContent: some View {
-        if state.showDevTools {
-            HSplitView {
-                WebViewRepresentable(state: state)
-                devToolsPanel
-                    .frame(minWidth: 280)
-            }
-        } else {
-            WebViewRepresentable(state: state)
-        }
-    }
-
-    private var devToolsPanel: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Developer Tools")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button {
-                    state.showDevTools = false
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            Divider()
-            ScrollView {
-                Text(state.devToolsHTML)
-                    .font(.system(size: 11, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-            }
-        }
-        .background(.bar)
+        WebViewRepresentable(state: state)
     }
 }
 
@@ -386,6 +348,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
+        webView.isInspectable = true
         if let url = state.pendingURL {
             webView.load(URLRequest(url: url))
         }
@@ -393,35 +356,47 @@ struct WebViewRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
-        guard let pending = state.pendingURL else { return }
-
-        switch pending.absoluteString {
-        case "blau://back":
-            nsView.goBack()
-            state.pendingURL = nil
-        case "blau://forward":
-            nsView.goForward()
-            state.pendingURL = nil
-        case "blau://reload":
-            nsView.reload()
-            state.pendingURL = nil
-        case "blau://stop":
-            nsView.stopLoading()
-            state.pendingURL = nil
-        default:
-            if nsView.url != pending {
-                nsView.load(URLRequest(url: pending))
+        // Handle navigation commands
+        if let pending = state.pendingURL {
+            switch pending.absoluteString {
+            case "blau://back":
+                nsView.goBack()
+                state.pendingURL = nil
+            case "blau://forward":
+                nsView.goForward()
+                state.pendingURL = nil
+            case "blau://reload":
+                nsView.reload()
+                state.pendingURL = nil
+            case "blau://stop":
+                nsView.stopLoading()
+                state.pendingURL = nil
+            default:
+                if nsView.url != pending {
+                    nsView.load(URLRequest(url: pending))
+                }
             }
         }
 
-        // Apply appearance
+        // Toggle Web Inspector (opens in separate window)
+        if state.needsInspectorToggle {
+            state.needsInspectorToggle = false
+            InspectorHelper.toggleInspector(for: nsView, show: state.showDevTools)
+        }
+
+        // Always apply appearance — NSAppearance drives prefers-color-scheme in WKWebView
         let appearance: NSAppearance?
         switch state.appearanceMode {
         case .system: appearance = nil
         case .light: appearance = NSAppearance(named: .aqua)
         case .dark: appearance = NSAppearance(named: .darkAqua)
         }
-        nsView.appearance = appearance
+        if nsView.appearance != appearance {
+            nsView.appearance = appearance
+            nsView.evaluateJavaScript(
+                "document.documentElement.style.colorScheme = '\(state.appearanceMode == .dark ? "dark" : state.appearanceMode == .light ? "light" : "")'"
+            )
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -447,7 +422,6 @@ struct WebViewRepresentable: NSViewRepresentable {
                 state.pendingURL = nil
             }
             updateNavState(webView)
-            fetchPageSource(webView)
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -463,14 +437,6 @@ struct WebViewRepresentable: NSViewRepresentable {
         private func updateNavState(_ webView: WKWebView) {
             state.canGoBack = webView.canGoBack
             state.canGoForward = webView.canGoForward
-        }
-
-        private func fetchPageSource(_ webView: WKWebView) {
-            webView.evaluateJavaScript("document.documentElement.outerHTML") { result, _ in
-                if let html = result as? String {
-                    self.state.devToolsHTML = html
-                }
-            }
         }
     }
 }
