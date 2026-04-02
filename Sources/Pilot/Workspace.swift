@@ -16,12 +16,18 @@ final class Pane: Identifiable {
     }
 }
 
+enum PaneAxis: String {
+    case vertical   // panes side by side (HStack)
+    case horizontal // panes stacked top to bottom (VStack)
+}
+
 @Observable
 final class Workspace: Identifiable {
     let id: UUID
     var name: String
     var panes: [Pane]
     var selectedPaneID: UUID?
+    var axis: PaneAxis = .vertical
 
     init(name: String) {
         self.id = UUID()

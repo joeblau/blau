@@ -4,17 +4,95 @@ import SwiftTerm
 
 struct WorkspaceView: View {
     @Bindable var workspace: Workspace
+    @State private var draggingPaneID: UUID?
 
     var body: some View {
-        panesContainer
-            .navigationTitle(workspace.name)
-            .toolbar { paneToolbar }
+        VStack(spacing: 0) {
+            tabBar
+            Divider()
+            panesContent
+        }
+        .navigationTitle(workspace.name)
+        .toolbar { paneToolbar }
     }
 
-    private var panesContainer: some View {
-        HStack(spacing: 0) {
+    // MARK: - Tab Bar
+
+    private var tabBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                ForEach(workspace.panes) { pane in
+                    tabItem(pane)
+                }
+            }
+        }
+        .frame(height: 30)
+        .background(.bar)
+    }
+
+    private func tabItem(_ pane: Pane) -> some View {
+        let isSelected = workspace.selectedPaneID == pane.id
+
+        return HStack(spacing: 4) {
+            Image(systemName: pane.kind == .terminal ? "terminal" : "safari")
+                .font(.caption2)
+            Text(pane.kind == .terminal ? "Terminal" : "Browser")
+                .font(.caption)
+                .lineLimit(1)
+
+            if workspace.panes.count > 1 {
+                Button {
+                    workspace.removePane(pane)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 30)
+        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+        .overlay(alignment: .bottom) {
+            if isSelected {
+                Rectangle().fill(Color.accentColor).frame(height: 2)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { workspace.selectedPaneID = pane.id }
+        .draggable(pane.id.uuidString) {
+            Text(pane.kind == .terminal ? "Terminal" : "Browser")
+                .padding(6)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
+        }
+        .dropDestination(for: String.self) { items, _ in
+            guard let droppedIDString = items.first,
+                  let droppedID = UUID(uuidString: droppedIDString),
+                  let fromIndex = workspace.panes.firstIndex(where: { $0.id == droppedID }),
+                  let toIndex = workspace.panes.firstIndex(where: { $0.id == pane.id }),
+                  fromIndex != toIndex else { return false }
+            workspace.panes.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+            return true
+        }
+        .contextMenu {
+            Button("Close", role: .destructive) {
+                workspace.removePane(pane)
+            }
+            .disabled(workspace.panes.count <= 1)
+        }
+    }
+
+    // MARK: - Pane Content
+
+    @ViewBuilder
+    private var panesContent: some View {
+        let isVertical = workspace.axis == .vertical
+        let layout = isVertical ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+        layout {
             ForEach(workspace.panes) { pane in
-                paneCell(pane)
+                PaneView(pane: pane, isSelected: workspace.selectedPaneID == pane.id)
+                    .onTapGesture { workspace.selectedPaneID = pane.id }
                 if pane.id != workspace.panes.last?.id {
                     Divider()
                 }
@@ -22,27 +100,23 @@ struct WorkspaceView: View {
         }
     }
 
-    private func paneCell(_ pane: Pane) -> some View {
-        PaneView(pane: pane, isSelected: workspace.selectedPaneID == pane.id)
-            .onTapGesture { workspace.selectedPaneID = pane.id }
-            .overlay(alignment: .top) {
-                if workspace.selectedPaneID == pane.id && workspace.panes.count > 1 {
-                    Rectangle().fill(Color.accentColor).frame(height: 2)
-                }
-            }
-            .contextMenu {
-                Button("Close Pane", role: .destructive) {
-                    workspace.removePane(pane)
-                }
-                .disabled(workspace.panes.count <= 1)
-            }
-    }
-
     @ToolbarContentBuilder
     private var paneToolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
+            Button {
+                workspace.axis = workspace.axis == .vertical ? .horizontal : .vertical
+            } label: {
+                Label("Toggle Layout",
+                      systemImage: workspace.axis == .vertical
+                          ? "rectangle.split.1x2"
+                          : "rectangle.split.2x1")
+            }
+        }
+        ToolbarItem(placement: .primaryAction) {
+            let beforeLabel = workspace.axis == .vertical ? "Add Left" : "Add Above"
+            let afterLabel = workspace.axis == .vertical ? "Add Right" : "Add Below"
             Menu {
-                Section("Add Left") {
+                Section(beforeLabel) {
                     Button("Terminal", systemImage: "terminal") {
                         workspace.addPane(kind: .terminal, side: .left)
                     }
@@ -50,7 +124,7 @@ struct WorkspaceView: View {
                         workspace.addPane(kind: .browser, side: .left)
                     }
                 }
-                Section("Add Right") {
+                Section(afterLabel) {
                     Button("Terminal", systemImage: "terminal") {
                         workspace.addPane(kind: .terminal, side: .right)
                     }
@@ -59,7 +133,7 @@ struct WorkspaceView: View {
                     }
                 }
             } label: {
-                Label("Add Pane", systemImage: "rectangle.split.1x2")
+                Label("Add Pane", systemImage: "plus.rectangle")
             }
         }
     }
