@@ -5,17 +5,23 @@ import SwiftUI
 
 struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
     let items: [Item]
+    @Binding var selectedID: Item.ID?
+    var onHighlightChanged: ((Item) -> Void)?
     @ViewBuilder let rowContent: (Item, Bool) -> RowContent
 
-    @State private var highlightedIndex: Int = 0
     @State private var volumeObserver = VolumeObserver()
+
+    private var highlightedIndex: Int? {
+        guard let selectedID else { return nil }
+        return items.firstIndex(where: { $0.id == selectedID })
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
             List(Array(items.enumerated()), id: \.element.id) { index, item in
-                rowContent(item, index == highlightedIndex)
+                rowContent(item, item.id == selectedID)
                     .listRowBackground(
-                        index == highlightedIndex
+                        item.id == selectedID
                             ? Color.accentColor.opacity(0.2)
                             : Color.clear
                     )
@@ -29,10 +35,20 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
             }
             .onChange(of: volumeObserver.eventID) {
                 guard !items.isEmpty else { return }
-                highlightedIndex = nextHighlightedIndex(
-                    for: volumeObserver.direction,
+                let currentIndex = highlightedIndex ?? 0
+                let newIndex = nextIndex(
+                    from: currentIndex,
+                    direction: volumeObserver.direction,
                     itemCount: items.count
                 )
+                selectedID = items[newIndex].id
+                onHighlightChanged?(items[newIndex])
+                withAnimation {
+                    proxy.scrollTo(newIndex, anchor: .center)
+                }
+            }
+            .onChange(of: selectedID) {
+                guard let highlightedIndex else { return }
                 withAnimation {
                     proxy.scrollTo(highlightedIndex, anchor: .center)
                 }
@@ -42,17 +58,18 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
         .onDisappear { volumeObserver.stop() }
     }
 
-    private func nextHighlightedIndex(
-        for direction: VolumeDirection,
+    private func nextIndex(
+        from current: Int,
+        direction: VolumeDirection,
         itemCount: Int
     ) -> Int {
         switch direction {
         case .up:
-            return max(highlightedIndex - 1, 0)
+            return max(current - 1, 0)
         case .down:
-            return min(highlightedIndex + 1, itemCount - 1)
+            return min(current + 1, itemCount - 1)
         case .none:
-            return highlightedIndex
+            return current
         }
     }
 }

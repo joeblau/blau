@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var store = WorkspaceStore()
+    @Bindable var store: WorkspaceStore
+    var syncService: PeerSyncService
     @State private var showInspector = false
     @State private var gitStore = GitCommitStore()
 
@@ -97,5 +98,8 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(
+        store: WorkspaceStore(),
+        syncService: PeerSyncService(role: .advertiser, displayName: "Preview")
+    )
 }

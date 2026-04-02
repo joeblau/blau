@@ -9,6 +9,10 @@ final class WorkspaceStore {
         workspaces.first { $0.id == selectedWorkspaceID }
     }
 
+    var summaries: [WorkspaceSummary] {
+        workspaces.map { WorkspaceSummary(id: $0.id, name: $0.name) }
+    }
+
     func addWorkspace() {
         let workspace = Workspace(name: "Workspace \(workspaces.count + 1)")
         workspaces.append(workspace)

@@ -20,6 +20,7 @@ targets:
     platform: macOS
     sources:
       - Sources/Pilot
+      - Sources/Shared
     dependencies:
       - framework: GhosttyKit.xcframework
         embed: false
@@ -32,6 +33,8 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.utilities"
         CODE_SIGN_ENTITLEMENTS: Sources/Pilot/Pilot.entitlements
         GENERATE_INFOPLIST_FILE: true
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Pilot uses the local network to sync with Copilot."
+        INFOPLIST_KEY_NSBonjourServices: "_blau-sync._tcp"
         OTHER_LDFLAGS: ["-lc++", "-framework", "Metal", "-framework", "QuartzCore", "-framework", "CoreText", "-framework", "IOKit", "-framework", "CoreGraphics", "-framework", "Foundation", "-framework", "Carbon", "-framework", "CoreFoundation", "-framework", "AppKit", "-framework", "CoreServices"]
 
   Copilot:
@@ -39,6 +42,7 @@ targets:
     platform: iOS
     sources:
       - Sources/Copilot
+      - Sources/Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.copilot
@@ -48,6 +52,8 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: true
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         GENERATE_INFOPLIST_FILE: true
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Copilot uses the local network to sync with Pilot."
+        INFOPLIST_KEY_NSBonjourServices: "_blau-sync._tcp"
         TARGETED_DEVICE_FAMILY: "1"
     dependencies:
       - target: Wingman Watch App
