@@ -4,6 +4,7 @@ import SwiftUI
 struct WorkspaceView: View {
     @Bindable var workspace: Workspace
     @State private var draggingPaneID: UUID?
+    @State private var hoveredPaneID: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,7 +19,7 @@ struct WorkspaceView: View {
 
     private var tabBar: some View {
         HStack(spacing: 1) {
-            ForEach(workspace.panes) { pane in
+            ForEach(workspace.sortedPanes) { pane in
                 tabItem(pane)
             }
 
@@ -35,7 +36,8 @@ struct WorkspaceView: View {
         return TabItemContent(
             pane: pane,
             isSelected: isSelected,
-            canClose: workspace.panes.count > 1,
+            isHovering: hoveredPaneID == pane.id,
+            canClose: workspace.sortedPanes.count > 1,
             onClose: { workspace.removePane(pane) }
         )
         .padding(.horizontal, 14)
@@ -43,6 +45,13 @@ struct WorkspaceView: View {
         .frame(height: 28)
         .background(isSelected ? .white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .contentShape(RoundedRectangle(cornerRadius: 6))
+        .onHover { isHovering in
+            if isHovering {
+                hoveredPaneID = pane.id
+            } else if hoveredPaneID == pane.id {
+                hoveredPaneID = nil
+            }
+        }
         .onTapGesture { workspace.selectedPaneID = pane.id }
         .draggable(pane.id.uuidString) {
             HStack(spacing: 6) {
@@ -58,17 +67,27 @@ struct WorkspaceView: View {
         .dropDestination(for: String.self) { items, _ in
             guard let droppedIDString = items.first,
                   let droppedID = UUID(uuidString: droppedIDString),
-                  let fromIndex = workspace.panes.firstIndex(where: { $0.id == droppedID }),
-                  let toIndex = workspace.panes.firstIndex(where: { $0.id == pane.id }),
-                  fromIndex != toIndex else { return false }
-            workspace.panes.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+                  let droppedPane = workspace.sortedPanes.first(where: { $0.id == droppedID }),
+                  droppedPane.id != pane.id else { return false }
+            let targetOrder = pane.sortOrder
+            let droppedOrder = droppedPane.sortOrder
+            if droppedOrder < targetOrder {
+                for p in workspace.panes where p.sortOrder > droppedOrder && p.sortOrder <= targetOrder {
+                    p.sortOrder -= 1
+                }
+            } else {
+                for p in workspace.panes where p.sortOrder >= targetOrder && p.sortOrder < droppedOrder {
+                    p.sortOrder += 1
+                }
+            }
+            droppedPane.sortOrder = targetOrder
             return true
         }
         .contextMenu {
             Button("Close", role: .destructive) {
                 workspace.removePane(pane)
             }
-            .disabled(workspace.panes.count <= 1)
+            .disabled(workspace.sortedPanes.count <= 1)
         }
     }
 
@@ -79,14 +98,14 @@ struct WorkspaceView: View {
         let isVertical = workspace.axis == .vertical
         let layout = isVertical ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
         layout {
-            ForEach(workspace.panes) { pane in
+            ForEach(workspace.sortedPanes) { pane in
                 PaneView(pane: pane, isSelected: workspace.selectedPaneID == pane.id)
                     .simultaneousGesture(
                         TapGesture().onEnded {
                             workspace.selectedPaneID = pane.id
                         }
                     )
-                if pane.id != workspace.panes.last?.id {
+                if pane.id != workspace.sortedPanes.last?.id {
                     Divider()
                 }
             }
@@ -98,9 +117,9 @@ struct WorkspaceView: View {
 struct TabItemContent: View {
     let pane: Pane
     let isSelected: Bool
+    let isHovering: Bool
     let canClose: Bool
     let onClose: () -> Void
-    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -123,7 +142,6 @@ struct TabItemContent: View {
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? .primary : .secondary)
         }
-        .onHover { isHovering = $0 }
         .animation(.easeInOut(duration: 0.15), value: isHovering)
     }
 }
@@ -137,7 +155,9 @@ struct PaneView: View {
         case .terminal:
             TerminalViewRepresentable(pane: pane)
         case .browser:
-            BrowserPaneView()
+            if let state = pane.browserState {
+                BrowserPaneView(state: state)
+            }
         }
     }
 }
@@ -154,161 +174,24 @@ struct TerminalViewRepresentable: View {
 
 // MARK: - Browser
 
-enum AppearanceMode: String, CaseIterable {
-    case system = "System"
-    case light = "Light"
-    case dark = "Dark"
-}
-
-@Observable
-final class BrowserState {
-    var urlText: String = "https://apple.com"
-    var pendingURL: URL?
-    var canGoBack: Bool = false
-    var canGoForward: Bool = false
-    var isLoading: Bool = false
-    var showDevTools: Bool = false
-    var appearanceMode: AppearanceMode = .system
-    var needsInspectorToggle: Bool = false
-
-    init() {
-        pendingURL = URL(string: urlText)
-    }
-
-    func navigate() {
-        var text = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.contains("://") {
-            text = "https://\(text)"
-            urlText = text
-        }
-        pendingURL = URL(string: text)
-    }
-}
-
 struct BrowserPaneView: View {
-    @State private var state = BrowserState()
+    let state: BrowserState
 
     var body: some View {
-        VStack(spacing: 0) {
-            browserToolbar
-            Divider()
-            browserContent
-        }
-    }
-
-    private var browserToolbar: some View {
-        HStack {
-            Spacer(minLength: 0)
-
-            HStack(spacing: 8) {
-                Button { state.pendingURL = URL(string: "blau://back") } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 20, height: 20)
-                }
-                .disabled(!state.canGoBack)
-                .buttonStyle(.plain)
-
-                Button { state.pendingURL = URL(string: "blau://forward") } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 20, height: 20)
-                }
-                .disabled(!state.canGoForward)
-                .buttonStyle(.plain)
-
-                HStack(spacing: 4) {
-                    TextField("URL", text: $state.urlText)
-                        .textFieldStyle(.plain)
-                        .onSubmit { state.navigate() }
-
-                    Button {
-                        if state.isLoading {
-                            state.pendingURL = URL(string: "blau://stop")
-                        } else {
-                            state.pendingURL = URL(string: "blau://reload")
-                        }
-                    } label: {
-                        Image(systemName: state.isLoading ? "xmark" : "arrow.clockwise")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .frame(minWidth: 360, idealWidth: 520, maxWidth: 620)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
-                .layoutPriority(1)
-
-                Menu {
-                    ForEach(AppearanceMode.allCases, id: \.self) { mode in
-                        Button {
-                            state.appearanceMode = mode
-                        } label: {
-                            HStack {
-                                Text(mode.rawValue)
-                                if state.appearanceMode == mode {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: appearanceIcon)
-                        .font(.system(size: 11))
-                        .frame(width: 20, height: 20)
-                }
-                .buttonStyle(.plain)
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-
-                Menu {
-                    Button("Default Profile") {}
-                    Divider()
-                    Button("Manage Profiles...") {}
-                } label: {
-                    Image(systemName: "person.circle")
-                        .font(.system(size: 11))
-                        .frame(width: 20, height: 20)
-                }
-                .buttonStyle(.plain)
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-
-                Button {
-                    state.showDevTools.toggle()
-                    state.needsInspectorToggle = true
-                } label: {
-                    Image(systemName: "hammer")
-                        .font(.system(size: 11))
-                        .frame(width: 20, height: 20)
-                        .foregroundStyle(state.showDevTools ? Color.accentColor : .secondary)
-                }
-                .buttonStyle(.plain)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-    }
-
-    private var appearanceIcon: String {
-        switch state.appearanceMode {
-        case .system: "circle.lefthalf.filled"
-        case .light: "sun.max"
-        case .dark: "moon"
-        }
-    }
-
-    private var browserContent: some View {
-        WebViewRepresentable(state: state)
+        WebViewRepresentable(
+            state: state,
+            navigationRequestID: state.navigationRequestID,
+            inspectorToggleRequestID: state.inspectorToggleRequestID,
+            appearanceMode: state.appearanceMode
+        )
     }
 }
 
 struct WebViewRepresentable: NSViewRepresentable {
     let state: BrowserState
+    let navigationRequestID: Int
+    let inspectorToggleRequestID: Int
+    let appearanceMode: AppearanceMode
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -316,13 +199,16 @@ struct WebViewRepresentable: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.isInspectable = true
-        if let url = state.pendingURL {
+        if let url = initialURL {
             webView.load(URLRequest(url: url))
         }
         return webView
     }
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
+        _ = navigationRequestID
+        _ = inspectorToggleRequestID
+
         // Handle navigation commands
         if let pending = state.pendingURL {
             switch pending.absoluteString {
@@ -339,9 +225,8 @@ struct WebViewRepresentable: NSViewRepresentable {
                 nsView.stopLoading()
                 state.pendingURL = nil
             default:
-                if nsView.url != pending {
-                    nsView.load(URLRequest(url: pending))
-                }
+                nsView.load(URLRequest(url: pending))
+                state.pendingURL = nil
             }
         }
 
@@ -353,7 +238,7 @@ struct WebViewRepresentable: NSViewRepresentable {
 
         // Always apply appearance — NSAppearance drives prefers-color-scheme in WKWebView
         let appearance: NSAppearance?
-        switch state.appearanceMode {
+        switch appearanceMode {
         case .system: appearance = nil
         case .light: appearance = NSAppearance(named: .aqua)
         case .dark: appearance = NSAppearance(named: .darkAqua)
@@ -361,13 +246,29 @@ struct WebViewRepresentable: NSViewRepresentable {
         if nsView.appearance != appearance {
             nsView.appearance = appearance
             nsView.evaluateJavaScript(
-                "document.documentElement.style.colorScheme = '\(state.appearanceMode == .dark ? "dark" : state.appearanceMode == .light ? "light" : "")'"
+                "document.documentElement.style.colorScheme = '\(appearanceMode == .dark ? "dark" : appearanceMode == .light ? "light" : "")'"
             )
         }
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(state: state)
+    }
+
+    private var initialURL: URL? {
+        if let pendingURL = state.pendingURL,
+           pendingURL.scheme != "blau" {
+            return pendingURL
+        }
+
+        let trimmed = state.urlText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let url = URL(string: trimmed), url.scheme != nil {
+            return url
+        }
+
+        return URL(string: "https://\(trimmed)")
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {

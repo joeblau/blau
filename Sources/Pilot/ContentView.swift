@@ -1,3 +1,5 @@
+import AppKit
+import SwiftData
 import SwiftUI
 
 struct ContentView: View {
@@ -8,9 +10,10 @@ struct ContentView: View {
 
     var body: some View {
         let activeInspectorRepoPath = selectedTerminalRepoPath
+        let workspaces = store.workspaces
 
         NavigationSplitView {
-            List(store.workspaces, selection: $store.selectedWorkspaceID) { workspace in
+            List(workspaces, selection: $store.selectedWorkspaceID) { workspace in
                 TextField("Name", text: Bindable(workspace).name)
                     .contextMenu {
                         Button("Delete", role: .destructive) {
@@ -20,8 +23,21 @@ struct ContentView: View {
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
-            if let workspace = store.selectedWorkspace {
-                WorkspaceView(workspace: workspace)
+            if workspaces.isEmpty {
+                ContentUnavailableView("No Workspace Selected",
+                                       systemImage: "rectangle.on.rectangle.slash",
+                                       description: Text("Create a workspace with the + button."))
+            } else if let selectedWorkspaceID = store.selectedWorkspaceID,
+                      workspaces.contains(where: { $0.id == selectedWorkspaceID }) {
+                ZStack {
+                    ForEach(workspaces) { workspace in
+                        let isActive = workspace.id == selectedWorkspaceID
+                        WorkspaceView(workspace: workspace)
+                            .opacity(isActive ? 1 : 0)
+                            .allowsHitTesting(isActive)
+                            .accessibilityHidden(!isActive)
+                    }
+                }
             } else {
                 ContentUnavailableView("No Workspace Selected",
                                        systemImage: "rectangle.on.rectangle.slash",
@@ -49,6 +65,13 @@ struct ContentView: View {
                     Label("New Workspace", systemImage: "plus")
                 }
             }
+            ToolbarItemGroup(placement: .secondaryAction) {
+                if let pane = store.selectedWorkspace?.selectedPane,
+                   pane.kind == .browser,
+                   let browserState = pane.browserState {
+                    browserToolbar(state: browserState)
+                }
+            }
             ToolbarItemGroup(placement: .primaryAction) {
                 ControlGroup {
                     Button {
@@ -74,6 +97,76 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
+    private func browserToolbar(state: BrowserState) -> some View {
+        ControlGroup {
+            Button { state.requestNavigationCommand("blau://back") } label: {
+                Label("Back", systemImage: "chevron.left")
+            }
+            .disabled(!state.canGoBack)
+
+            Button { state.requestNavigationCommand("blau://forward") } label: {
+                Label("Forward", systemImage: "chevron.right")
+            }
+            .disabled(!state.canGoForward)
+        }
+
+        TextField("URL", text: Bindable(state).urlText)
+            .textFieldStyle(.plain)
+            .onSubmit { state.navigate() }
+            .frame(minWidth: 200, idealWidth: 400)
+
+        Button {
+            if state.isLoading {
+                state.requestNavigationCommand("blau://stop")
+            } else {
+                state.requestNavigationCommand("blau://reload")
+            }
+        } label: {
+            Label(state.isLoading ? "Stop" : "Reload",
+                  systemImage: state.isLoading ? "xmark" : "arrow.clockwise")
+        }
+
+        Menu {
+            ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                Button {
+                    state.appearanceMode = mode
+                } label: {
+                    HStack {
+                        Text(mode.rawValue)
+                        if state.appearanceMode == mode {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label("Appearance", systemImage: appearanceIcon(for: state.appearanceMode))
+        }
+
+        Menu {
+            Button("Default Profile") {}
+            Divider()
+            Button("Manage Profiles...") {}
+        } label: {
+            Label("Profile", systemImage: "person.circle")
+        }
+
+        Button {
+            state.toggleDeveloperTools()
+        } label: {
+            Label("Developer Tools", systemImage: "hammer")
+        }
+    }
+
+    private func appearanceIcon(for mode: AppearanceMode) -> String {
+        switch mode {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon"
+        }
+    }
+
     private var selectedTerminalRepoPath: String? {
         guard let pane = store.selectedWorkspace?.selectedPane else { return nil }
         guard pane.kind == .terminal else { return nil }
@@ -94,9 +187,20 @@ struct ContentView: View {
     }
 }
 
+
+@MainActor
+private enum ContentViewPreviewData {
+    static let container: ModelContainer = {
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self])
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        return try! ModelContainer(for: schema, configurations: configuration)
+    }()
+}
+
 #Preview {
     ContentView(
-        store: WorkspaceStore(),
+        store: WorkspaceStore(modelContext: ContentViewPreviewData.container.mainContext),
         syncService: PeerSyncService(role: .advertiser, displayName: "Preview")
     )
+    .modelContainer(ContentViewPreviewData.container)
 }

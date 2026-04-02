@@ -58,6 +58,7 @@
 
 /* Begin PBXFileReference section */
 		0057932203C8B246C76D50DC /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = GhosttyKit.xcframework; sourceTree = "<group>"; };
+		0146AB6C59B6957CE9B7E874 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		132CB022A0BDFF0DE96316EF /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		158C2018D7407AF1E5F146CB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1B3448A85CDA9475511475C2 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
@@ -74,6 +75,7 @@
 		84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStore.swift; sourceTree = "<group>"; };
 		89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Wingman Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B4486B0848D4DDEE5E23D18 /* Pilot.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Pilot.entitlements; sourceTree = "<group>"; };
+		A0144CE36B7342F7D171F350 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A1C985F86115A698849ED108 /* VolumeScrollListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeScrollListView.swift; sourceTree = "<group>"; };
 		AA1D8AC628F3F55D563872C7 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B028DA279E32AB30A1A75942 /* CommitListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitListView.swift; sourceTree = "<group>"; };
@@ -120,6 +122,7 @@
 				158C2018D7407AF1E5F146CB /* Assets.xcassets */,
 				AA1D8AC628F3F55D563872C7 /* ContentView.swift */,
 				6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */,
+				A0144CE36B7342F7D171F350 /* Info.plist */,
 				A1C985F86115A698849ED108 /* VolumeScrollListView.swift */,
 			);
 			name = Copilot;
@@ -144,6 +147,7 @@
 				132CB022A0BDFF0DE96316EF /* ContentView.swift */,
 				71A7E1AE9E717B53A369709B /* GhosttyTerminal.swift */,
 				DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */,
+				0146AB6C59B6957CE9B7E874 /* Info.plist */,
 				5B068834105F375479ADF423 /* InspectorHelper.swift */,
 				8B4486B0848D4DDEE5E23D18 /* Pilot.entitlements */,
 				F684D74A8F12B03954CC49B3 /* PilotApp.swift */,

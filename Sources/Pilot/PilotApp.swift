@@ -1,12 +1,22 @@
+import SwiftData
 import SwiftUI
 
 @main
 struct PilotApp: App {
-    @State private var store = WorkspaceStore()
+    let modelContainer: ModelContainer
+
+    @State private var store: WorkspaceStore
     @State private var syncService = PeerSyncService(
         role: .advertiser,
         displayName: Host.current().localizedName ?? "Mac"
     )
+
+    init() {
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self])
+        let container = try! ModelContainer(for: schema)
+        self.modelContainer = container
+        self._store = State(initialValue: WorkspaceStore(modelContext: container.mainContext))
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -14,6 +24,7 @@ struct PilotApp: App {
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                 .task { setupSync() }
         }
+        .modelContainer(modelContainer)
     }
 
     private func setupSync() {
