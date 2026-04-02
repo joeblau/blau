@@ -19,54 +19,41 @@ struct WorkspaceView: View {
     // MARK: - Tab Bar
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 1) {
             ForEach(workspace.panes) { pane in
                 tabItem(pane)
-                if pane.id != workspace.panes.last?.id {
-                    Divider().frame(height: 20)
-                }
             }
         }
-        .frame(height: 30, alignment: .center)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
         .background(.bar)
     }
 
     private func tabItem(_ pane: Pane) -> some View {
         let isSelected = workspace.selectedPaneID == pane.id
 
-        return HStack(spacing: 4) {
-            Image(systemName: pane.kind == .terminal ? "terminal" : "safari")
-                .font(.caption2)
-            Text(pane.kind == .terminal ? "Terminal" : "Browser")
-                .font(.caption)
-                .lineLimit(1)
-
-            if workspace.panes.count > 1 {
-                Button {
-                    workspace.removePane(pane)
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 12)
+        return TabItemContent(
+            pane: pane,
+            isSelected: isSelected,
+            canClose: workspace.panes.count > 1,
+            onClose: { workspace.removePane(pane) }
+        )
+        .padding(.horizontal, 14)
         .frame(maxWidth: .infinity)
-        .frame(height: 30)
-        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-        .overlay(alignment: .bottom) {
-            if isSelected {
-                Rectangle().fill(Color.accentColor).frame(height: 2)
-            }
-        }
-        .contentShape(Rectangle())
+        .frame(height: 28)
+        .background(isSelected ? .white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .contentShape(RoundedRectangle(cornerRadius: 6))
         .onTapGesture { workspace.selectedPaneID = pane.id }
         .draggable(pane.id.uuidString) {
-            Text(pane.kind == .terminal ? "Terminal" : "Browser")
-                .padding(6)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
+            HStack(spacing: 6) {
+                Image(systemName: pane.kind == .terminal ? "terminal" : "safari")
+                    .font(.system(size: 11))
+                Text(pane.kind == .terminal ? "Terminal" : "Browser")
+                    .font(.system(size: 12))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
         }
         .dropDestination(for: String.self) { items, _ in
             guard let droppedIDString = items.first,
@@ -121,6 +108,39 @@ struct WorkspaceView: View {
     }
 }
 
+struct TabItemContent: View {
+    let pane: Pane
+    let isSelected: Bool
+    let canClose: Bool
+    let onClose: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if isHovering && canClose {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+                        .background(.white.opacity(0.1), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity)
+            }
+            Image(systemName: pane.kind == .terminal ? "terminal" : "safari")
+                .font(.system(size: 11))
+                .foregroundStyle(isSelected ? .primary : .secondary)
+            Text(pane.kind == .terminal ? "Terminal" : "Browser")
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .foregroundStyle(isSelected ? .primary : .secondary)
+        }
+        .onHover { isHovering = $0 }
+        .animation(.easeInOut(duration: 0.15), value: isHovering)
+    }
+}
+
 struct PaneView: View {
     let pane: Pane
     let isSelected: Bool
@@ -138,19 +158,34 @@ struct PaneView: View {
 // MARK: - Terminal
 
 struct TerminalViewRepresentable: NSViewRepresentable {
-    func makeNSView(context: Context) -> LocalProcessTerminalView {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let vibrantContainer = NSVisualEffectView(frame: .zero)
+        vibrantContainer.material = .hudWindow
+        vibrantContainer.blendingMode = .behindWindow
+        vibrantContainer.state = .active
+
         let terminalView = LocalProcessTerminalView(frame: .zero)
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let home = FileManager.default.homeDirectoryForCurrentUser.path
 
         terminalView.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+        terminalView.nativeBackgroundColor = .clear
         terminalView.startProcess(executable: shell, environment: nil, execName: "-" + (shell as NSString).lastPathComponent)
         terminalView.send(txt: "cd \(home)\r")
 
-        return terminalView
+        terminalView.translatesAutoresizingMaskIntoConstraints = false
+        vibrantContainer.addSubview(terminalView)
+        NSLayoutConstraint.activate([
+            terminalView.topAnchor.constraint(equalTo: vibrantContainer.topAnchor),
+            terminalView.bottomAnchor.constraint(equalTo: vibrantContainer.bottomAnchor),
+            terminalView.leadingAnchor.constraint(equalTo: vibrantContainer.leadingAnchor),
+            terminalView.trailingAnchor.constraint(equalTo: vibrantContainer.trailingAnchor),
+        ])
+
+        return vibrantContainer
     }
 
-    func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {}
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 // MARK: - Browser
