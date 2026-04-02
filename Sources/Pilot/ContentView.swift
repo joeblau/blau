@@ -68,6 +68,7 @@ struct ContentView: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
+                
                 Button {
                     showInspector.toggle()
                 } label: {
