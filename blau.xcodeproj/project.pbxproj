@@ -10,8 +10,11 @@
 		1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 132CB022A0BDFF0DE96316EF /* ContentView.swift */; };
 		1F253D4F3DCD296F823A2E74 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7D00A3F70E212149A88CCD63 /* Assets.xcassets */; };
 		5A01C1F25324B7BD662C6A6F /* WingmanApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A70CFB55F5EB044D3ED5C3F /* WingmanApp.swift */; };
+		61F220E0506458F5A49CEDE8 /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */; };
 		75A366911772F72DFFF5B2E1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 158C2018D7407AF1E5F146CB /* Assets.xcassets */; };
 		77B72900D09DBEF8FB2ED47E /* Wingman Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7C8C2A101382F27189DA38D6 /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */; };
+		A755A8C5DCFF1165E408136A /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3448A85CDA9475511475C2 /* Workspace.swift */; };
 		B50B053F283AA448A9ACDB56 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26E21596BD1590738CF89498 /* ContentView.swift */; };
 		C0B083B9A7F2E253F890ABC0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32D547158D65899195FA3359 /* Assets.xcassets */; };
 		C9B227630199C8E1705AE8DC /* CopilotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */; };
@@ -46,12 +49,15 @@
 /* Begin PBXFileReference section */
 		132CB022A0BDFF0DE96316EF /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		158C2018D7407AF1E5F146CB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		1B3448A85CDA9475511475C2 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		1C98BD914066A308C6C6C1C9 /* Pilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
 		26E21596BD1590738CF89498 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		32D547158D65899195FA3359 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotApp.swift; sourceTree = "<group>"; };
 		7A70CFB55F5EB044D3ED5C3F /* WingmanApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WingmanApp.swift; sourceTree = "<group>"; };
 		7D00A3F70E212149A88CCD63 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStore.swift; sourceTree = "<group>"; };
 		89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Wingman Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B4486B0848D4DDEE5E23D18 /* Pilot.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Pilot.entitlements; sourceTree = "<group>"; };
 		AA1D8AC628F3F55D563872C7 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -89,6 +95,9 @@
 				132CB022A0BDFF0DE96316EF /* ContentView.swift */,
 				8B4486B0848D4DDEE5E23D18 /* Pilot.entitlements */,
 				F684D74A8F12B03954CC49B3 /* PilotApp.swift */,
+				1B3448A85CDA9475511475C2 /* Workspace.swift */,
+				84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */,
+				24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */,
 			);
 			name = Pilot;
 			path = Sources/Pilot;
@@ -249,6 +258,9 @@
 			files = (
 				1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */,
 				CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */,
+				A755A8C5DCFF1165E408136A /* Workspace.swift in Sources */,
+				7C8C2A101382F27189DA38D6 /* WorkspaceStore.swift in Sources */,
+				61F220E0506458F5A49CEDE8 /* WorkspaceView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
