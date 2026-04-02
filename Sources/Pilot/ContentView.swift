@@ -24,7 +24,7 @@ struct ContentView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItem(placement: .navigation) {
                 Button(action: store.addWorkspace) {
                     Label("New Workspace", systemImage: "plus")
                 }
