@@ -190,10 +190,22 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 
 // MARK: - Browser
 
+enum AppearanceMode: String, CaseIterable {
+    case system = "System"
+    case light = "Light"
+    case dark = "Dark"
+}
+
 @Observable
 final class BrowserState {
     var urlText: String = "https://apple.com"
     var pendingURL: URL?
+    var canGoBack: Bool = false
+    var canGoForward: Bool = false
+    var isLoading: Bool = false
+    var showDevTools: Bool = false
+    var appearanceMode: AppearanceMode = .system
+    var devToolsHTML: String = ""
 
     init() {
         pendingURL = URL(string: urlText)
@@ -214,15 +226,155 @@ struct BrowserPaneView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                TextField("URL", text: $state.urlText)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { state.navigate() }
-            }
-            .padding(8)
+            browserToolbar
+            Divider()
+            browserContent
+        }
+    }
 
+    private var browserToolbar: some View {
+        HStack(spacing: 6) {
+            // Back / Forward
+            Button { state.pendingURL = URL(string: "blau://back") } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 20, height: 20)
+            }
+            .disabled(!state.canGoBack)
+            .buttonStyle(.plain)
+
+            Button { state.pendingURL = URL(string: "blau://forward") } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 20, height: 20)
+            }
+            .disabled(!state.canGoForward)
+            .buttonStyle(.plain)
+
+            // Address bar with refresh
+            HStack(spacing: 4) {
+                TextField("URL", text: $state.urlText)
+                    .textFieldStyle(.plain)
+                    .onSubmit { state.navigate() }
+
+                Button {
+                    if state.isLoading {
+                        state.pendingURL = URL(string: "blau://stop")
+                    } else {
+                        state.pendingURL = URL(string: "blau://reload")
+                    }
+                } label: {
+                    Image(systemName: state.isLoading ? "xmark" : "arrow.clockwise")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+
+            // Appearance
+            Menu {
+                ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                    Button {
+                        state.appearanceMode = mode
+                    } label: {
+                        HStack {
+                            Text(mode.rawValue)
+                            if state.appearanceMode == mode {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: appearanceIcon)
+                    .font(.system(size: 11))
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            // Profile
+            Menu {
+                Button("Default Profile") {}
+                Divider()
+                Button("Manage Profiles...") {}
+            } label: {
+                Image(systemName: "person.circle")
+                    .font(.system(size: 11))
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            // Dev Tools
+            Button {
+                state.showDevTools.toggle()
+            } label: {
+                Image(systemName: "hammer")
+                    .font(.system(size: 11))
+                    .frame(width: 20, height: 20)
+                    .foregroundStyle(state.showDevTools ? Color.accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+    }
+
+    private var appearanceIcon: String {
+        switch state.appearanceMode {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon"
+        }
+    }
+
+    @ViewBuilder
+    private var browserContent: some View {
+        if state.showDevTools {
+            HSplitView {
+                WebViewRepresentable(state: state)
+                devToolsPanel
+                    .frame(minWidth: 280)
+            }
+        } else {
             WebViewRepresentable(state: state)
         }
+    }
+
+    private var devToolsPanel: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Developer Tools")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    state.showDevTools = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            Divider()
+            ScrollView {
+                Text(state.devToolsHTML)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+            }
+        }
+        .background(.bar)
     }
 }
 
@@ -230,7 +382,9 @@ struct WebViewRepresentable: NSViewRepresentable {
     let state: BrowserState
 
     func makeNSView(context: Context) -> WKWebView {
-        let webView = WKWebView(frame: .zero)
+        let config = WKWebViewConfiguration()
+        config.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         if let url = state.pendingURL {
             webView.load(URLRequest(url: url))
@@ -240,9 +394,34 @@ struct WebViewRepresentable: NSViewRepresentable {
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
         guard let pending = state.pendingURL else { return }
-        if nsView.url != pending {
-            nsView.load(URLRequest(url: pending))
+
+        switch pending.absoluteString {
+        case "blau://back":
+            nsView.goBack()
+            state.pendingURL = nil
+        case "blau://forward":
+            nsView.goForward()
+            state.pendingURL = nil
+        case "blau://reload":
+            nsView.reload()
+            state.pendingURL = nil
+        case "blau://stop":
+            nsView.stopLoading()
+            state.pendingURL = nil
+        default:
+            if nsView.url != pending {
+                nsView.load(URLRequest(url: pending))
+            }
         }
+
+        // Apply appearance
+        let appearance: NSAppearance?
+        switch state.appearanceMode {
+        case .system: appearance = nil
+        case .light: appearance = NSAppearance(named: .aqua)
+        case .dark: appearance = NSAppearance(named: .darkAqua)
+        }
+        nsView.appearance = appearance
     }
 
     func makeCoordinator() -> Coordinator {
@@ -256,10 +435,41 @@ struct WebViewRepresentable: NSViewRepresentable {
             self.state = state
         }
 
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            state.isLoading = true
+            updateNavState(webView)
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            state.isLoading = false
             if let url = webView.url {
                 state.urlText = url.absoluteString
                 state.pendingURL = nil
+            }
+            updateNavState(webView)
+            fetchPageSource(webView)
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            state.isLoading = false
+            updateNavState(webView)
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            state.isLoading = false
+            updateNavState(webView)
+        }
+
+        private func updateNavState(_ webView: WKWebView) {
+            state.canGoBack = webView.canGoBack
+            state.canGoForward = webView.canGoForward
+        }
+
+        private func fetchPageSource(_ webView: WKWebView) {
+            webView.evaluateJavaScript("document.documentElement.outerHTML") { result, _ in
+                if let html = result as? String {
+                    self.state.devToolsHTML = html
+                }
             }
         }
     }
