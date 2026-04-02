@@ -5,6 +5,7 @@ struct PilotApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         }
     }
 }

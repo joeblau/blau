@@ -13,7 +13,6 @@ struct WorkspaceView: View {
             panesContent
         }
         .navigationTitle(workspace.name)
-        .toolbar { paneToolbar }
     }
 
     // MARK: - Tab Bar
@@ -23,6 +22,8 @@ struct WorkspaceView: View {
             ForEach(workspace.panes) { pane in
                 tabItem(pane)
             }
+
+            Spacer()
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -89,23 +90,6 @@ struct WorkspaceView: View {
         }
     }
 
-    @ToolbarContentBuilder
-    private var paneToolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                workspace.addPane(kind: .terminal, side: .right)
-            } label: {
-                Label("New Terminal", systemImage: "terminal")
-            }
-        }
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                workspace.addPane(kind: .browser, side: .right)
-            } label: {
-                Label("New Browser", systemImage: "safari")
-            }
-        }
-    }
 }
 
 struct TabItemContent: View {
