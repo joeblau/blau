@@ -135,7 +135,7 @@ struct PaneView: View {
     var body: some View {
         switch pane.kind {
         case .terminal:
-            TerminalViewRepresentable()
+            TerminalViewRepresentable(pane: pane)
         case .browser:
             BrowserPaneView()
         }
@@ -145,8 +145,10 @@ struct PaneView: View {
 // MARK: - Terminal (Ghostty)
 
 struct TerminalViewRepresentable: View {
+    let pane: Pane
+
     var body: some View {
-        GhosttyTerminalView()
+        GhosttyTerminalView(pane: pane)
     }
 }
 
@@ -195,95 +197,98 @@ struct BrowserPaneView: View {
     }
 
     private var browserToolbar: some View {
-        HStack(spacing: 6) {
-            // Back / Forward
-            Button { state.pendingURL = URL(string: "blau://back") } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: 20, height: 20)
-            }
-            .disabled(!state.canGoBack)
-            .buttonStyle(.plain)
+        HStack {
+            Spacer(minLength: 0)
 
-            Button { state.pendingURL = URL(string: "blau://forward") } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: 20, height: 20)
-            }
-            .disabled(!state.canGoForward)
-            .buttonStyle(.plain)
-
-            // Address bar with refresh
-            HStack(spacing: 4) {
-                TextField("URL", text: $state.urlText)
-                    .textFieldStyle(.plain)
-                    .onSubmit { state.navigate() }
-
-                Button {
-                    if state.isLoading {
-                        state.pendingURL = URL(string: "blau://stop")
-                    } else {
-                        state.pendingURL = URL(string: "blau://reload")
-                    }
-                } label: {
-                    Image(systemName: state.isLoading ? "xmark" : "arrow.clockwise")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Button { state.pendingURL = URL(string: "blau://back") } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 20, height: 20)
                 }
+                .disabled(!state.canGoBack)
                 .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
 
-            // Appearance
-            Menu {
-                ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                Button { state.pendingURL = URL(string: "blau://forward") } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 20, height: 20)
+                }
+                .disabled(!state.canGoForward)
+                .buttonStyle(.plain)
+
+                HStack(spacing: 4) {
+                    TextField("URL", text: $state.urlText)
+                        .textFieldStyle(.plain)
+                        .onSubmit { state.navigate() }
+
                     Button {
-                        state.appearanceMode = mode
+                        if state.isLoading {
+                            state.pendingURL = URL(string: "blau://stop")
+                        } else {
+                            state.pendingURL = URL(string: "blau://reload")
+                        }
                     } label: {
-                        HStack {
-                            Text(mode.rawValue)
-                            if state.appearanceMode == mode {
-                                Image(systemName: "checkmark")
+                        Image(systemName: state.isLoading ? "xmark" : "arrow.clockwise")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(minWidth: 360, idealWidth: 520, maxWidth: 620)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+                .layoutPriority(1)
+
+                Menu {
+                    ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                        Button {
+                            state.appearanceMode = mode
+                        } label: {
+                            HStack {
+                                Text(mode.rawValue)
+                                if state.appearanceMode == mode {
+                                    Image(systemName: "checkmark")
+                                }
                             }
                         }
                     }
+                } label: {
+                    Image(systemName: appearanceIcon)
+                        .font(.system(size: 11))
+                        .frame(width: 20, height: 20)
                 }
-            } label: {
-                Image(systemName: appearanceIcon)
-                    .font(.system(size: 11))
-                    .frame(width: 20, height: 20)
-            }
-            .buttonStyle(.plain)
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+                .buttonStyle(.plain)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
 
-            // Profile
-            Menu {
-                Button("Default Profile") {}
-                Divider()
-                Button("Manage Profiles...") {}
-            } label: {
-                Image(systemName: "person.circle")
-                    .font(.system(size: 11))
-                    .frame(width: 20, height: 20)
-            }
-            .buttonStyle(.plain)
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+                Menu {
+                    Button("Default Profile") {}
+                    Divider()
+                    Button("Manage Profiles...") {}
+                } label: {
+                    Image(systemName: "person.circle")
+                        .font(.system(size: 11))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
 
-            // Dev Tools
-            Button {
-                state.showDevTools.toggle()
-                state.needsInspectorToggle = true
-            } label: {
-                Image(systemName: "hammer")
-                    .font(.system(size: 11))
-                    .frame(width: 20, height: 20)
-                    .foregroundStyle(state.showDevTools ? Color.accentColor : .secondary)
+                Button {
+                    state.showDevTools.toggle()
+                    state.needsInspectorToggle = true
+                } label: {
+                    Image(systemName: "hammer")
+                        .font(.system(size: 11))
+                        .frame(width: 20, height: 20)
+                        .foregroundStyle(state.showDevTools ? Color.accentColor : .secondary)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)

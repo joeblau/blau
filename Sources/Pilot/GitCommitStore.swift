@@ -36,7 +36,14 @@ final class GitCommitStore {
     private var refreshTimer: Timer?
 
     func startWatching(directory: String) {
+        if repoPath == directory {
+            fetchAll()
+            return
+        }
+
         repoPath = directory
+        commits = []
+        runs = []
         fetchAll()
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
@@ -49,6 +56,10 @@ final class GitCommitStore {
     func stopWatching() {
         refreshTimer?.invalidate()
         refreshTimer = nil
+        repoPath = ""
+        commits = []
+        runs = []
+        isLoading = false
     }
 
     func fetchAll() {
@@ -88,7 +99,10 @@ final class GitCommitStore {
                     return GitCommit(id: parts[1], fullSHA: parts[0], message: parts[2], author: parts[3], date: parts[4])
                 }
 
-                let statusResult = shellRun("gh", args: ["run", "list", "--limit", "10", "--json", "headSha,status,conclusion"], in: directory)
+                let statusResult = shellRun("gh", args: [
+                    "run", "list", "--limit", "5",
+                    "--json", "headSha,status,conclusion,displayTitle"
+                ], in: directory)
                 var statusMap: [String: GitCommit.CIStatus] = [:]
                 if let data = statusResult.data(using: .utf8),
                    let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {

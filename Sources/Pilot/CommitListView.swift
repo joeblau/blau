@@ -31,7 +31,7 @@ struct RoundedSegmentedPicker: NSViewRepresentable {
             self.selection = selection
         }
 
-        @objc func selectionChanged(_ sender: NSSegmentedControl) {
+        @MainActor @objc func selectionChanged(_ sender: NSSegmentedControl) {
             let index = sender.selectedSegment
             if index >= 0, index < InspectorTab.allCases.count {
                 selection.wrappedValue = InspectorTab.allCases[index]
@@ -75,7 +75,7 @@ struct CommitListView: View {
         if store.commits.isEmpty && !store.isLoading {
             ContentUnavailableView("No Commits",
                                    systemImage: "clock.arrow.circlepath",
-                                   description: Text("Select a terminal in a git repo."))
+                                   description: Text("Select an active terminal in a git repo."))
         } else {
             List(store.commits) { commit in
                 commitRow(commit)

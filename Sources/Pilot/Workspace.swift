@@ -6,13 +6,20 @@ enum PaneKind: String, CaseIterable {
 }
 
 @Observable
+final class TerminalPaneState {
+    var currentDirectory: String = ""
+}
+
+@Observable
 final class Pane: Identifiable {
     let id: UUID
     var kind: PaneKind
+    let terminalState: TerminalPaneState
 
     init(kind: PaneKind = .terminal) {
         self.id = UUID()
         self.kind = kind
+        self.terminalState = TerminalPaneState()
     }
 }
 
@@ -28,6 +35,10 @@ final class Workspace: Identifiable {
     var panes: [Pane]
     var selectedPaneID: UUID?
     var axis: PaneAxis = .vertical
+
+    var selectedPane: Pane? {
+        panes.first { $0.id == selectedPaneID }
+    }
 
     init(name: String) {
         self.id = UUID()

@@ -6,6 +6,8 @@ struct ContentView: View {
     @State private var gitStore = GitCommitStore()
 
     var body: some View {
+        let activeInspectorRepoPath = selectedTerminalRepoPath
+
         NavigationSplitView {
             List(store.workspaces, selection: $store.selectedWorkspaceID) { workspace in
                 TextField("Name", text: Bindable(workspace).name)
@@ -31,14 +33,14 @@ struct ContentView: View {
         }
         .onChange(of: showInspector) {
             if showInspector {
-                // Default to this project's repo
-                let fallback = "/Users/joeblau/Developer/joeblau/src/blau"
-                let home = FileManager.default.homeDirectoryForCurrentUser.path
-                let dir = GitCommitStore.findGitRoot(from: home) ?? fallback
-                gitStore.startWatching(directory: dir)
+                syncInspectorRepo(activeInspectorRepoPath)
             } else {
                 gitStore.stopWatching()
             }
+        }
+        .onChange(of: activeInspectorRepoPath) {
+            guard showInspector else { return }
+            syncInspectorRepo(activeInspectorRepoPath)
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -72,6 +74,25 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private var selectedTerminalRepoPath: String? {
+        guard let pane = store.selectedWorkspace?.selectedPane else { return nil }
+        guard pane.kind == .terminal else { return nil }
+
+        let directory = pane.terminalState.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !directory.isEmpty else { return nil }
+
+        return GitCommitStore.findGitRoot(from: directory)
+    }
+
+    private func syncInspectorRepo(_ repoPath: String?) {
+        guard let repoPath else {
+            gitStore.stopWatching()
+            return
+        }
+
+        gitStore.startWatching(directory: repoPath)
     }
 }
 
