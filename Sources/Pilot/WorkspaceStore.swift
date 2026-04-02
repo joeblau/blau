@@ -33,6 +33,19 @@ final class WorkspaceStore {
         if let stored = UserDefaults.standard.string(forKey: "selectedWorkspaceID") {
             self.selectedWorkspaceID = UUID(uuidString: stored)
         }
+        cleanupBadDirectories()
+    }
+
+    private func cleanupBadDirectories() {
+        let home = NSHomeDirectory()
+        let descriptor = FetchDescriptor<Pane>()
+        guard let allPanes = try? modelContext.fetch(descriptor) else { return }
+        for pane in allPanes {
+            let dir = pane.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+            if dir == "/" || dir == home {
+                pane.currentDirectory = ""
+            }
+        }
     }
 
     func addWorkspace() {

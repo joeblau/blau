@@ -6,11 +6,6 @@ enum PaneKind: String, Codable, CaseIterable {
     case browser
 }
 
-@Observable
-final class TerminalPaneState {
-    var currentDirectory: String = ""
-}
-
 enum AppearanceMode: String, Codable, CaseIterable {
     case system = "System"
     case light = "Light"
@@ -72,26 +67,36 @@ final class Pane {
     var id: UUID = UUID()
     var kindRaw: String = PaneKind.terminal.rawValue
     var sortOrder: Int = 0
+    var currentDirectory: String = ""
 
     @Relationship(deleteRule: .cascade)
     var browserState: BrowserState?
 
     var workspace: Workspace?
 
-    @Transient var terminalState: TerminalPaneState = TerminalPaneState()
-
     var kind: PaneKind {
         get { PaneKind(rawValue: kindRaw) ?? .terminal }
         set { kindRaw = newValue.rawValue }
     }
 
-    init(kind: PaneKind = .terminal, sortOrder: Int = 0) {
+    init(kind: PaneKind = .terminal, sortOrder: Int = 0, currentDirectory: String = "") {
         self.id = UUID()
         self.kindRaw = kind.rawValue
         self.sortOrder = sortOrder
+        self.currentDirectory = currentDirectory
         if kind == .browser {
             self.browserState = BrowserState()
         }
+    }
+
+    func setCurrentDirectory(_ directory: String) {
+        let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        // Don't persist uninteresting directories
+        guard trimmed != "/" && trimmed != NSHomeDirectory() else { return }
+        guard currentDirectory != trimmed else { return }
+        currentDirectory = trimmed
+        try? modelContext?.save()
     }
 }
 
@@ -135,7 +140,11 @@ final class Workspace {
 
     func addPane(kind: PaneKind, side: Side) {
         let maxOrder = panes.map(\.sortOrder).max() ?? -1
-        let pane = Pane(kind: kind, sortOrder: maxOrder + 1)
+        let pane = Pane(
+            kind: kind,
+            sortOrder: maxOrder + 1,
+            currentDirectory: kind == .terminal ? inheritedDirectoryForNewTerminal() : ""
+        )
 
         if let selectedID = selectedPaneID,
            let selectedPane = sortedPanes.first(where: { $0.id == selectedID }),
@@ -173,5 +182,24 @@ final class Workspace {
 
     enum Side {
         case left, right
+    }
+
+    private func inheritedDirectoryForNewTerminal() -> String {
+        if let selectedPaneID,
+           let selectedPane = sortedPanes.first(where: { $0.id == selectedPaneID }),
+           selectedPane.kind == .terminal {
+            let directory = selectedPane.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !directory.isEmpty {
+                return directory
+            }
+        }
+
+        if let existingTerminal = sortedPanes.first(where: {
+            $0.kind == .terminal && !$0.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) {
+            return existingTerminal.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return ""
     }
 }

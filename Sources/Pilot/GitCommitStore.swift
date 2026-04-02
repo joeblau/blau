@@ -13,6 +13,16 @@ struct GitCommit: Identifiable {
     }
 }
 
+struct GitAction: Identifiable {
+    let id: UUID = UUID()
+    let name: String
+    let displayTitle: String
+    let headBranch: String
+    let headSha: String
+    let status: String
+    let conclusion: String
+}
+
 struct GitRun: Identifiable {
     let id: Int
     let name: String
@@ -30,6 +40,7 @@ struct GitRun: Identifiable {
 @Observable
 final class GitCommitStore {
     var commits: [GitCommit] = []
+    var actions: [GitAction] = []
     var runs: [GitRun] = []
     var repoPath: String = ""
     var isLoading = false
@@ -43,6 +54,7 @@ final class GitCommitStore {
 
         repoPath = directory
         commits = []
+        actions = []
         runs = []
         fetchAll()
         refreshTimer?.invalidate()
@@ -58,12 +70,14 @@ final class GitCommitStore {
         refreshTimer = nil
         repoPath = ""
         commits = []
+        actions = []
         runs = []
         isLoading = false
     }
 
     func fetchAll() {
         fetchCommits()
+        fetchActions()
         fetchRuns()
     }
 
@@ -76,6 +90,16 @@ final class GitCommitStore {
             let result = await Self.fetchGitData(directory: dir)
             self.commits = result
             self.isLoading = false
+        }
+    }
+
+    func fetchActions() {
+        guard !repoPath.isEmpty else { return }
+        let dir = repoPath
+
+        Task {
+            let result = await Self.fetchActionsData(directory: dir)
+            self.actions = result
         }
     }
 
@@ -125,6 +149,33 @@ final class GitCommitStore {
                     parsed[i].ciStatus = statusMap[parsed[i].id] ?? .unknown
                 }
                 continuation.resume(returning: parsed)
+            }
+        }
+    }
+
+    private nonisolated static func fetchActionsData(directory: String) async -> [GitAction] {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = shellRun("gh", args: [
+                    "run", "list", "--limit", "10",
+                    "--json", "status,conclusion,displayTitle,headBranch,headSha,name"
+                ], in: directory)
+
+                var actions: [GitAction] = []
+                if let data = result.data(using: .utf8),
+                   let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                    for item in items {
+                        actions.append(GitAction(
+                            name: item["name"] as? String ?? "",
+                            displayTitle: item["displayTitle"] as? String ?? "",
+                            headBranch: item["headBranch"] as? String ?? "",
+                            headSha: item["headSha"] as? String ?? "",
+                            status: item["status"] as? String ?? "",
+                            conclusion: item["conclusion"] as? String ?? ""
+                        ))
+                    }
+                }
+                continuation.resume(returning: actions)
             }
         }
     }

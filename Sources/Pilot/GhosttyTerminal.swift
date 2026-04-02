@@ -48,8 +48,17 @@ final class GhosttyRuntime: @unchecked Sendable {
             action_cb: { app, target, action in
                 return GhosttyRuntime.handleAction(app, target: target, action: action)
             },
-            read_clipboard_cb: { _, _, _ in false },
-            confirm_read_clipboard_cb: { _, _, _, _ in },
+            read_clipboard_cb: { userdata, loc, state in
+                return GhosttyRuntime.readClipboard(userdata, location: loc, state: state)
+            },
+            confirm_read_clipboard_cb: { userdata, str, state, request in
+                GhosttyRuntime.confirmReadClipboard(
+                    userdata,
+                    string: str,
+                    state: state,
+                    request: request
+                )
+            },
             write_clipboard_cb: { _, loc, content, len, _ in
                 guard let content, len > 0 else { return }
                 guard let dataPtr = content.pointee.data else { return }
@@ -67,6 +76,58 @@ final class GhosttyRuntime: @unchecked Sendable {
     func tick() {
         guard let app else { return }
         ghostty_app_tick(app)
+    }
+
+    private static func readClipboard(
+        _ userdata: UnsafeMutableRawPointer?,
+        location: ghostty_clipboard_e,
+        state: UnsafeMutableRawPointer?
+    ) -> Bool {
+        guard location == GHOSTTY_CLIPBOARD_STANDARD else { return false }
+        guard let surface = surface(from: userdata) else { return false }
+
+        let pasteString: String? = if Thread.isMainThread {
+            NSPasteboard.general.string(forType: .string)
+        } else {
+            DispatchQueue.main.sync {
+                NSPasteboard.general.string(forType: .string)
+            }
+        }
+
+        guard let pasteString, !pasteString.isEmpty else { return false }
+        completeClipboardRequest(surface: surface, string: pasteString, state: state)
+        return true
+    }
+
+    private static func confirmReadClipboard(
+        _ userdata: UnsafeMutableRawPointer?,
+        string: UnsafePointer<CChar>?,
+        state: UnsafeMutableRawPointer?,
+        request: ghostty_clipboard_request_e
+    ) {
+        guard request == GHOSTTY_CLIPBOARD_REQUEST_PASTE else { return }
+        guard let surface = surface(from: userdata) else { return }
+        guard let string else { return }
+
+        let pasteString = String(cString: string)
+        completeClipboardRequest(surface: surface, string: pasteString, state: state, confirmed: true)
+    }
+
+    private static func completeClipboardRequest(
+        surface: ghostty_surface_t,
+        string: String,
+        state: UnsafeMutableRawPointer?,
+        confirmed: Bool = false
+    ) {
+        string.withCString { cString in
+            ghostty_surface_complete_clipboard_request(surface, cString, state, confirmed)
+        }
+    }
+
+    private static func surface(from userdata: UnsafeMutableRawPointer?) -> ghostty_surface_t? {
+        guard let userdata else { return nil }
+        let view = Unmanaged<GhosttyMetalView>.fromOpaque(userdata).takeUnretainedValue()
+        return view.callbackSurface
     }
 
     private static func handleAction(_ app: ghostty_app_t?, target: ghostty_target_s, action: ghostty_action_s) -> Bool {
@@ -130,9 +191,11 @@ final class GhosttyRuntime: @unchecked Sendable {
 @MainActor
 class GhosttyMetalView: NSView, CALayerDelegate {
     var surface: ghostty_surface_t?
+    nonisolated(unsafe) fileprivate var callbackSurface: ghostty_surface_t?
     private var renderObserver: NSObjectProtocol?
     private var trackingArea: NSTrackingArea?
     private let pane: Pane
+    private var cwdPollTimer: Timer?
 
     init(app: ghostty_app_t, pane: Pane) {
         self.pane = pane
@@ -140,18 +203,19 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         wantsLayer = true
 
         // Create the surface - Ghostty will set up Metal on the layer itself
-        var surfaceCfg = ghostty_surface_config_new()
-        surfaceCfg.userdata = Unmanaged.passUnretained(self).toOpaque()
-        surfaceCfg.platform_tag = GHOSTTY_PLATFORM_MACOS
-        surfaceCfg.platform = ghostty_platform_u(
-            macos: ghostty_platform_macos_s(
-                nsview: Unmanaged.passUnretained(self).toOpaque()
-            )
+        let rawDirectory = pane.currentDirectory
+        let persistedDirectory = Self.validWorkingDirectory(from: rawDirectory)
+        print("[Ghostty] Pane \(pane.id): rawDirectory='\(rawDirectory)' persistedDirectory='\(persistedDirectory ?? "nil")'")
+        let surface = Self.makeSurface(
+            app: app,
+            view: self,
+            workingDirectory: persistedDirectory,
+            initialInput: nil
         )
-        surfaceCfg.scale_factor = Double(NSScreen.main?.backingScaleFactor ?? 2.0)
 
-        guard let surface = ghostty_surface_new(app, &surfaceCfg) else { return }
+        guard let surface else { return }
         self.surface = surface
+        self.callbackSurface = surface
 
         // Listen for render notifications
         renderObserver = NotificationCenter.default.addObserver(
@@ -171,6 +235,13 @@ class GhosttyMetalView: NSView, CALayerDelegate {
             name: .ghosttyWorkingDirectoryDidChange,
             object: nil
         )
+
+        // Poll child process cwd as fallback for shells without OSC 7
+        cwdPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.pollChildCwd()
+            }
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -180,6 +251,8 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     }
 
     override func removeFromSuperview() {
+        cwdPollTimer?.invalidate()
+        cwdPollTimer = nil
         if let renderObserver {
             NotificationCenter.default.removeObserver(renderObserver)
             self.renderObserver = nil
@@ -188,6 +261,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         if let surface {
             ghostty_surface_free(surface)
             self.surface = nil
+            self.callbackSurface = nil
         }
         super.removeFromSuperview()
     }
@@ -312,8 +386,18 @@ class GhosttyMetalView: NSView, CALayerDelegate {
             return false
         }
 
+        // Cmd+V: paste from clipboard
+        if event.modifierFlags.contains(.command),
+           event.charactersIgnoringModifiers?.lowercased() == "v" {
+            return performPasteFromClipboard()
+        }
+
         keyDown(with: event)
         return true
+    }
+
+    @objc func paste(_ sender: Any?) {
+        _ = performPasteFromClipboard()
     }
 
     override func flagsChanged(with event: NSEvent) {
@@ -395,6 +479,12 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         return (Double(pt.x), Double(bounds.height - pt.y))
     }
 
+    private func performPasteFromClipboard() -> Bool {
+        guard let surface else { return false }
+        let action = "paste_from_clipboard"
+        return ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+    }
+
     private func mods(_ event: NSEvent) -> ghostty_input_mods_e {
         ghosttyMods(event.modifierFlags)
     }
@@ -424,13 +514,126 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         return ghostty_surface_key(surface, key)
     }
 
+    private func pollChildCwd() {
+        guard isSingleTerminalInWorkspace else { return }
+        Task.detached { [weak self] in
+            guard let self else { return }
+            let pid = ProcessInfo.processInfo.processIdentifier
+            let cwds = Self.findChildShellCwds(parentPID: pid)
+            await MainActor.run {
+                // Find the best cwd for this pane. If we only have one terminal,
+                // use any child cwd. If multiple, use the last one (most recent shell).
+                guard let cwd = cwds.last, !cwd.isEmpty else { return }
+                self.pane.setCurrentDirectory(cwd)
+            }
+        }
+    }
+
+    private nonisolated static func findChildShellCwds(parentPID: Int32) -> [String] {
+        // Ghostty spawns shells via login which double-forks (ppid becomes 1).
+        // We find all user's zsh/bash processes and get their cwds,
+        // filtering out uninteresting directories (/, ~).
+        let home = NSHomeDirectory()
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", """
+            for pid in $(pgrep -u "$(whoami)" -x zsh 2>/dev/null; pgrep -u "$(whoami)" -x bash 2>/dev/null); do
+                cwd=$(lsof -p "$pid" -a -d cwd -Fn 2>/dev/null | grep '^n/' | cut -c2-)
+                if [ -n "$cwd" ] && [ "$cwd" != "/" ] && [ "$cwd" != "\(home)" ]; then
+                    echo "$cwd"
+                fi
+            done
+            """]
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return []
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return output.components(separatedBy: "\n").filter { !$0.isEmpty }
+    }
+
     @objc
     private func handleWorkingDirectoryDidChange(_ notification: Notification) {
         guard let changedSurfaceID = notification.userInfo?["surfaceID"] as? UInt else { return }
         guard let surface else { return }
         guard changedSurfaceID == UInt(bitPattern: surface) else { return }
         guard let pwd = notification.userInfo?["pwd"] as? String else { return }
-        pane.terminalState.currentDirectory = pwd
+        pane.setCurrentDirectory(pwd)
+    }
+
+    private nonisolated static func validWorkingDirectory(from directory: String) -> String? {
+        let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let expandedDirectory = NSString(string: trimmed).expandingTildeInPath
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: expandedDirectory, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            return nil
+        }
+
+        return expandedDirectory
+    }
+
+    private var isSingleTerminalInWorkspace: Bool {
+        guard let workspace = pane.workspace else { return true }
+        return workspace.panes.filter { $0.kind == .terminal }.count <= 1
+    }
+
+    private nonisolated static func restoreCommand(for directory: String) -> String {
+        "cd -- \(shellEscape(directory))\n"
+    }
+
+    private nonisolated static func shellEscape(_ string: String) -> String {
+        "'" + string.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+    }
+
+    private nonisolated static func makeSurface(
+        app: ghostty_app_t,
+        view: GhosttyMetalView,
+        workingDirectory: String?,
+        initialInput: String?
+    ) -> ghostty_surface_t? {
+        func build(_ directory: UnsafePointer<CChar>?, _ input: UnsafePointer<CChar>?) -> ghostty_surface_t? {
+            var surfaceCfg = ghostty_surface_config_new()
+            surfaceCfg.userdata = Unmanaged.passUnretained(view).toOpaque()
+            surfaceCfg.platform_tag = GHOSTTY_PLATFORM_MACOS
+            surfaceCfg.platform = ghostty_platform_u(
+                macos: ghostty_platform_macos_s(
+                    nsview: Unmanaged.passUnretained(view).toOpaque()
+                )
+            )
+            surfaceCfg.scale_factor = Double(NSScreen.main?.backingScaleFactor ?? 2.0)
+            surfaceCfg.working_directory = directory
+            surfaceCfg.initial_input = input
+            return ghostty_surface_new(app, &surfaceCfg)
+        }
+
+        if let workingDirectory {
+            return workingDirectory.withCString { directoryPtr in
+                if let initialInput {
+                    return initialInput.withCString { inputPtr in
+                        build(directoryPtr, inputPtr)
+                    }
+                }
+
+                return build(directoryPtr, nil)
+            }
+        }
+
+        if let initialInput {
+            return initialInput.withCString { inputPtr in
+                build(nil, inputPtr)
+            }
+        }
+
+        return build(nil, nil)
     }
 }
 

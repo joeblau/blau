@@ -41,21 +41,21 @@ struct RoundedSegmentedPicker: NSViewRepresentable {
 }
 
 enum InspectorTab: String, CaseIterable {
+    case actions = "Actions"
     case commits = "Commits"
-    case runs = "Runs"
 }
 
 struct InspectorPanelView: View {
     let gitStore: GitCommitStore
-    @State private var selectedTab: InspectorTab = .commits
+    @State private var selectedTab: InspectorTab = .actions
 
     var body: some View {
         VStack(spacing: 0) {
             switch selectedTab {
+            case .actions:
+                ActionsListView(store: gitStore)
             case .commits:
                 CommitListView(store: gitStore)
-            case .runs:
-                RunsListView(store: gitStore)
             }
         }
         .toolbar {
@@ -138,78 +138,84 @@ struct CommitListView: View {
     }
 }
 
-// MARK: - Runs (remote CI from gh)
+// MARK: - Actions (GitHub Actions workflow runs)
 
-struct RunsListView: View {
+struct ActionsListView: View {
     let store: GitCommitStore
 
     var body: some View {
-        if store.runs.isEmpty && !store.isLoading {
-            ContentUnavailableView("No Runs",
-                                   systemImage: "server.rack",
-                                   description: Text("No CI runs found."))
+        if store.actions.isEmpty && !store.isLoading {
+            ContentUnavailableView("No Actions",
+                                   systemImage: "gearshape.2",
+                                   description: Text("Select an active terminal in a GitHub repo."))
         } else {
-            List(store.runs) { run in
-                runRow(run)
+            List(store.actions) { action in
+                actionRow(action)
                     .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
             }
             .listStyle(.plain)
         }
     }
 
-    private func runRow(_ run: GitRun) -> some View {
+    private func actionRow(_ action: GitAction) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            runStatusIcon(run.status)
+            actionStatusIcon(action.conclusion, status: action.status)
                 .frame(width: 14)
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(run.name)
+                Text(action.displayTitle)
                     .font(.system(size: 11))
-                    .lineLimit(1)
-
-                Text(run.title)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
                     .lineLimit(2)
 
                 HStack(spacing: 4) {
-                    Text(run.branch)
-                        .font(.system(size: 10, design: .monospaced))
+                    Text(action.name)
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
                     Text("·")
                         .foregroundStyle(.quaternary)
-                    Text(run.elapsed)
-                        .font(.system(size: 10))
+                    Text(action.headBranch)
+                        .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
+
+                Text(String(action.headSha.prefix(7)))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
             }
         }
     }
 
     @ViewBuilder
-    private func runStatusIcon(_ status: GitRun.Status) -> some View {
-        switch status {
-        case .success:
+    private func actionStatusIcon(_ conclusion: String, status: String) -> some View {
+        switch conclusion {
+        case "success":
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 12))
                 .foregroundStyle(.green)
-        case .failure:
+        case "failure":
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 12))
                 .foregroundStyle(.red)
-        case .inProgress:
-            Image(systemName: "circle.dotted")
+        case "cancelled":
+            Image(systemName: "slash.circle.fill")
                 .font(.system(size: 12))
-                .foregroundStyle(.orange)
-        case .queued:
-            Image(systemName: "clock.circle")
-                .font(.system(size: 12))
-                .foregroundStyle(.yellow)
-        case .unknown:
-            Image(systemName: "circle")
-                .font(.system(size: 12))
-                .foregroundStyle(.quaternary)
+                .foregroundStyle(.secondary)
+        default:
+            switch status {
+            case "in_progress":
+                Image(systemName: "circle.dotted")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.orange)
+            case "queued", "waiting", "pending":
+                Image(systemName: "clock.circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.yellow)
+            default:
+                Image(systemName: "circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.quaternary)
+            }
         }
     }
 }

@@ -49,14 +49,12 @@ struct ContentView: View {
                 .inspectorColumnWidth(min: 220, ideal: 280, max: 400)
         }
         .onChange(of: showInspector) {
-            if showInspector {
-                syncInspectorRepo(activeInspectorRepoPath)
-            } else {
-                gitStore.stopWatching()
-            }
+            syncInspectorRepo(activeInspectorRepoPath)
         }
         .onChange(of: activeInspectorRepoPath) {
-            guard showInspector else { return }
+            syncInspectorRepo(activeInspectorRepoPath)
+        }
+        .task {
             syncInspectorRepo(activeInspectorRepoPath)
         }
         .toolbar {
@@ -174,7 +172,7 @@ struct ContentView: View {
         guard let pane = store.selectedWorkspace?.selectedPane else { return nil }
         guard pane.kind == .terminal else { return nil }
 
-        let directory = pane.terminalState.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        let directory = pane.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !directory.isEmpty else { return nil }
 
         return GitCommitStore.findGitRoot(from: directory)
