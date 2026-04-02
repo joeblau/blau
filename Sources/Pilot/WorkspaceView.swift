@@ -19,14 +19,15 @@ struct WorkspaceView: View {
     // MARK: - Tab Bar
 
     private var tabBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(workspace.panes) { pane in
-                    tabItem(pane)
+        HStack(spacing: 0) {
+            ForEach(workspace.panes) { pane in
+                tabItem(pane)
+                if pane.id != workspace.panes.last?.id {
+                    Divider().frame(height: 20)
                 }
             }
         }
-        .frame(height: 30)
+        .frame(height: 30, alignment: .center)
         .background(.bar)
     }
 
@@ -52,6 +53,7 @@ struct WorkspaceView: View {
             }
         }
         .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
         .frame(height: 30)
         .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
         .overlay(alignment: .bottom) {
@@ -104,36 +106,16 @@ struct WorkspaceView: View {
     private var paneToolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             Button {
-                workspace.axis = workspace.axis == .vertical ? .horizontal : .vertical
+                workspace.addPane(kind: .terminal, side: .right)
             } label: {
-                Label("Toggle Layout",
-                      systemImage: workspace.axis == .vertical
-                          ? "rectangle.split.1x2"
-                          : "rectangle.split.2x1")
+                Label("New Terminal", systemImage: "terminal")
             }
         }
         ToolbarItem(placement: .primaryAction) {
-            let beforeLabel = workspace.axis == .vertical ? "Add Left" : "Add Above"
-            let afterLabel = workspace.axis == .vertical ? "Add Right" : "Add Below"
-            Menu {
-                Section(beforeLabel) {
-                    Button("Terminal", systemImage: "terminal") {
-                        workspace.addPane(kind: .terminal, side: .left)
-                    }
-                    Button("Browser", systemImage: "safari") {
-                        workspace.addPane(kind: .browser, side: .left)
-                    }
-                }
-                Section(afterLabel) {
-                    Button("Terminal", systemImage: "terminal") {
-                        workspace.addPane(kind: .terminal, side: .right)
-                    }
-                    Button("Browser", systemImage: "safari") {
-                        workspace.addPane(kind: .browser, side: .right)
-                    }
-                }
+            Button {
+                workspace.addPane(kind: .browser, side: .right)
             } label: {
-                Label("Add Pane", systemImage: "plus.rectangle")
+                Label("New Browser", systemImage: "safari")
             }
         }
     }
