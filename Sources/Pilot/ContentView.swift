@@ -113,8 +113,11 @@ struct ContentView: View {
 
         TextField("URL", text: Bindable(state).urlText)
             .textFieldStyle(.plain)
+            .font(.system(size: 13, weight: .medium))
             .onSubmit { state.navigate() }
-            .frame(minWidth: 200, idealWidth: 400)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .frame(minWidth: 240, idealWidth: 420, maxWidth: 560)
 
         Button {
             if state.isLoading {
