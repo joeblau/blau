@@ -49,26 +49,22 @@ struct ContentView: View {
                     Label("New Workspace", systemImage: "plus")
                 }
             }
-            ToolbarItem(placement: .secondaryAction) {
-                HStack(spacing: 0) {
-                    Spacer()
+            ToolbarItemGroup(placement: .primaryAction) {
+                ControlGroup {
                     Button {
                         store.selectedWorkspace?.addPane(kind: .terminal, side: .right)
                     } label: {
                         Label("New Terminal", systemImage: "terminal")
                     }
-                    .disabled(store.selectedWorkspace == nil)
 
                     Button {
                         store.selectedWorkspace?.addPane(kind: .browser, side: .right)
                     } label: {
                         Label("New Browser", systemImage: "safari")
                     }
-                    .disabled(store.selectedWorkspace == nil)
                 }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                
+                .disabled(store.selectedWorkspace == nil)
+
                 Button {
                     showInspector.toggle()
                 } label: {
