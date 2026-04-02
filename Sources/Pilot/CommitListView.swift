@@ -1,4 +1,44 @@
+import AppKit
 import SwiftUI
+
+struct RoundedSegmentedPicker: NSViewRepresentable {
+    @Binding var selection: InspectorTab
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let segmentedControl = NSSegmentedControl(
+            labels: InspectorTab.allCases.map(\.rawValue),
+            trackingMode: .selectOne,
+            target: context.coordinator,
+            action: #selector(Coordinator.selectionChanged(_:))
+        )
+        segmentedControl.segmentStyle = .rounded
+        segmentedControl.selectedSegment = InspectorTab.allCases.firstIndex(of: selection) ?? 0
+        return segmentedControl
+    }
+
+    func updateNSView(_ nsView: NSSegmentedControl, context: Context) {
+        nsView.selectedSegment = InspectorTab.allCases.firstIndex(of: selection) ?? 0
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selection: $selection)
+    }
+
+    class Coordinator: NSObject {
+        var selection: Binding<InspectorTab>
+
+        init(selection: Binding<InspectorTab>) {
+            self.selection = selection
+        }
+
+        @objc func selectionChanged(_ sender: NSSegmentedControl) {
+            let index = sender.selectedSegment
+            if index >= 0, index < InspectorTab.allCases.count {
+                selection.wrappedValue = InspectorTab.allCases[index]
+            }
+        }
+    }
+}
 
 enum InspectorTab: String, CaseIterable {
     case commits = "Commits"
@@ -11,21 +51,16 @@ struct InspectorPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $selectedTab) {
-                ForEach(InspectorTab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(8)
-
-            Divider()
-
             switch selectedTab {
             case .commits:
                 CommitListView(store: gitStore)
             case .runs:
                 RunsListView(store: gitStore)
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                RoundedSegmentedPicker(selection: $selectedTab)
             }
         }
     }

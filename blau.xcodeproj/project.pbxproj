@@ -3,18 +3,21 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 54;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 132CB022A0BDFF0DE96316EF /* ContentView.swift */; };
 		1F253D4F3DCD296F823A2E74 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7D00A3F70E212149A88CCD63 /* Assets.xcassets */; };
+		4BF7276892BD5F1F7E405130 /* VolumeScrollListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C985F86115A698849ED108 /* VolumeScrollListView.swift */; };
 		5A01C1F25324B7BD662C6A6F /* WingmanApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A70CFB55F5EB044D3ED5C3F /* WingmanApp.swift */; };
 		61F220E0506458F5A49CEDE8 /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */; };
 		6215B9C6DFBF73DB93072BD2 /* InspectorHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B068834105F375479ADF423 /* InspectorHelper.swift */; };
+		72A25CCED00C4DA32999DC63 /* GhosttyTerminal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A7E1AE9E717B53A369709B /* GhosttyTerminal.swift */; };
 		75A366911772F72DFFF5B2E1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 158C2018D7407AF1E5F146CB /* Assets.xcassets */; };
-		77B72900D09DBEF8FB2ED47E /* Wingman.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 89D37D60DA58FCD2D67F65ED /* Wingman.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		77B72900D09DBEF8FB2ED47E /* Wingman Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7C8C2A101382F27189DA38D6 /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */; };
+		870295EC4EDA044F54CE9E6D /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0057932203C8B246C76D50DC /* GhosttyKit.xcframework */; };
 		A755A8C5DCFF1165E408136A /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3448A85CDA9475511475C2 /* Workspace.swift */; };
 		B50B053F283AA448A9ACDB56 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26E21596BD1590738CF89498 /* ContentView.swift */; };
 		C0B083B9A7F2E253F890ABC0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32D547158D65899195FA3359 /* Assets.xcassets */; };
@@ -22,7 +25,6 @@
 		CB797869A7D03477CAC989A2 /* CommitListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B028DA279E32AB30A1A75942 /* CommitListView.swift */; };
 		CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F684D74A8F12B03954CC49B3 /* PilotApp.swift */; };
 		D0614091089D4F0F461285ED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1D8AC628F3F55D563872C7 /* ContentView.swift */; };
-		F2F8EB46FFF76269E37F2F2D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 26FC714F1F3BBBC689A91472 /* SwiftTerm */; };
 		F797C21E5A72C28BD91D6073 /* GitCommitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */; };
 /* End PBXBuildFile section */
 
@@ -43,7 +45,7 @@
 			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
 			dstSubfolderSpec = 16;
 			files = (
-				77B72900D09DBEF8FB2ED47E /* Wingman.app in Embed Watch Content */,
+				77B72900D09DBEF8FB2ED47E /* Wingman Watch App.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -51,6 +53,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0057932203C8B246C76D50DC /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = GhosttyKit.xcframework; sourceTree = "<group>"; };
 		132CB022A0BDFF0DE96316EF /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		158C2018D7407AF1E5F146CB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1B3448A85CDA9475511475C2 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
@@ -60,15 +63,17 @@
 		32D547158D65899195FA3359 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5B068834105F375479ADF423 /* InspectorHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorHelper.swift; sourceTree = "<group>"; };
 		6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotApp.swift; sourceTree = "<group>"; };
+		71A7E1AE9E717B53A369709B /* GhosttyTerminal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminal.swift; sourceTree = "<group>"; };
 		7A70CFB55F5EB044D3ED5C3F /* WingmanApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WingmanApp.swift; sourceTree = "<group>"; };
 		7D00A3F70E212149A88CCD63 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStore.swift; sourceTree = "<group>"; };
-		89D37D60DA58FCD2D67F65ED /* Wingman.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Wingman.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Wingman Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B4486B0848D4DDEE5E23D18 /* Pilot.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Pilot.entitlements; sourceTree = "<group>"; };
+		A1C985F86115A698849ED108 /* VolumeScrollListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeScrollListView.swift; sourceTree = "<group>"; };
 		AA1D8AC628F3F55D563872C7 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B028DA279E32AB30A1A75942 /* CommitListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitListView.swift; sourceTree = "<group>"; };
 		DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitCommitStore.swift; sourceTree = "<group>"; };
-		F430B621891B5DED12E1CF39 /* Copilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Copilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F430B621891B5DED12E1CF39 /* Copilot.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Copilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F684D74A8F12B03954CC49B3 /* PilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PilotApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -77,13 +82,21 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F2F8EB46FFF76269E37F2F2D /* SwiftTerm in Frameworks */,
+				870295EC4EDA044F54CE9E6D /* GhosttyKit.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		41CFAF10066345B5C90B9AAC /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				0057932203C8B246C76D50DC /* GhosttyKit.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		488AE8285CB6D6627B1BCABE /* Wingman Watch App */ = {
 			isa = PBXGroup;
 			children = (
@@ -101,6 +114,7 @@
 				158C2018D7407AF1E5F146CB /* Assets.xcassets */,
 				AA1D8AC628F3F55D563872C7 /* ContentView.swift */,
 				6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */,
+				A1C985F86115A698849ED108 /* VolumeScrollListView.swift */,
 			);
 			name = Copilot;
 			path = Sources/Copilot;
@@ -112,6 +126,7 @@
 				7D00A3F70E212149A88CCD63 /* Assets.xcassets */,
 				B028DA279E32AB30A1A75942 /* CommitListView.swift */,
 				132CB022A0BDFF0DE96316EF /* ContentView.swift */,
+				71A7E1AE9E717B53A369709B /* GhosttyTerminal.swift */,
 				DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */,
 				5B068834105F375479ADF423 /* InspectorHelper.swift */,
 				8B4486B0848D4DDEE5E23D18 /* Pilot.entitlements */,
@@ -130,6 +145,7 @@
 				68A6AFD0CF88B5D0D03A00E1 /* Copilot */,
 				DE30D289D5BAF3D3994A8791 /* Pilot */,
 				488AE8285CB6D6627B1BCABE /* Wingman Watch App */,
+				41CFAF10066345B5C90B9AAC /* Frameworks */,
 				F8B4DA7DF1CF626E57F97CC4 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -139,7 +155,7 @@
 			children = (
 				F430B621891B5DED12E1CF39 /* Copilot.app */,
 				1C98BD914066A308C6C6C1C9 /* Pilot.app */,
-				89D37D60DA58FCD2D67F65ED /* Wingman.app */,
+				89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -178,9 +194,6 @@
 			dependencies = (
 			);
 			name = Pilot;
-			packageProductDependencies = (
-				26FC714F1F3BBBC689A91472 /* SwiftTerm */,
-			);
 			productName = Pilot;
 			productReference = 1C98BD914066A308C6C6C1C9 /* Pilot.app */;
 			productType = "com.apple.product-type.application";
@@ -198,7 +211,7 @@
 			);
 			name = "Wingman Watch App";
 			productName = "Wingman Watch App";
-			productReference = 89D37D60DA58FCD2D67F65ED /* Wingman.app */;
+			productReference = 89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -209,6 +222,17 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					1FB5B4A55B06C22A02EB122A = {
+						DevelopmentTeam = K78G42H4U2;
+					};
+					474C5A4305C5C5138E36D5C1 = {
+						DevelopmentTeam = K78G42H4U2;
+					};
+					79C8ECE1F0D9D02EDE7D57AC = {
+						DevelopmentTeam = K78G42H4U2;
+					};
+				};
 			};
 			buildConfigurationList = 74ADF296704D0196519381CD /* Build configuration list for PBXProject "blau" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -219,9 +243,6 @@
 				en,
 			);
 			mainGroup = F636F1A41A2EA0642253731E;
-			packageReferences = (
-				65E3B7253AFDE5F35B7C93CA /* XCRemoteSwiftPackageReference "SwiftTerm" */,
-			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -266,6 +287,7 @@
 			files = (
 				D0614091089D4F0F461285ED /* ContentView.swift in Sources */,
 				C9B227630199C8E1705AE8DC /* CopilotApp.swift in Sources */,
+				4BF7276892BD5F1F7E405130 /* VolumeScrollListView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -284,6 +306,7 @@
 			files = (
 				CB797869A7D03477CAC989A2 /* CommitListView.swift in Sources */,
 				1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */,
+				72A25CCED00C4DA32999DC63 /* GhosttyTerminal.swift in Sources */,
 				F797C21E5A72C28BD91D6073 /* GitCommitStore.swift in Sources */,
 				6215B9C6DFBF73DB93072BD2 /* InspectorHelper.swift in Sources */,
 				CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */,
@@ -311,6 +334,10 @@
 				CODE_SIGN_ENTITLEMENTS = Sources/Pilot/Pilot.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -318,6 +345,29 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = (
+					"-lc++",
+					"-framework",
+					Metal,
+					"-framework",
+					QuartzCore,
+					"-framework",
+					CoreText,
+					"-framework",
+					IOKit,
+					"-framework",
+					CoreGraphics,
+					"-framework",
+					Foundation,
+					"-framework",
+					Carbon,
+					"-framework",
+					CoreFoundation,
+					"-framework",
+					AppKit,
+					"-framework",
+					CoreServices,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot;
 				PRODUCT_NAME = Pilot;
 				SDKROOT = macosx;
@@ -359,6 +409,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = K78G42H4U2;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -394,7 +445,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = K78G42H4U2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = app.blau.copilot;
 				MARKETING_VERSION = 1.0.0;
@@ -412,7 +462,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = K78G42H4U2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -433,7 +482,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = K78G42H4U2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = app.blau.copilot;
 				MARKETING_VERSION = 1.0.0;
@@ -452,6 +500,10 @@
 				CODE_SIGN_ENTITLEMENTS = Sources/Pilot/Pilot.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -459,6 +511,29 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = (
+					"-lc++",
+					"-framework",
+					Metal,
+					"-framework",
+					QuartzCore,
+					"-framework",
+					CoreText,
+					"-framework",
+					IOKit,
+					"-framework",
+					CoreGraphics,
+					"-framework",
+					Foundation,
+					"-framework",
+					Carbon,
+					"-framework",
+					CoreFoundation,
+					"-framework",
+					AppKit,
+					"-framework",
+					CoreServices,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot;
 				PRODUCT_NAME = Pilot;
 				SDKROOT = macosx;
@@ -500,6 +575,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = K78G42H4U2;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -529,7 +605,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = K78G42H4U2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -585,25 +660,6 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		65E3B7253AFDE5F35B7C93CA /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.2.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		26FC714F1F3BBBC689A91472 /* SwiftTerm */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 65E3B7253AFDE5F35B7C93CA /* XCRemoteSwiftPackageReference "SwiftTerm" */;
-			productName = SwiftTerm;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 82D0EC6B4C927437585C0414 /* Project object */;
 }

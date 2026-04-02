@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftTerm
 @preconcurrency import WebKit
 
 struct WorkspaceView: View {
@@ -82,7 +81,11 @@ struct WorkspaceView: View {
         layout {
             ForEach(workspace.panes) { pane in
                 PaneView(pane: pane, isSelected: workspace.selectedPaneID == pane.id)
-                    .onTapGesture { workspace.selectedPaneID = pane.id }
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            workspace.selectedPaneID = pane.id
+                        }
+                    )
                 if pane.id != workspace.panes.last?.id {
                     Divider()
                 }
@@ -139,37 +142,12 @@ struct PaneView: View {
     }
 }
 
-// MARK: - Terminal
+// MARK: - Terminal (Ghostty)
 
-struct TerminalViewRepresentable: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let vibrantContainer = NSVisualEffectView(frame: .zero)
-        vibrantContainer.material = .hudWindow
-        vibrantContainer.blendingMode = .behindWindow
-        vibrantContainer.state = .active
-
-        let terminalView = LocalProcessTerminalView(frame: .zero)
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-
-        terminalView.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-        terminalView.nativeBackgroundColor = .clear
-        terminalView.startProcess(executable: shell, environment: nil, execName: "-" + (shell as NSString).lastPathComponent)
-        terminalView.send(txt: "cd \(home)\r")
-
-        terminalView.translatesAutoresizingMaskIntoConstraints = false
-        vibrantContainer.addSubview(terminalView)
-        NSLayoutConstraint.activate([
-            terminalView.topAnchor.constraint(equalTo: vibrantContainer.topAnchor),
-            terminalView.bottomAnchor.constraint(equalTo: vibrantContainer.bottomAnchor),
-            terminalView.leadingAnchor.constraint(equalTo: vibrantContainer.leadingAnchor),
-            terminalView.trailingAnchor.constraint(equalTo: vibrantContainer.trailingAnchor),
-        ])
-
-        return vibrantContainer
+struct TerminalViewRepresentable: View {
+    var body: some View {
+        GhosttyTerminalView()
     }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 // MARK: - Browser

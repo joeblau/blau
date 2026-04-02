@@ -19,7 +19,6 @@ struct ContentView: View {
                     Spacer()
                     if isHighlighted {
                         Image(systemName: "chevron.right")
-                            .foregroundStyle(.accentColor)
                     }
                 }
                 .padding(.vertical, 4)
