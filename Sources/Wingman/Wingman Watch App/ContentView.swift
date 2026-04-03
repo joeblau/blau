@@ -1,5 +1,24 @@
 import SwiftUI
 import WatchConnectivity
+import OSLog
+
+private let wingmanConnectivityLogger = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "app.blau.wingman",
+    category: "WatchConnectivity"
+)
+
+private struct WingmanDoublePinchPayload: Sendable {
+    let source: String
+    let sentAt: Double
+
+    var dictionary: [String: Any] {
+        [
+            "gesture": "doublePinch",
+            "source": source,
+            "sentAt": sentAt
+        ]
+    }
+}
 
 struct GestureEvent: Identifiable {
     let id = UUID()
@@ -19,7 +38,7 @@ struct ContentView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 gestureDisplay
-                    .frame(height: 80)
+                    .frame(minHeight: 128)
 
                 Divider()
 
@@ -39,14 +58,27 @@ struct ContentView: View {
 
     private var gestureDisplay: some View {
         VStack(spacing: 4) {
-            Image(systemName: currentIcon)
-                .font(.system(size: 28))
-                .foregroundStyle(Color.accentColor)
-                .contentTransition(.symbolEffect(.replace))
+            VStack(spacing: 4) {
+                Image(systemName: currentIcon)
+                    .font(.system(size: 28))
+                    .foregroundStyle(Color.accentColor)
+                    .contentTransition(.symbolEffect(.replace))
 
-            Text(currentGesture)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                Text(currentGesture)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                triggerDoublePinch(source: "button")
+            } label: {
+                Label("Send to Copilot", systemImage: "hand.pinch.fill")
+                    .font(.caption2.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .handGestureShortcut(.primaryAction)
+            .clipShape(Capsule())
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
@@ -77,17 +109,6 @@ struct ContentView: View {
                 let direction = delta > 0 ? "Down" : "Up"
                 record("Crown \(direction)", icon: "digitalcrown.horizontal.arrow.counterclockwise")
             }
-        }
-        .overlay {
-            Button {
-                record("Double Pinch", icon: "hand.pinch")
-                sendGestureToPhone()
-            } label: {
-                Color.clear
-            }
-            .buttonStyle(.plain)
-            .handGestureShortcut(.primaryAction)
-            .allowsHitTesting(false)
         }
     }
 
@@ -127,10 +148,61 @@ struct ContentView: View {
         }
     }
 
-    private func sendGestureToPhone() {
+    private func triggerDoublePinch(source: String) {
+        wingmanConnectivityLogger.info("Double pinch action fired via \(source, privacy: .public)")
+        record("Double Pinch", icon: "hand.pinch")
+        sendGestureToPhone(source: source)
+    }
+
+    private func sendGestureToPhone(source: String) {
         let session = WCSession.default
-        guard session.activationState == .activated else { return }
-        session.sendMessage(["gesture": "doublePinch"], replyHandler: nil) { _ in }
+        let payload = WingmanDoublePinchPayload(
+            source: source,
+            sentAt: Date().timeIntervalSince1970
+        )
+        wingmanConnectivityLogger.info(
+            """
+            Sending double pinch source=\(source, privacy: .public) activation=\(String(describing: session.activationState), privacy: .public) \
+            reachable=\(session.isReachable, privacy: .public) \
+            companionInstalled=\(session.isCompanionAppInstalled, privacy: .public)
+            """
+        )
+        guard session.activationState == .activated else {
+            wingmanConnectivityLogger.error("WCSession not activated. Aborting double pinch send.")
+            return
+        }
+        guard session.isCompanionAppInstalled else {
+            wingmanConnectivityLogger.error("Companion app is not installed on the paired phone.")
+            return
+        }
+
+        if session.isReachable {
+            session.sendMessage(payload.dictionary, replyHandler: { reply in
+                let replyDescription = String(describing: reply)
+                Task { @MainActor in
+                    wingmanConnectivityLogger.info(
+                        "sendMessage reply received: \(replyDescription, privacy: .public)"
+                    )
+                }
+            }) { error in
+                let message = error.localizedDescription
+                Task { @MainActor in
+                    wingmanConnectivityLogger.error(
+                        "sendMessage failed with error: \(message, privacy: .public). Falling back to transferUserInfo."
+                    )
+                    let fallbackSession = WCSession.default
+                    fallbackSession.transferUserInfo(payload.dictionary)
+                    wingmanConnectivityLogger.info(
+                        "Queued transferUserInfo fallback. outstandingTransfers=\(fallbackSession.outstandingUserInfoTransfers.count, privacy: .public)"
+                    )
+                }
+            }
+        } else {
+            session.transferUserInfo(payload.dictionary)
+            wingmanConnectivityLogger.info(
+                "Phone not reachable. Queued transferUserInfo. outstandingTransfers=\(session.outstandingUserInfoTransfers.count, privacy: .public)"
+            )
+        }
     }
 
     private func swipeDirection(_ value: DragGesture.Value) -> String {
