@@ -8,6 +8,8 @@ struct ContentView: View {
     var deviceStatus: DeviceStatus
     @State private var gitStore = GitCommitStore()
     @State private var showInspector = false
+    @State private var transcriptionService = TranscriptionService()
+    @State private var showTranscription = false
     @FocusState private var isBrowserURLFieldFocused: Bool
 
     var body: some View {
@@ -46,26 +48,32 @@ struct ContentView: View {
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
-            if workspaces.isEmpty {
-                ContentUnavailableView("No Workspace Selected",
-                                       systemImage: "rectangle.on.rectangle.slash",
-                                       description: Text("Create a workspace with the + button."))
-            } else if let selectedWorkspaceID = store.selectedWorkspaceID,
-                      workspaces.contains(where: { $0.id == selectedWorkspaceID }) {
-                ZStack {
-                    ForEach(workspaces) { workspace in
-                        let isActive = workspace.id == selectedWorkspaceID
-                        WorkspaceView(workspace: workspace)
-                            .zIndex(isActive ? 1 : 0)
-                            .opacity(isActive ? 1 : 0)
-                            .allowsHitTesting(isActive)
-                            .accessibilityHidden(!isActive)
+            ZStack {
+                if workspaces.isEmpty {
+                    ContentUnavailableView("No Workspace Selected",
+                                           systemImage: "rectangle.on.rectangle.slash",
+                                           description: Text("Create a workspace with the + button."))
+                } else if let selectedWorkspaceID = store.selectedWorkspaceID,
+                          workspaces.contains(where: { $0.id == selectedWorkspaceID }) {
+                    ZStack {
+                        ForEach(workspaces) { workspace in
+                            let isActive = workspace.id == selectedWorkspaceID
+                            WorkspaceView(workspace: workspace)
+                                .zIndex(isActive ? 1 : 0)
+                                .opacity(isActive ? 1 : 0)
+                                .allowsHitTesting(isActive)
+                                .accessibilityHidden(!isActive)
+                        }
                     }
+                } else {
+                    ContentUnavailableView("No Workspace Selected",
+                                           systemImage: "rectangle.on.rectangle.slash",
+                                           description: Text("Create a workspace with the + button."))
                 }
-            } else {
-                ContentUnavailableView("No Workspace Selected",
-                                       systemImage: "rectangle.on.rectangle.slash",
-                                       description: Text("Create a workspace with the + button."))
+
+                if showTranscription && transcriptionService.isTranscribing {
+                    TranscriptionOverlay(service: transcriptionService)
+                }
             }
         }
         .inspector(isPresented: $showInspector) {
@@ -121,6 +129,18 @@ struct ContentView: View {
                     .keyboardShortcut("b", modifiers: .command)
                 }
                 .disabled(store.selectedWorkspace == nil)
+
+                Button {
+                    showTranscription.toggle()
+                    if showTranscription {
+                        Task { await transcriptionService.start() }
+                    } else {
+                        Task { await transcriptionService.stop() }
+                    }
+                } label: {
+                    Label("Transcription",
+                          systemImage: showTranscription ? "waveform.circle.fill" : "waveform.circle")
+                }
 
                 Button {
                     showInspector.toggle()
