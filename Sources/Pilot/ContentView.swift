@@ -101,12 +101,14 @@ struct ContentView: View {
                     } label: {
                         Label("New Terminal", systemImage: "terminal")
                     }
+                    .keyboardShortcut("t", modifiers: .command)
 
                     Button {
                         store.selectedWorkspace?.addPane(kind: .browser, side: .right)
                     } label: {
                         Label("New Browser", systemImage: "safari")
                     }
+                    .keyboardShortcut("b", modifiers: .command)
                 }
                 .disabled(store.selectedWorkspace == nil)
 
