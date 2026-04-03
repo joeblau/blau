@@ -1,4 +1,5 @@
 import SwiftUI
+import WatchConnectivity
 
 struct GestureEvent: Identifiable {
     let id = UUID()
@@ -77,7 +78,17 @@ struct ContentView: View {
                 record("Crown \(direction)", icon: "digitalcrown.horizontal.arrow.counterclockwise")
             }
         }
-        .handGestureShortcut(.primaryAction)
+        .overlay {
+            Button {
+                record("Double Pinch", icon: "hand.pinch")
+                sendGestureToPhone()
+            } label: {
+                Color.clear
+            }
+            .buttonStyle(.plain)
+            .handGestureShortcut(.primaryAction)
+            .allowsHitTesting(false)
+        }
     }
 
     // MARK: - History
@@ -114,6 +125,12 @@ struct ContentView: View {
                 gestureHistory.removeLast()
             }
         }
+    }
+
+    private func sendGestureToPhone() {
+        let session = WCSession.default
+        guard session.activationState == .activated else { return }
+        session.sendMessage(["gesture": "doublePinch"], replyHandler: nil) { _ in }
     }
 
     private func swipeDirection(_ value: DragGesture.Value) -> String {

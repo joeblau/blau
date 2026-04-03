@@ -147,9 +147,12 @@ final class VolumeObserver {
             }
     }
 
+    private let haptic = UIImpactFeedbackGenerator(style: .medium)
+
     private func publish(_ direction: VolumeDirection) {
         self.direction = direction
         eventID += 1
+        haptic.impactOccurred()
     }
 
     private func scheduleMidpointReset() {
