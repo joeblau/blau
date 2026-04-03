@@ -29,7 +29,7 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
                     )
                     .id(index)
             }
-            .listStyle(.plain)
+            .listStyle(.insetGrouped)
             .overlay {
                 VolumeHiderView { volumeView in
                     volumeObserver.attach(volumeView: volumeView)
@@ -264,5 +264,28 @@ struct VolumeHiderView: UIViewRepresentable {
         DispatchQueue.main.async {
             onReady(uiView)
         }
+    }
+}
+
+private struct PreviewItem: Identifiable {
+    let id = UUID()
+    let name: String
+}
+
+#Preview {
+    @Previewable @State var selectedID: UUID?
+    let items = [
+        PreviewItem(name: "Bloxwap"),
+        PreviewItem(name: "Blau"),
+        PreviewItem(name: "Submap"),
+        PreviewItem(name: "VeblenHype"),
+    ]
+
+    VolumeScrollListView(
+        items: items,
+        selectedID: $selectedID
+    ) { item, isHighlighted in
+        Text(item.name)
+            .fontWeight(isHighlighted ? .semibold : .regular)
     }
 }

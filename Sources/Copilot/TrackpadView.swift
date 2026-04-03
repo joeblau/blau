@@ -6,14 +6,18 @@ struct TrackpadView: View {
     @State private var lastTranslation: CGSize = .zero
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 12)
+        RoundedRectangle(cornerRadius: 32, style: .continuous)
             .fill(.ultraThinMaterial)
             .overlay {
                 Text("Trackpad")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
-            .frame(height: 180)
+            .overlay {
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .stroke(.secondary, lineWidth: 1)
+            }
+            .frame(height: 200)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 1)
@@ -31,4 +35,8 @@ struct TrackpadView: View {
             }
             .padding(.horizontal)
     }
+}
+
+#Preview {
+    TrackpadView(syncService: PeerSyncService(role: .browser, displayName: "Preview"))
 }
