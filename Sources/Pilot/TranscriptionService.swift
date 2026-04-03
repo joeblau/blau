@@ -72,6 +72,7 @@ final class TranscriptionService: @unchecked Sendable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let current = newState.currentText
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "Waiting for speech...", with: "")
             Task { @MainActor [weak self] in
                 self?.finalText = confirmed
                 self?.partialText = [unconfirmed, current]
