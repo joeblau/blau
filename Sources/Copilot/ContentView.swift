@@ -79,6 +79,11 @@ struct ContentView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .bottom) {
+            if syncService.isConnected {
+                TrackpadView(syncService: syncService)
+            }
+        }
         .task { setupSync() }
         .onChange(of: watchDelegate.isWatchReachable) {
             sendDeviceStatus()
@@ -91,11 +96,11 @@ struct ContentView: View {
             case .workspaceState(let state):
                 workspaces = state.workspaces
                 selectedID = state.selectedWorkspaceID
-            case .selectWorkspace:
-                break
-            case .deviceStatus:
+            case .selectWorkspace, .deviceStatus, .mouseMove, .mouseClick:
                 break
             case .audioControl, .audioChunk:
+                break
+            case .mouseMove, .mouseClick:
                 break
             }
         }

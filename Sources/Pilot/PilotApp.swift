@@ -24,7 +24,10 @@ struct PilotApp: App {
         WindowGroup {
             ContentView(store: store, syncService: syncService, deviceStatus: deviceStatus)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-                .task { setupSync() }
+                .task {
+                    _ = MouseBridge.shared.ensurePermissions()
+                    setupSync()
+                }
         }
         .modelContainer(modelContainer)
         .commands {
@@ -54,6 +57,10 @@ struct PilotApp: App {
                 }
             case .audioChunk(let data):
                 audioPlayback.enqueue(data)
+            case .mouseMove(let m):
+                MouseBridge.shared.move(dx: m.dx, dy: m.dy)
+            case .mouseClick:
+                MouseBridge.shared.click()
             }
         }
         syncService.start()

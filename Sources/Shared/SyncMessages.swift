@@ -17,6 +17,17 @@ enum SyncMessage: Codable, Sendable {
     case deviceStatus(DeviceStatus)
     case audioControl(AudioControl)
     case audioChunk(Data)
+    case mouseMove(MouseMove)
+    case mouseClick(MouseClick)
+}
+
+struct MouseMove: Codable, Sendable {
+    let dx: Float
+    let dy: Float
+}
+
+struct MouseClick: Codable, Sendable {
+    let button: Int // 0 = left
 }
 
 struct DeviceStatus: Codable, Sendable {
