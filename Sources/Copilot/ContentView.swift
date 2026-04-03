@@ -3,99 +3,133 @@ import SwiftUI
 struct ContentView: View {
     let syncService: PeerSyncService
     let watchDelegate: PhoneSessionDelegate
-    let headphoneRouteMonitor: HeadphoneRouteMonitor
 
     @State private var workspaces: [WorkspaceSummary] = []
     @State private var selectedID: UUID?
+
     var body: some View {
         NavigationStack {
-            Group {
-                if !syncService.isConnected && workspaces.isEmpty {
-                    ContentUnavailableView {
-                        Label("Looking for Pilot...", systemImage: "antenna.radiowaves.left.and.right")
-                    } description: {
-                        Text("Make sure Pilot is running on your Mac.")
-                    } actions: {
-                        ProgressView()
-                    }
-                } else if workspaces.isEmpty {
-                    ContentUnavailableView("No Workspaces",
-                                           systemImage: "rectangle.on.rectangle.slash",
-                                           description: Text("Create a workspace in Pilot."))
-                } else {
-                    VolumeScrollListView(
-                        items: workspaces,
-                        selectedID: $selectedID,
-                        onHighlightChanged: { workspace in
-                            syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspace.id)))
-                        },
-                        onVolumeHoldStart: {
-                            syncService.send(.voiceRecord(.start))
-                        },
-                        onVolumeHoldEnd: {
-                            syncService.send(.voiceRecord(.stop))
-                        }
-                    ) { workspace, isHighlighted in
-                        HStack {
-                            if workspace.isPinned {
-                                Image(systemName: "pin.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text(workspace.name)
-                                .fontWeight(isHighlighted ? .semibold : .regular)
-                            if workspace.badgeCount > 0 {
-                                Text("\(workspace.badgeCount)")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1)
-                                    .background(.red, in: Capsule())
-                            }
-                            Spacer()
-                            if isHighlighted {
-                                Image(systemName: "chevron.right")
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
+            mainContent
             .navigationTitle("Copilot")
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Image(systemName: "laptopcomputer")
-                        .symbolVariant(.fill)
-                        .foregroundStyle(syncService.isConnected ? .green : .red)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Image(systemName: "applewatch")
-                        .symbolVariant(.fill)
-                        .foregroundStyle(watchDelegate.isWatchReachable ? .green : .red)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Image(systemName: "airpods.pro")
-                        .foregroundStyle(headphoneRouteMonitor.isHeadphonesConnected ? .green : .red)
-                }
+                deviceToolbar
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if syncService.isConnected {
-                TrackpadView(syncService: syncService)
-            }
+            trackpadInset
         }
         .task { setupSync() }
         .onChange(of: watchDelegate.isWatchReachable) {
-            sendDeviceStatus()
-        }
-        .onChange(of: headphoneRouteMonitor.isHeadphonesConnected) {
             sendDeviceStatus()
         }
         .onChange(of: syncService.isConnected) {
             guard syncService.isConnected else { return }
             sendDeviceStatus()
         }
+    }
+
+    @ViewBuilder
+    private var mainContent: some View {
+        if !syncService.isConnected && workspaces.isEmpty {
+            ContentUnavailableView {
+                Label("Looking for Pilot...", systemImage: "antenna.radiowaves.left.and.right")
+            } description: {
+                Text("Make sure Pilot is running on your Mac.")
+            } actions: {
+                ProgressView()
+            }
+        } else if workspaces.isEmpty {
+            ContentUnavailableView(
+                "No Workspaces",
+                systemImage: "rectangle.on.rectangle.slash",
+                description: Text("Create a workspace in Pilot.")
+            )
+        } else {
+            workspaceList
+        }
+    }
+
+    private var workspaceList: some View {
+        VolumeScrollListView(
+            items: workspaces,
+            selectedID: $selectedID,
+            onHighlightChanged: { workspace in
+                syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspace.id)))
+            },
+            onVolumeHoldStart: {
+                syncService.send(.voiceRecord(.start))
+            },
+            onVolumeHoldEnd: {
+                syncService.send(.voiceRecord(.stop))
+            }
+        ) { workspace, isHighlighted in
+            workspaceRow(workspace, isHighlighted: isHighlighted)
+        }
+    }
+
+    @ViewBuilder
+    private func workspaceRow(_ workspace: WorkspaceSummary, isHighlighted: Bool) -> some View {
+        HStack {
+            if workspace.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
+            Text(workspace.name)
+                .fontWeight(isHighlighted ? .semibold : .regular)
+            if workspace.badgeCount > 0 {
+                Text("\(workspace.badgeCount)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(.red, in: Capsule())
+            }
+            Spacer()
+            if isHighlighted {
+                Image(systemName: "chevron.right")
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ToolbarContentBuilder
+    private var deviceToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            ForEach(connectedDevices) { device in
+                deviceIcon(device)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func deviceIcon(_ device: ConnectedDevice) -> some View {
+        Image(systemName: device.kind.systemImageName)
+            .symbolVariant(device.kind.usesFillVariant ? .fill : .none)
+            .foregroundStyle(device.isConnected ? .green : .red)
+    }
+
+    @ViewBuilder
+    private var trackpadInset: some View {
+        if syncService.isConnected {
+            TrackpadView(syncService: syncService)
+        }
+    }
+
+    private var localDeviceStatus: DeviceStatus {
+        DeviceStatus(
+            isWatchConnected: watchDelegate.isWatchReachable,
+            isAirPodsConnected: false
+        )
+    }
+
+    private var connectedDevices: [ConnectedDevice] {
+        ConnectedDeviceCatalog.devices(
+            for: .copilot,
+            peerConnected: syncService.isConnected,
+            deviceStatus: localDeviceStatus
+        )
     }
 
     private func setupSync() {
@@ -112,16 +146,11 @@ struct ContentView: View {
     }
 
     private func sendDeviceStatus() {
-        let status = DeviceStatus(
-            isWatchConnected: watchDelegate.isWatchReachable,
-            isAirPodsConnected: headphoneRouteMonitor.isHeadphonesConnected
-        )
-        syncService.send(.deviceStatus(status))
+        syncService.send(.deviceStatus(localDeviceStatus))
     }
 }
 
 #Preview {
     ContentView(syncService: PeerSyncService(role: .browser, displayName: "Preview"),
-               watchDelegate: PhoneSessionDelegate(),
-               headphoneRouteMonitor: HeadphoneRouteMonitor())
+               watchDelegate: PhoneSessionDelegate())
 }

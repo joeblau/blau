@@ -1,5 +1,4 @@
 import SwiftUI
-import AVFAudio
 import WatchConnectivity
 import UserNotifications
 import OSLog
@@ -9,48 +8,6 @@ private let copilotConnectivityLogger = Logger(
     subsystem: Bundle.main.bundleIdentifier ?? "app.blau.copilot",
     category: "WatchConnectivity"
 )
-
-@Observable
-final class HeadphoneRouteMonitor: @unchecked Sendable {
-    var isHeadphonesConnected = false
-
-    private let session = AVAudioSession.sharedInstance()
-    private let notificationCenter: NotificationCenter
-    private var routeChangeObserver: NSObjectProtocol?
-
-    init(notificationCenter: NotificationCenter = .default) {
-        self.notificationCenter = notificationCenter
-        isHeadphonesConnected = Self.hasHeadphones(in: session.currentRoute)
-        routeChangeObserver = notificationCenter.addObserver(
-            forName: AVAudioSession.routeChangeNotification,
-            object: session,
-            queue: .main
-        ) { [weak self] _ in
-            self?.refresh()
-        }
-    }
-
-    deinit {
-        if let routeChangeObserver {
-            notificationCenter.removeObserver(routeChangeObserver)
-        }
-    }
-
-    func refresh() {
-        isHeadphonesConnected = Self.hasHeadphones(in: session.currentRoute)
-    }
-
-    private static func hasHeadphones(in route: AVAudioSessionRouteDescription) -> Bool {
-        route.outputs.contains { output in
-            switch output.portType {
-            case .headphones, .bluetoothA2DP, .bluetoothLE, .bluetoothHFP:
-                return true
-            default:
-                return false
-            }
-        }
-    }
-}
 
 private enum WingmanGesturePayload {
     static let gestureKey = "gesture"
@@ -184,14 +141,12 @@ struct CopilotApp: App {
         displayName: UIDevice.current.name
     )
     @State private var phoneSessionDelegate = PhoneSessionDelegate()
-    @State private var headphoneRouteMonitor = HeadphoneRouteMonitor()
 
     var body: some Scene {
         WindowGroup {
             ContentView(
                 syncService: syncService,
-                watchDelegate: phoneSessionDelegate,
-                headphoneRouteMonitor: headphoneRouteMonitor
+                watchDelegate: phoneSessionDelegate
             )
         }
     }

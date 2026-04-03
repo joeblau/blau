@@ -7,6 +7,7 @@ struct ContentView: View {
     var syncService: PeerSyncService
     var deviceStatus: DeviceStatus
     var remoteTranscription: TranscriptionService
+    var audioOutputMonitor: MacAudioOutputMonitor
     @State private var gitStore = GitCommitStore()
     @State private var showInspector = false
     @State private var transcriptionService = TranscriptionService()
@@ -44,13 +45,11 @@ struct ContentView: View {
                     Spacer(minLength: 0)
 
                     HStack(spacing: 12) {
-                        Image(systemName: "iphone")
-                            .foregroundStyle(syncService.isConnected ? .green : .red)
-                        Image(systemName: "applewatch")
-                            .symbolVariant(.fill)
-                            .foregroundStyle(deviceStatus.isWatchConnected ? .green : .red)
-                        Image(systemName: "airpods.pro")
-                            .foregroundStyle(deviceStatus.isAirPodsConnected ? .green : .red)
+                        ForEach(connectedDevices) { device in
+                            Image(systemName: device.kind.systemImageName)
+                                .symbolVariant(device.kind.usesFillVariant ? .fill : .none)
+                                .foregroundStyle(device.isConnected ? .green : .red)
+                        }
                     }
                 }
                 .padding(.horizontal, 12)
@@ -177,6 +176,15 @@ struct ContentView: View {
             .keyboardShortcut("w", modifiers: .command)
             .hidden()
         }
+    }
+
+    private var connectedDevices: [ConnectedDevice] {
+        ConnectedDeviceCatalog.devices(
+            for: .pilot,
+            peerConnected: syncService.isConnected,
+            deviceStatus: deviceStatus,
+            localHeadphoneKind: audioOutputMonitor.detectedKind
+        )
     }
 
     private func workspaceRow(_ workspace: Workspace) -> some View {
@@ -364,7 +372,8 @@ private enum ContentViewPreviewData {
         store: WorkspaceStore(modelContext: ContentViewPreviewData.container.mainContext),
         syncService: PeerSyncService(role: .advertiser, displayName: "Preview"),
         deviceStatus: DeviceStatus(),
-        remoteTranscription: TranscriptionService()
+        remoteTranscription: TranscriptionService(),
+        audioOutputMonitor: MacAudioOutputMonitor()
     )
     .modelContainer(ContentViewPreviewData.container)
 }

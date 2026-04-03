@@ -1,4 +1,5 @@
 import AppKit
+import CoreAudio
 import SwiftData
 import SwiftUI
 
@@ -9,6 +10,7 @@ struct PilotApp: App {
     @State private var store: WorkspaceStore
     @State private var deviceStatus = DeviceStatus()
     @State private var remoteTranscription = TranscriptionService()
+    @State private var audioOutputMonitor = MacAudioOutputMonitor()
     @State private var syncService = PeerSyncService(
         role: .advertiser,
         displayName: Host.current().localizedName ?? "Mac"
@@ -23,10 +25,11 @@ struct PilotApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(store: store, syncService: syncService, deviceStatus: deviceStatus, remoteTranscription: remoteTranscription)
+            ContentView(store: store, syncService: syncService, deviceStatus: deviceStatus, remoteTranscription: remoteTranscription, audioOutputMonitor: audioOutputMonitor)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                 .task {
                     _ = MouseBridge.shared.ensurePermissions()
+                    startAudioMonitor()
                     setupSync()
                 }
         }
@@ -40,6 +43,10 @@ struct PilotApp: App {
                 .disabled(store.selectedWorkspace?.selectedPane?.kind != .browser)
             }
         }
+    }
+
+    private func startAudioMonitor() {
+        audioOutputMonitor.start()
     }
 
     private func setupSync() {
@@ -98,6 +105,105 @@ struct PilotApp: App {
                 )
                 syncService.send(.workspaceState(state))
             }
+        }
+    }
+}
+
+// MARK: - Mac Audio Output Monitor
+
+@Observable
+@MainActor
+final class MacAudioOutputMonitor {
+    var detectedKind: ConnectedDeviceKind?
+
+    private var listenerBlock: AudioObjectPropertyListenerBlock?
+
+    func start() {
+        refresh()
+
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.refresh()
+            }
+        }
+        listenerBlock = block
+
+        AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            DispatchQueue.main,
+            block
+        )
+    }
+
+    func refresh() {
+        guard let name = Self.defaultOutputDeviceName() else {
+            detectedKind = nil
+            return
+        }
+        detectedKind = Self.classifyDevice(name: name)
+    }
+
+    private static func defaultOutputDeviceName() -> String? {
+        var deviceID = AudioDeviceID()
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0, nil,
+            &size,
+            &deviceID
+        )
+        guard status == noErr else { return nil }
+
+        var nameAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceNameCFString,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var nameRef: CFString = "" as CFString
+        var nameSize = UInt32(MemoryLayout<CFString>.size)
+        let nameStatus = AudioObjectGetPropertyData(
+            deviceID,
+            &nameAddress,
+            0, nil,
+            &nameSize,
+            &nameRef
+        )
+        guard nameStatus == noErr else { return nil }
+        return nameRef as String
+    }
+
+    private static func classifyDevice(name: String) -> ConnectedDeviceKind? {
+        let lowered = name.lowercased()
+
+        // Built-in speakers are not headphones
+        if lowered.contains("built-in") || lowered.contains("macbook") || lowered.contains("speakers") {
+            return nil
+        }
+
+        if lowered.contains("airpods max") {
+            return .airpodsMax
+        } else if lowered.contains("airpods pro") {
+            return .airpodsPro
+        } else if lowered.contains("airpods") {
+            return .airpods
+        } else {
+            // Any non-built-in device is treated as bluetooth headphones
+            return .headphonesBluetooth
         }
     }
 }
