@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     let syncService: PeerSyncService
+    let watchDelegate: PhoneSessionDelegate
 
     @State private var workspaces: [WorkspaceSummary] = []
     @State private var selectedID: UUID?
@@ -50,13 +51,23 @@ struct ContentView: View {
         }
         .navigationTitle("Copilot")
         .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(syncService.isConnected ? .green : .red)
-                    .frame(width: 8, height: 8)
-                Text(syncService.isConnected ? "Pilot Connected" : "Pilot Disconnected")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            VStack(spacing: 4) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(syncService.isConnected ? .green : .red)
+                        .frame(width: 8, height: 8)
+                    Text(syncService.isConnected ? "Pilot Connected" : "Pilot Disconnected")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(watchDelegate.isWatchReachable ? .green : .red)
+                        .frame(width: 8, height: 8)
+                    Text(watchDelegate.isWatchReachable ? "Wingman Connected" : "Wingman Disconnected")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
@@ -79,5 +90,6 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView(syncService: PeerSyncService(role: .browser, displayName: "Preview"))
+    ContentView(syncService: PeerSyncService(role: .browser, displayName: "Preview"),
+               watchDelegate: PhoneSessionDelegate())
 }

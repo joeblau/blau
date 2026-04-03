@@ -18,19 +18,26 @@ private enum WingmanGesturePayload {
     }
 }
 
-final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificationCenterDelegate {
+@Observable
+final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificationCenterDelegate, @unchecked Sendable {
+    var isWatchReachable = false
+
     func session(_ session: WCSession,
                  activationDidCompleteWith activationState: WCSessionActivationState,
                  error: Error?) {
         if let error {
             copilotConnectivityLogger.error("WCSession activation failed: \(error.localizedDescription, privacy: .public)")
         } else {
+            let isWatchReachable = session.isReachable
             copilotConnectivityLogger.info(
                 """
                 WCSession activated. state=\(String(describing: activationState), privacy: .public) \
-                reachable=\(session.isReachable, privacy: .public)
+                reachable=\(isWatchReachable, privacy: .public)
                 """
             )
+            Task { @MainActor in
+                self.updateWatchReachability(isWatchReachable)
+            }
         }
     }
 
@@ -65,8 +72,12 @@ final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificatio
         handleWingmanPayload(applicationContext, transport: "applicationContext")
     }
 
-    func sessionReachabilityDidChange(_ session: WCSession) {
-        copilotConnectivityLogger.info("Reachability changed. reachable=\(session.isReachable, privacy: .public)")
+    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+        let isWatchReachable = session.isReachable
+        copilotConnectivityLogger.info("Reachability changed. reachable=\(isWatchReachable, privacy: .public)")
+        Task { @MainActor in
+            self.updateWatchReachability(isWatchReachable)
+        }
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
@@ -116,6 +127,11 @@ final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificatio
         feedback.prepare()
         feedback.notificationOccurred(.success)
     }
+
+    @MainActor
+    private func updateWatchReachability(_ isReachable: Bool) {
+        self.isWatchReachable = isReachable
+    }
 }
 
 @main
@@ -128,7 +144,7 @@ struct CopilotApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(syncService: syncService)
+            ContentView(syncService: syncService, watchDelegate: phoneSessionDelegate)
         }
     }
 

@@ -1,24 +1,5 @@
 import SwiftUI
 import WatchConnectivity
-import OSLog
-
-private let wingmanConnectivityLogger = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "app.blau.wingman",
-    category: "WatchConnectivity"
-)
-
-private struct WingmanDoublePinchPayload: Sendable {
-    let source: String
-    let sentAt: Double
-
-    var dictionary: [String: Any] {
-        [
-            "gesture": "doublePinch",
-            "source": source,
-            "sentAt": sentAt
-        ]
-    }
-}
 
 struct GestureEvent: Identifiable {
     let id = UUID()
@@ -28,6 +9,7 @@ struct GestureEvent: Identifiable {
 }
 
 struct ContentView: View {
+    let sessionDelegate: WatchSessionDelegate
     @State private var currentGesture: String = "Waiting..."
     @State private var currentIcon: String = "hand.raised"
     @State private var gestureHistory: [GestureEvent] = []
@@ -51,6 +33,18 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Wingman")
+            .safeAreaInset(edge: .bottom) {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(sessionDelegate.isReachable ? .green : .red)
+                        .frame(width: 6, height: 6)
+                    Text(sessionDelegate.isReachable ? "Copilot Connected" : "Copilot Disconnected")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+            }
         }
     }
 
@@ -149,60 +143,8 @@ struct ContentView: View {
     }
 
     private func triggerDoublePinch(source: String) {
-        wingmanConnectivityLogger.info("Double pinch action fired via \(source, privacy: .public)")
         record("Double Pinch", icon: "hand.pinch")
-        sendGestureToPhone(source: source)
-    }
-
-    private func sendGestureToPhone(source: String) {
-        let session = WCSession.default
-        let payload = WingmanDoublePinchPayload(
-            source: source,
-            sentAt: Date().timeIntervalSince1970
-        )
-        wingmanConnectivityLogger.info(
-            """
-            Sending double pinch source=\(source, privacy: .public) activation=\(String(describing: session.activationState), privacy: .public) \
-            reachable=\(session.isReachable, privacy: .public) \
-            companionInstalled=\(session.isCompanionAppInstalled, privacy: .public)
-            """
-        )
-        guard session.activationState == .activated else {
-            wingmanConnectivityLogger.error("WCSession not activated. Aborting double pinch send.")
-            return
-        }
-        guard session.isCompanionAppInstalled else {
-            wingmanConnectivityLogger.error("Companion app is not installed on the paired phone.")
-            return
-        }
-
-        if session.isReachable {
-            session.sendMessage(payload.dictionary, replyHandler: { reply in
-                let replyDescription = String(describing: reply)
-                Task { @MainActor in
-                    wingmanConnectivityLogger.info(
-                        "sendMessage reply received: \(replyDescription, privacy: .public)"
-                    )
-                }
-            }) { error in
-                let message = error.localizedDescription
-                Task { @MainActor in
-                    wingmanConnectivityLogger.error(
-                        "sendMessage failed with error: \(message, privacy: .public). Falling back to transferUserInfo."
-                    )
-                    let fallbackSession = WCSession.default
-                    fallbackSession.transferUserInfo(payload.dictionary)
-                    wingmanConnectivityLogger.info(
-                        "Queued transferUserInfo fallback. outstandingTransfers=\(fallbackSession.outstandingUserInfoTransfers.count, privacy: .public)"
-                    )
-                }
-            }
-        } else {
-            session.transferUserInfo(payload.dictionary)
-            wingmanConnectivityLogger.info(
-                "Phone not reachable. Queued transferUserInfo. outstandingTransfers=\(session.outstandingUserInfoTransfers.count, privacy: .public)"
-            )
-        }
+        sessionDelegate.sendDoublePinch(source: source)
     }
 
     private func swipeDirection(_ value: DragGesture.Value) -> String {
@@ -228,5 +170,5 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(sessionDelegate: WatchSessionDelegate())
 }
