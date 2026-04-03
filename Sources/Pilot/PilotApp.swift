@@ -94,6 +94,25 @@ struct PilotApp: App {
                         }
                     }
                 }
+            case .terminalInput(let input):
+                switch input {
+                case .enter:
+                    let event = NSEvent.keyEvent(
+                        with: .keyDown,
+                        location: .zero,
+                        modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: NSApp.mainWindow?.windowNumber ?? 0,
+                        context: nil,
+                        characters: "\r",
+                        charactersIgnoringModifiers: "\r",
+                        isARepeat: false,
+                        keyCode: 36 // Return key
+                    )
+                    if let event {
+                        NSApp.mainWindow?.firstResponder?.keyDown(with: event)
+                    }
+                }
             }
         }
         syncService.start()

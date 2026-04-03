@@ -138,7 +138,7 @@ struct ContentView: View {
             case .workspaceState(let state):
                 workspaces = state.workspaces
                 selectedID = state.selectedWorkspaceID
-            case .selectWorkspace, .deviceStatus, .mouseMove, .mouseClick, .voiceRecord:
+            case .selectWorkspace, .deviceStatus, .mouseMove, .mouseClick, .voiceRecord, .terminalInput:
                 break
             }
         }

@@ -21,6 +21,7 @@ private enum WingmanGesturePayload {
 @Observable
 final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificationCenterDelegate, @unchecked Sendable {
     var isWatchReachable = false
+    var syncService: PeerSyncService?
 
     func session(_ session: WCSession,
                  activationDidCompleteWith activationState: WCSessionActivationState,
@@ -89,34 +90,10 @@ final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificatio
 
     private func handleWingmanPayload(_ payload: [String: Any], transport: String) {
         guard WingmanGesturePayload.isDoublePinch(payload) else { return }
-        let source = payload["source"] as? String ?? "unknown"
-        let sentAt = payload["sentAt"] as? Double ?? 0
-        copilotConnectivityLogger.info(
-            """
-            Received double pinch over \(transport, privacy: .public). source=\(source, privacy: .public) \
-            sentAt=\(sentAt, privacy: .public)
-            """
-        )
+        copilotConnectivityLogger.info("Received double pinch over \(transport, privacy: .public). Forwarding as Enter to Pilot.")
         Task { @MainActor in
             PhoneSessionDelegate.playDoublePinchHaptic()
-        }
-
-        let content = UNMutableNotificationContent()
-        content.title = "Wingman"
-        content.body = "Double Pinch"
-        content.sound = .default
-
-        let request = UNNotificationRequest(
-            identifier: UUID().uuidString,
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error {
-                copilotConnectivityLogger.error("Failed to enqueue Wingman notification: \(error.localizedDescription, privacy: .public)")
-            } else {
-                copilotConnectivityLogger.info("Wingman notification enqueued successfully.")
-            }
+            syncService?.send(.terminalInput(.enter))
         }
     }
 
@@ -148,6 +125,9 @@ struct CopilotApp: App {
                 syncService: syncService,
                 watchDelegate: phoneSessionDelegate
             )
+            .task {
+                phoneSessionDelegate.syncService = syncService
+            }
         }
     }
 

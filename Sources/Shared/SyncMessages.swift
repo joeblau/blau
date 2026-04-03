@@ -11,6 +11,10 @@ enum VoiceRecordControl: String, Codable, Sendable {
     case start, stop
 }
 
+enum TerminalInput: String, Codable, Sendable {
+    case enter
+}
+
 enum SyncMessage: Codable, Sendable {
     case workspaceState(WorkspaceState)
     case selectWorkspace(SelectWorkspace)
@@ -18,6 +22,7 @@ enum SyncMessage: Codable, Sendable {
     case mouseMove(MouseMove)
     case mouseClick(MouseClick)
     case voiceRecord(VoiceRecordControl)
+    case terminalInput(TerminalInput)
 }
 
 struct MouseMove: Codable, Sendable {
