@@ -1,10 +1,10 @@
 import Foundation
 import Observation
-import WhisperKit
+@preconcurrency import WhisperKit
 
 @Observable
 @MainActor
-final class TranscriptionService {
+final class TranscriptionService: @unchecked Sendable {
     var partialText: String = ""
     var finalText: String = ""
     var isTranscribing: Bool = false
@@ -62,6 +62,24 @@ final class TranscriptionService {
             clipTimestamps: [0]
         )
 
+        let callback: @Sendable (AudioStreamTranscriber.State, AudioStreamTranscriber.State) -> Void = {
+            [weak self] _, newState in
+            let confirmed = newState.confirmedSegments
+                .map(\.text).joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let unconfirmed = newState.unconfirmedSegments
+                .map(\.text).joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let current = newState.currentText
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            Task { @MainActor [weak self] in
+                self?.finalText = confirmed
+                self?.partialText = [unconfirmed, current]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+            }
+        }
+
         let transcriber = AudioStreamTranscriber(
             audioEncoder: kit.audioEncoder,
             featureExtractor: kit.featureExtractor,
@@ -73,12 +91,9 @@ final class TranscriptionService {
             requiredSegmentsForConfirmation: 2,
             silenceThreshold: 0.3,
             compressionCheckWindow: 60,
-            useVAD: true
-        ) { [weak self] oldState, newState in
-            Task { @MainActor [weak self] in
-                self?.handleStateChange(oldState: oldState, newState: newState)
-            }
-        }
+            useVAD: true,
+            stateChangeCallback: callback
+        )
 
         streamTranscriber = transcriber
 

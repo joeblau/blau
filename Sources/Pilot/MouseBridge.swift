@@ -1,14 +1,16 @@
+import ApplicationServices
 import CoreGraphics
 import Foundation
 
 @MainActor
 final class MouseBridge {
     static let shared = MouseBridge()
+    private let trustedCheckOptionPromptKey = "AXTrustedCheckOptionPrompt" as CFString
 
     func ensurePermissions() -> Bool {
         let trusted = AXIsProcessTrusted()
         if !trusted {
-            let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+            let opts = [trustedCheckOptionPromptKey: true] as CFDictionary
             AXIsProcessTrustedWithOptions(opts)
         }
         return trusted
