@@ -6,9 +6,10 @@ struct ContentView: View {
     @Bindable var store: WorkspaceStore
     var syncService: PeerSyncService
     @State private var gitStore = GitCommitStore()
+    @State private var showInspector = false
 
     var body: some View {
-        let activeInspectorRepoPath = selectedWorkspaceInspectorPresented ? selectedTerminalRepoPath : nil
+        let activeInspectorRepoPath = showInspector ? selectedTerminalRepoPath : nil
         let _ = store.changeCount  // observation dependency for pin/unpin re-sort
         let workspaces = store.workspaces
 
@@ -68,7 +69,7 @@ struct ContentView: View {
                                        description: Text("Create a workspace with the + button."))
             }
         }
-        .inspector(isPresented: selectedWorkspaceInspectorPresentedBinding) {
+        .inspector(isPresented: $showInspector) {
             InspectorPanelView(
                 gitStore: gitStore,
                 selectedTab: selectedWorkspaceInspectorTabBinding
@@ -113,8 +114,7 @@ struct ContentView: View {
                 .disabled(store.selectedWorkspace == nil)
 
                 Button {
-                    guard let workspace = store.selectedWorkspace else { return }
-                    workspace.setInspectorPresented(!workspace.isInspectorPresented)
+                    showInspector.toggle()
                 } label: {
                     Label("Inspector", systemImage: "sidebar.trailing")
                 }
@@ -130,6 +130,13 @@ struct ContentView: View {
                 .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
                 .hidden()
             }
+            Button("") {
+                guard let workspace = store.selectedWorkspace,
+                      let pane = workspace.selectedPane else { return }
+                workspace.removePane(pane)
+            }
+            .keyboardShortcut("w", modifiers: .command)
+            .hidden()
         }
     }
 
@@ -230,19 +237,6 @@ struct ContentView: View {
         case .light: "sun.max"
         case .dark: "moon"
         }
-    }
-
-    private var selectedWorkspaceInspectorPresented: Bool {
-        store.selectedWorkspace?.isInspectorPresented ?? false
-    }
-
-    private var selectedWorkspaceInspectorPresentedBinding: Binding<Bool> {
-        Binding(
-            get: { self.selectedWorkspaceInspectorPresented },
-            set: { isPresented in
-                self.store.selectedWorkspace?.setInspectorPresented(isPresented)
-            }
-        )
     }
 
     private var selectedWorkspaceInspectorTabBinding: Binding<InspectorTab> {
