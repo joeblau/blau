@@ -101,34 +101,4 @@ struct SyncMessagesTests {
         let summary = WorkspaceSummary(id: UUID(), name: "Test")
         #expect(summary.badgeCount == 0)
     }
-
-    @Test("AudioControl round-trip")
-    func audioControlRoundTrip() throws {
-        for control in [AudioControl.start, AudioControl.stop] {
-            let message = SyncMessage.audioControl(control)
-            let data = try encoder.encode(message)
-            let decoded = try decoder.decode(SyncMessage.self, from: data)
-
-            if case .audioControl(let decodedControl) = decoded {
-                #expect(decodedControl == control)
-            } else {
-                Issue.record("Expected audioControl case for \(control)")
-            }
-        }
-    }
-
-    @Test("AudioChunk round-trip")
-    func audioChunkRoundTrip() throws {
-        let pcmBytes = Data(repeating: 0x7F, count: 1024)
-        let message = SyncMessage.audioChunk(pcmBytes)
-        let data = try encoder.encode(message)
-        let decoded = try decoder.decode(SyncMessage.self, from: data)
-
-        if case .audioChunk(let decodedData) = decoded {
-            #expect(decodedData == pcmBytes)
-            #expect(decodedData.count == 1024)
-        } else {
-            Issue.record("Expected audioChunk case")
-        }
-    }
 }

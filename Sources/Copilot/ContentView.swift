@@ -6,8 +6,6 @@ struct ContentView: View {
 
     @State private var workspaces: [WorkspaceSummary] = []
     @State private var selectedID: UUID?
-    @State private var audioCapture = AudioCaptureService()
-
     var body: some View {
         NavigationStack {
             Group {
@@ -30,16 +28,6 @@ struct ContentView: View {
                         onHighlightChanged: { workspace in
                             syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspace.id)))
                         },
-                        onVolumeHoldStart: {
-                            guard audioCapture.hasPermission else { return }
-                            audioCapture.startRecording()
-                            syncService.send(.audioControl(.start))
-                        },
-                        onVolumeHoldEnd: {
-                            guard audioCapture.isRecording else { return }
-                            syncService.send(.audioControl(.stop))
-                            audioCapture.stopRecording()
-                        }
                     ) { workspace, isHighlighted in
                         HStack {
                             if workspace.isPinned {
@@ -68,17 +56,6 @@ struct ContentView: View {
             }
             .navigationTitle("Copilot")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    MicButton(
-                        hasPermission: audioCapture.hasPermission,
-                        isRecording: audioCapture.isRecording,
-                        onTap: {
-                            if !audioCapture.hasPermission {
-                                audioCapture.requestPermission()
-                            }
-                        }
-                    )
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     DeviceStatusButton(emoji: "💻", isConnected: syncService.isConnected)
                 }
@@ -109,14 +86,9 @@ struct ContentView: View {
                 selectedID = state.selectedWorkspaceID
             case .selectWorkspace, .deviceStatus, .mouseMove, .mouseClick:
                 break
-            case .audioControl, .audioChunk:
-                break
             }
         }
         syncService.start()
-        audioCapture.configure { chunk in
-            syncService.sendAudioData(chunk)
-        }
     }
 
     private func sendDeviceStatus() {
@@ -133,45 +105,15 @@ private struct DeviceStatusButton: View {
     let isConnected: Bool
 
     var body: some View {
-        Text(emoji)
-            .overlay(alignment: .topTrailing) {
-                Circle()
-                    .fill(isConnected ? .green : .red)
-                    .frame(width: 12, height: 12)
-                    .offset(x: 6, y: -6)
-            }
-            .frame(minWidth: 24)
-    }
-}
-
-private struct MicButton: View {
-    let hasPermission: Bool
-    let isRecording: Bool
-    let onTap: () -> Void
-
-    private var iconName: String {
-        if isRecording { return "waveform" }
-        if hasPermission { return "mic.fill" }
-        return "mic.slash.fill"
-    }
-
-    private var fillColor: Color {
-        if isRecording { return .red }
-        if hasPermission { return .accentColor }
-        return .gray
-    }
-
-    var body: some View {
-        Circle()
-            .fill(fillColor)
-            .frame(width: 32, height: 32)
-            .overlay {
-                Image(systemName: iconName)
-                    .font(.system(size: 14))
-                    .foregroundStyle(.white)
-                    .symbolEffect(.variableColor.iterative, isActive: isRecording)
-            }
-            .onTapGesture { onTap() }
+        Button {} label: {
+            Text(emoji)
+                .overlay(alignment: .topTrailing) {
+                    Circle()
+                        .fill(isConnected ? .green : .red)
+                        .frame(width: 12, height: 12)
+                        .offset(x: 6, y: -6)
+                }
+        }
     }
 }
 

@@ -1,19 +1,21 @@
 import Foundation
-import MultipeerConnectivity
+@preconcurrency import MultipeerConnectivity
 
-@MainActor
 @Observable
 final class PeerSyncService: NSObject, @unchecked Sendable {
     enum Role { case advertiser, browser }
 
     private(set) var isConnected = false
 
-    var onReceive: ((SyncMessage) -> Void)?
-    var onReceiveAudioData: ((Data) -> Void)?
+    var onReceive: (@MainActor (SyncMessage) -> Void)?
 
     private let role: Role
-    private nonisolated(unsafe) let peerID: MCPeerID
-    private nonisolated(unsafe) let session: MCSession
+    private let peerID: MCPeerID
+    private let session: MCSession
+    private let transportQueue = DispatchQueue(
+        label: "app.blau.peersync.transport",
+        qos: .userInitiated
+    )
     private var advertiser: MCNearbyServiceAdvertiser?
     private var browser: MCNearbyServiceBrowser?
 
@@ -28,10 +30,33 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
     }
 
     func start() {
-        stop()
+        transportQueue.async { [weak self] in
+            self?.startTransport()
+        }
+    }
+
+    func stop() {
+        transportQueue.async { [weak self] in
+            self?.stopTransport()
+        }
+    }
+
+    func send(_ message: SyncMessage, reliable: Bool = true) {
+        guard let data = try? JSONEncoder().encode(message) else { return }
+        transportQueue.async { [weak self] in
+            self?.send(data, mode: reliable ? .reliable : .unreliable)
+        }
+    }
+
+    private func startTransport() {
+        stopTransport()
         switch role {
         case .advertiser:
-            let adv = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: nil, serviceType: Self.serviceType)
+            let adv = MCNearbyServiceAdvertiser(
+                peer: peerID,
+                discoveryInfo: nil,
+                serviceType: Self.serviceType
+            )
             adv.delegate = self
             adv.startAdvertisingPeer()
             advertiser = adv
@@ -44,36 +69,31 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         }
     }
 
-    func stop() {
+    private func stopTransport() {
         advertiser?.stopAdvertisingPeer()
         advertiser = nil
         browser?.stopBrowsingForPeers()
         browser = nil
         session.disconnect()
-        isConnected = false
-    }
-
-    func send(_ message: SyncMessage, reliable: Bool = true) {
-        guard !session.connectedPeers.isEmpty else { return }
-        guard let data = try? JSONEncoder().encode(message) else { return }
-        try? session.send(data, toPeers: session.connectedPeers, with: reliable ? .reliable : .unreliable)
-    }
-
-    func sendAudioData(_ data: Data) {
-        guard !session.connectedPeers.isEmpty else { return }
-        try? session.send(data, toPeers: session.connectedPeers, with: .unreliable)
+        Task { @MainActor [weak self] in
+            self?.isConnected = false
+        }
     }
 
     private func restartBrowsingAfterDelay() {
         guard role == .browser else { return }
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2))
+        transportQueue.asyncAfter(deadline: .now() + 2) { [weak self] in
             guard let self else { return }
             let br = MCNearbyServiceBrowser(peer: self.peerID, serviceType: Self.serviceType)
             br.delegate = self
             br.startBrowsingForPeers()
             self.browser = br
         }
+    }
+
+    private func send(_ data: Data, mode: MCSessionSendDataMode) {
+        guard !session.connectedPeers.isEmpty else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: mode)
     }
 }
 
@@ -92,14 +112,9 @@ extension PeerSyncService: MCSessionDelegate {
     }
 
     nonisolated func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
-        if let message = try? JSONDecoder().decode(SyncMessage.self, from: data) {
-            Task { @MainActor [weak self] in
-                self?.onReceive?(message)
-            }
-        } else {
-            Task { @MainActor [weak self] in
-                self?.onReceiveAudioData?(data)
-            }
+        guard let message = try? JSONDecoder().decode(SyncMessage.self, from: data) else { return }
+        Task { @MainActor [weak self] in
+            self?.onReceive?(message)
         }
     }
 
@@ -121,8 +136,10 @@ extension PeerSyncService: MCNearbyServiceAdvertiserDelegate {
 
 extension PeerSyncService: MCNearbyServiceBrowserDelegate {
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String: String]?) {
-        let sess = self.session
-        browser.invitePeer(peerID, to: sess, withContext: nil, timeout: 10)
+        transportQueue.async { [weak self] in
+            guard let self else { return }
+            browser.invitePeer(peerID, to: self.session, withContext: nil, timeout: 10)
+        }
     }
 
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {}

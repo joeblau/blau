@@ -12,7 +12,6 @@
 		1F253D4F3DCD296F823A2E74 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7D00A3F70E212149A88CCD63 /* Assets.xcassets */; };
 		48B57B6199067D9FB4CB7D93 /* SyncMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67FAA18AA33DB039B0026206 /* SyncMessages.swift */; };
 		4BF7276892BD5F1F7E405130 /* VolumeScrollListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C985F86115A698849ED108 /* VolumeScrollListView.swift */; };
-		58EB64018B19CE63314951A5 /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2735EB59137CBF92CC14A32D /* AudioCaptureService.swift */; };
 		5A01C1F25324B7BD662C6A6F /* WingmanApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A70CFB55F5EB044D3ED5C3F /* WingmanApp.swift */; };
 		61F220E0506458F5A49CEDE8 /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */; };
 		6215B9C6DFBF73DB93072BD2 /* InspectorHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B068834105F375479ADF423 /* InspectorHelper.swift */; };
@@ -24,7 +23,6 @@
 		83D64D93C19B54470E4E1C2C /* SyncMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67FAA18AA33DB039B0026206 /* SyncMessages.swift */; };
 		870295EC4EDA044F54CE9E6D /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0057932203C8B246C76D50DC /* GhosttyKit.xcframework */; };
 		8FCC40CAAA5C7B8D29E12115 /* TranscriptionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD34E1A30F1D389095CB7641 /* TranscriptionOverlay.swift */; };
-		9D2F3A554C84F1FE71AC2648 /* AudioPlaybackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D658F9FC9B452A82ACDFAFD7 /* AudioPlaybackService.swift */; };
 		A15C1598E563DC750ECC3CA3 /* TranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88E3C34C14CD81F745E874DF /* TranscriptionService.swift */; };
 		A755A8C5DCFF1165E408136A /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3448A85CDA9475511475C2 /* Workspace.swift */; };
 		B4AA393A5A3C60C033BA0A02 /* PeerSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */; };
@@ -72,7 +70,6 @@
 		1C98BD914066A308C6C6C1C9 /* Pilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
 		26E21596BD1590738CF89498 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		2735EB59137CBF92CC14A32D /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureService.swift; sourceTree = "<group>"; };
 		32D547158D65899195FA3359 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3BA97D476477BE66A97A9D77 /* MouseBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MouseBridge.swift; sourceTree = "<group>"; };
 		5B068834105F375479ADF423 /* InspectorHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorHelper.swift; sourceTree = "<group>"; };
@@ -91,7 +88,6 @@
 		B028DA279E32AB30A1A75942 /* CommitListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitListView.swift; sourceTree = "<group>"; };
 		BD34E1A30F1D389095CB7641 /* TranscriptionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionOverlay.swift; sourceTree = "<group>"; };
 		CDB98CD0F5BCD145C5B14904 /* TrackpadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadView.swift; sourceTree = "<group>"; };
-		D658F9FC9B452A82ACDFAFD7 /* AudioPlaybackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlaybackService.swift; sourceTree = "<group>"; };
 		DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitCommitStore.swift; sourceTree = "<group>"; };
 		F430B621891B5DED12E1CF39 /* Copilot.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Copilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F684D74A8F12B03954CC49B3 /* PilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PilotApp.swift; sourceTree = "<group>"; };
@@ -134,7 +130,6 @@
 			isa = PBXGroup;
 			children = (
 				158C2018D7407AF1E5F146CB /* Assets.xcassets */,
-				2735EB59137CBF92CC14A32D /* AudioCaptureService.swift */,
 				AA1D8AC628F3F55D563872C7 /* ContentView.swift */,
 				6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */,
 				A0144CE36B7342F7D171F350 /* Info.plist */,
@@ -159,7 +154,6 @@
 			isa = PBXGroup;
 			children = (
 				7D00A3F70E212149A88CCD63 /* Assets.xcassets */,
-				D658F9FC9B452A82ACDFAFD7 /* AudioPlaybackService.swift */,
 				B028DA279E32AB30A1A75942 /* CommitListView.swift */,
 				132CB022A0BDFF0DE96316EF /* ContentView.swift */,
 				71A7E1AE9E717B53A369709B /* GhosttyTerminal.swift */,
@@ -332,7 +326,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				58EB64018B19CE63314951A5 /* AudioCaptureService.swift in Sources */,
 				D0614091089D4F0F461285ED /* ContentView.swift in Sources */,
 				C9B227630199C8E1705AE8DC /* CopilotApp.swift in Sources */,
 				B4AA393A5A3C60C033BA0A02 /* PeerSyncService.swift in Sources */,
@@ -355,7 +348,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				9D2F3A554C84F1FE71AC2648 /* AudioPlaybackService.swift in Sources */,
 				CB797869A7D03477CAC989A2 /* CommitListView.swift in Sources */,
 				1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */,
 				72A25CCED00C4DA32999DC63 /* GhosttyTerminal.swift in Sources */,
