@@ -117,6 +117,17 @@ struct ContentView: View {
                 }
             }
         }
+        .background {
+            ForEach(1...9, id: \.self) { index in
+                Button("") {
+                    let ws = workspaces
+                    guard index - 1 < ws.count else { return }
+                    store.selectedWorkspaceID = ws[index - 1].id
+                }
+                .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
+                .hidden()
+            }
+        }
     }
 
     private func workspaceRow(_ workspace: Workspace) -> some View {
