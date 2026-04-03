@@ -21,6 +21,9 @@ struct ContentView: View {
                                        systemImage: "rectangle.on.rectangle.slash",
                                        description: Text("Create a workspace in Pilot."))
             } else {
+                let pinned = workspaces.filter(\.isPinned)
+                let unpinned = workspaces.filter { !$0.isPinned }
+
                 VolumeScrollListView(
                     items: workspaces,
                     selectedID: $selectedID,
@@ -29,6 +32,11 @@ struct ContentView: View {
                     }
                 ) { workspace, isHighlighted in
                     HStack {
+                        if workspace.isPinned {
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                        }
                         Text(workspace.name)
                             .fontWeight(isHighlighted ? .semibold : .regular)
                         Spacer()
@@ -41,6 +49,18 @@ struct ContentView: View {
             }
         }
         .navigationTitle("Copilot")
+        .safeAreaInset(edge: .bottom) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(syncService.isConnected ? .green : .red)
+                    .frame(width: 8, height: 8)
+                Text(syncService.isConnected ? "Pilot Connected" : "Pilot Disconnected")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+        }
         .task { setupSync() }
     }
 

@@ -3,6 +3,7 @@ import Foundation
 struct WorkspaceSummary: Identifiable, Codable, Sendable, Hashable {
     let id: UUID
     var name: String
+    var isPinned: Bool = false
 }
 
 enum SyncMessage: Codable, Sendable {

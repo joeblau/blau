@@ -113,6 +113,8 @@ final class Workspace {
     var name: String = ""
     var selectedPaneID: UUID?
     var axisRaw: String = PaneAxis.vertical.rawValue
+    var isPinned: Bool = false
+    var workspaceSortOrder: Int = 0
 
     @Relationship(deleteRule: .cascade, inverse: \Pane.workspace)
     var panes: [Pane] = []

@@ -1,5 +1,9 @@
 import SwiftUI
+import UniformTypeIdentifiers
 @preconcurrency import WebKit
+
+// Use plainText for drag type since custom UTTypes require Info.plist registration
+private let paneTabDragType = UTType.plainText
 
 struct WorkspaceView: View {
     @Bindable var workspace: Workspace
@@ -53,7 +57,10 @@ struct WorkspaceView: View {
             }
         }
         .onTapGesture { workspace.selectedPaneID = pane.id }
-        .draggable(pane.id.uuidString) {
+        .onDrag {
+            draggingPaneID = pane.id
+            return NSItemProvider(object: pane.id.uuidString as NSString)
+        } preview: {
             HStack(spacing: 6) {
                 Image(systemName: pane.kind == .terminal ? "terminal" : "safari")
                     .font(.system(size: 11))
@@ -64,25 +71,14 @@ struct WorkspaceView: View {
             .padding(.vertical, 6)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
         }
-        .dropDestination(for: String.self) { items, _ in
-            guard let droppedIDString = items.first,
-                  let droppedID = UUID(uuidString: droppedIDString),
-                  let droppedPane = workspace.sortedPanes.first(where: { $0.id == droppedID }),
-                  droppedPane.id != pane.id else { return false }
-            let targetOrder = pane.sortOrder
-            let droppedOrder = droppedPane.sortOrder
-            if droppedOrder < targetOrder {
-                for p in workspace.panes where p.sortOrder > droppedOrder && p.sortOrder <= targetOrder {
-                    p.sortOrder -= 1
-                }
-            } else {
-                for p in workspace.panes where p.sortOrder >= targetOrder && p.sortOrder < droppedOrder {
-                    p.sortOrder += 1
-                }
-            }
-            droppedPane.sortOrder = targetOrder
-            return true
-        }
+        .onDrop(
+            of: [paneTabDragType],
+            delegate: PaneTabDropDelegate(
+                targetPane: pane,
+                workspace: workspace,
+                draggingPaneID: $draggingPaneID
+            )
+        )
         .contextMenu {
             Button("Close", role: .destructive) {
                 workspace.removePane(pane)
@@ -112,6 +108,51 @@ struct WorkspaceView: View {
         }
     }
 
+}
+
+private struct PaneTabDropDelegate: DropDelegate {
+    let targetPane: Pane
+    let workspace: Workspace
+    @Binding var draggingPaneID: UUID?
+
+    func dropEntered(info: DropInfo) {
+        _ = reorderDraggingPane()
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let didReorder = reorderDraggingPane()
+        draggingPaneID = nil
+        return didReorder
+    }
+
+    func dropExited(info: DropInfo) {
+        if !info.hasItemsConforming(to: [paneTabDragType]) {
+            draggingPaneID = nil
+        }
+    }
+
+    private func reorderDraggingPane() -> Bool {
+        guard let draggingPaneID,
+              draggingPaneID != targetPane.id,
+              let fromIndex = workspace.sortedPanes.firstIndex(where: { $0.id == draggingPaneID }),
+              let toIndex = workspace.sortedPanes.firstIndex(where: { $0.id == targetPane.id }),
+              fromIndex != toIndex else { return false }
+
+        var reorderedPanes = workspace.sortedPanes
+        let movedPane = reorderedPanes.remove(at: fromIndex)
+        reorderedPanes.insert(movedPane, at: toIndex)
+
+        for (index, pane) in reorderedPanes.enumerated() where pane.sortOrder != index {
+            pane.sortOrder = index
+        }
+
+        workspace.selectedPaneID = draggingPaneID
+        return true
+    }
 }
 
 struct TabItemContent: View {

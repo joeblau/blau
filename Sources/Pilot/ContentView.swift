@@ -10,16 +10,40 @@ struct ContentView: View {
 
     var body: some View {
         let activeInspectorRepoPath = selectedTerminalRepoPath
+        let _ = store.changeCount  // observation dependency for pin/unpin re-sort
         let workspaces = store.workspaces
 
         NavigationSplitView {
-            List(workspaces, selection: $store.selectedWorkspaceID) { workspace in
-                TextField("Name", text: Bindable(workspace).name)
-                    .contextMenu {
-                        Button("Delete", role: .destructive) {
-                            store.deleteWorkspace(workspace)
+            List(selection: $store.selectedWorkspaceID) {
+                let pinned = workspaces.filter(\.isPinned)
+                let unpinned = workspaces.filter { !$0.isPinned }
+
+                if !pinned.isEmpty {
+                    Section("Pinned") {
+                        ForEach(pinned) { workspace in
+                            workspaceRow(workspace)
                         }
                     }
+                }
+
+                Section("Workspaces") {
+                    ForEach(unpinned) { workspace in
+                        workspaceRow(workspace)
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(syncService.isConnected ? .green : .red)
+                        .frame(width: 8, height: 8)
+                    Text(syncService.isConnected ? "Copilot Connected" : "Copilot Disconnected")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
@@ -91,6 +115,32 @@ struct ContentView: View {
                 } label: {
                     Label("Inspector", systemImage: "sidebar.trailing")
                 }
+            }
+        }
+    }
+
+    private func workspaceRow(_ workspace: Workspace) -> some View {
+        HStack {
+            TextField("Name", text: Bindable(workspace).name)
+            if workspace.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .tag(workspace.id)
+        .contextMenu {
+            Button {
+                store.togglePin(workspace)
+            } label: {
+                Label(
+                    workspace.isPinned ? "Unpin" : "Pin to Top",
+                    systemImage: workspace.isPinned ? "pin.slash" : "pin"
+                )
+            }
+            Divider()
+            Button("Delete", role: .destructive) {
+                store.deleteWorkspace(workspace)
             }
         }
     }
