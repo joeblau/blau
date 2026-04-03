@@ -5,8 +5,10 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var store: WorkspaceStore
     var syncService: PeerSyncService
+    var deviceStatus: DeviceStatus
     @State private var gitStore = GitCommitStore()
     @State private var showInspector = false
+    @FocusState private var isBrowserURLFieldFocused: Bool
 
     var body: some View {
         let activeInspectorRepoPath = showInspector ? selectedTerminalRepoPath : nil
@@ -33,13 +35,10 @@ struct ContentView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(syncService.isConnected ? .green : .red)
-                        .frame(width: 8, height: 8)
-                    Text(syncService.isConnected ? "Copilot Connected" : "Copilot Disconnected")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    DeviceStatusIndicator(emoji: "📱", isConnected: syncService.isConnected)
+                    DeviceStatusIndicator(emoji: "⌚", isConnected: deviceStatus.isWatchConnected)
+                    DeviceStatusIndicator(emoji: "🎧", isConnected: deviceStatus.isAirPodsConnected)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
@@ -79,8 +78,18 @@ struct ContentView: View {
         .onChange(of: activeInspectorRepoPath) {
             syncInspectorRepo(activeInspectorRepoPath)
         }
+        .onChange(of: store.selectedWorkspaceID) {
+            if let workspace = store.selectedWorkspace {
+                for pane in workspace.panes where pane.kind == .terminal {
+                    pane.resetBellCount()
+                }
+            }
+        }
         .task {
             syncInspectorRepo(activeInspectorRepoPath)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pilotFocusBrowserAddressBar)) { _ in
+            focusBrowserAddressBar()
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -148,6 +157,14 @@ struct ContentView: View {
                     .font(.system(size: 9))
                     .foregroundStyle(.secondary)
             }
+            if workspace.badgeCount > 0 {
+                Text("\(workspace.badgeCount)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(.red, in: Capsule())
+            }
         }
         .tag(workspace.id)
         .contextMenu {
@@ -183,6 +200,7 @@ struct ContentView: View {
         TextField("URL", text: Bindable(state).urlText)
             .textFieldStyle(.plain)
             .font(.system(size: 13, weight: .medium))
+            .focused($isBrowserURLFieldFocused)
             .onSubmit { state.navigate() }
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
@@ -248,6 +266,20 @@ struct ContentView: View {
         )
     }
 
+    private var selectedBrowserState: BrowserState? {
+        guard let pane = store.selectedWorkspace?.selectedPane,
+              pane.kind == .browser else { return nil }
+        return pane.browserState
+    }
+
+    private func focusBrowserAddressBar() {
+        guard selectedBrowserState != nil else { return }
+        isBrowserURLFieldFocused = true
+        DispatchQueue.main.async {
+            NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+        }
+    }
+
     private var selectedTerminalRepoPath: String? {
         guard let pane = store.selectedWorkspace?.selectedPane else { return nil }
         guard pane.kind == .terminal else { return nil }
@@ -268,6 +300,25 @@ struct ContentView: View {
     }
 }
 
+private struct DeviceStatusIndicator: View {
+    let emoji: String
+    let isConnected: Bool
+
+    var body: some View {
+        Text(emoji)
+            .overlay(alignment: .topTrailing) {
+                Circle()
+                    .fill(isConnected ? .green : .red)
+                    .frame(width: 8, height: 8)
+                    .offset(x: 3, y: -3)
+            }
+    }
+}
+
+extension Notification.Name {
+    static let pilotFocusBrowserAddressBar = Notification.Name("pilotFocusBrowserAddressBar")
+}
+
 
 @MainActor
 private enum ContentViewPreviewData {
@@ -281,7 +332,8 @@ private enum ContentViewPreviewData {
 #Preview {
     ContentView(
         store: WorkspaceStore(modelContext: ContentViewPreviewData.container.mainContext),
-        syncService: PeerSyncService(role: .advertiser, displayName: "Preview")
+        syncService: PeerSyncService(role: .advertiser, displayName: "Preview"),
+        deviceStatus: DeviceStatus()
     )
     .modelContainer(ContentViewPreviewData.container)
 }

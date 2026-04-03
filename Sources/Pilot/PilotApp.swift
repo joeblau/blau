@@ -6,6 +6,7 @@ struct PilotApp: App {
     let modelContainer: ModelContainer
 
     @State private var store: WorkspaceStore
+    @State private var deviceStatus = DeviceStatus()
     @State private var syncService = PeerSyncService(
         role: .advertiser,
         displayName: Host.current().localizedName ?? "Mac"
@@ -20,11 +21,20 @@ struct PilotApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(store: store, syncService: syncService)
+            ContentView(store: store, syncService: syncService, deviceStatus: deviceStatus)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                 .task { setupSync() }
         }
         .modelContainer(modelContainer)
+        .commands {
+            CommandMenu("Browser") {
+                Button("Focus Address Bar") {
+                    NotificationCenter.default.post(name: .pilotFocusBrowserAddressBar, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: .command)
+                .disabled(store.selectedWorkspace?.selectedPane?.kind != .browser)
+            }
+        }
     }
 
     private func setupSync() {
@@ -34,6 +44,8 @@ struct PilotApp: App {
                 store.selectedWorkspaceID = sel.workspaceID
             case .workspaceState:
                 break
+            case .deviceStatus(let status):
+                deviceStatus = status
             }
         }
         syncService.start()

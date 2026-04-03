@@ -9,70 +9,69 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            if !syncService.isConnected && workspaces.isEmpty {
-                ContentUnavailableView {
-                    Label("Looking for Pilot...", systemImage: "antenna.radiowaves.left.and.right")
-                } description: {
-                    Text("Make sure Pilot is running on your Mac.")
-                } actions: {
-                    ProgressView()
-                }
-            } else if workspaces.isEmpty {
-                ContentUnavailableView("No Workspaces",
-                                       systemImage: "rectangle.on.rectangle.slash",
-                                       description: Text("Create a workspace in Pilot."))
-            } else {
-                let pinned = workspaces.filter(\.isPinned)
-                let unpinned = workspaces.filter { !$0.isPinned }
-
-                VolumeScrollListView(
-                    items: workspaces,
-                    selectedID: $selectedID,
-                    onHighlightChanged: { workspace in
-                        syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspace.id)))
+            Group {
+                if !syncService.isConnected && workspaces.isEmpty {
+                    ContentUnavailableView {
+                        Label("Looking for Pilot...", systemImage: "antenna.radiowaves.left.and.right")
+                    } description: {
+                        Text("Make sure Pilot is running on your Mac.")
+                    } actions: {
+                        ProgressView()
                     }
-                ) { workspace, isHighlighted in
-                    HStack {
-                        if workspace.isPinned {
-                            Image(systemName: "pin.fill")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.secondary)
+                } else if workspaces.isEmpty {
+                    ContentUnavailableView("No Workspaces",
+                                           systemImage: "rectangle.on.rectangle.slash",
+                                           description: Text("Create a workspace in Pilot."))
+                } else {
+                    VolumeScrollListView(
+                        items: workspaces,
+                        selectedID: $selectedID,
+                        onHighlightChanged: { workspace in
+                            syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspace.id)))
                         }
-                        Text(workspace.name)
-                            .fontWeight(isHighlighted ? .semibold : .regular)
-                        Spacer()
-                        if isHighlighted {
-                            Image(systemName: "chevron.right")
+                    ) { workspace, isHighlighted in
+                        HStack {
+                            if workspace.isPinned {
+                                Image(systemName: "pin.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(workspace.name)
+                                .fontWeight(isHighlighted ? .semibold : .regular)
+                            if workspace.badgeCount > 0 {
+                                Text("\(workspace.badgeCount)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(.red, in: Capsule())
+                            }
+                            Spacer()
+                            if isHighlighted {
+                                Image(systemName: "chevron.right")
+                            }
                         }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
             }
-        }
-        .navigationTitle("Copilot")
-        .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 4) {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(syncService.isConnected ? .green : .red)
-                        .frame(width: 8, height: 8)
-                    Text(syncService.isConnected ? "Pilot Connected" : "Pilot Disconnected")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+            .navigationTitle("Copilot")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    DeviceStatusButton(emoji: "💻", isConnected: syncService.isConnected)
                 }
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(watchDelegate.isWatchReachable ? .green : .red)
-                        .frame(width: 8, height: 8)
-                    Text(watchDelegate.isWatchReachable ? "Wingman Connected" : "Wingman Disconnected")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                ToolbarItem(placement: .topBarTrailing) {
+                    DeviceStatusButton(emoji: "⌚", isConnected: watchDelegate.isWatchReachable)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    DeviceStatusButton(emoji: "🎧", isConnected: false)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
         }
         .task { setupSync() }
+        .onChange(of: watchDelegate.isWatchReachable) {
+            sendDeviceStatus()
+        }
     }
 
     private func setupSync() {
@@ -83,9 +82,36 @@ struct ContentView: View {
                 selectedID = state.selectedWorkspaceID
             case .selectWorkspace:
                 break
+            case .deviceStatus:
+                break
             }
         }
         syncService.start()
+    }
+
+    private func sendDeviceStatus() {
+        let status = DeviceStatus(
+            isWatchConnected: watchDelegate.isWatchReachable,
+            isAirPodsConnected: false
+        )
+        syncService.send(.deviceStatus(status))
+    }
+}
+
+private struct DeviceStatusButton: View {
+    let emoji: String
+    let isConnected: Bool
+
+    var body: some View {
+        Button {} label: {
+            Text(emoji)
+                .overlay(alignment: .topTrailing) {
+                    Circle()
+                        .fill(isConnected ? .green : .red)
+                        .frame(width: 12, height: 12)
+                        .offset(x: 6, y: -6)
+                }
+        }
     }
 }
 
