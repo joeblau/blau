@@ -20,14 +20,18 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            List(Array(items.enumerated()), id: \.element.id) { index, item in
-                rowContent(item, item.id == selectedID)
-                    .listRowBackground(
-                        item.id == selectedID
-                            ? Color.accentColor.opacity(0.2)
-                            : Color.clear
-                    )
-                    .id(index)
+            List {
+                Section("Workspaces") {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        rowContent(item, item.id == selectedID)
+                            .listRowBackground(
+                                item.id == selectedID
+                                    ? Color.accentColor.opacity(0.2)
+                                    : nil
+                            )
+                            .id(index)
+                    }
+                }
             }
             .listStyle(.insetGrouped)
             .overlay {
@@ -270,12 +274,13 @@ struct VolumeHiderView: UIViewRepresentable {
 private struct PreviewItem: Identifiable {
     let id = UUID()
     let name: String
+    var badgeCount: Int = 0
 }
 
 #Preview {
     @Previewable @State var selectedID: UUID?
     let items = [
-        PreviewItem(name: "Bloxwap"),
+        PreviewItem(name: "Bloxwap", badgeCount: 2),
         PreviewItem(name: "Blau"),
         PreviewItem(name: "Submap"),
         PreviewItem(name: "VeblenHype"),
@@ -285,7 +290,18 @@ private struct PreviewItem: Identifiable {
         items: items,
         selectedID: $selectedID
     ) { item, isHighlighted in
-        Text(item.name)
-            .fontWeight(isHighlighted ? .semibold : .regular)
+        HStack {
+            Text(item.name)
+                .fontWeight(isHighlighted ? .semibold : .regular)
+            Spacer()
+            if item.badgeCount > 0 {
+                Text("\(item.badgeCount)")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.red, in: Capsule())
+            }
+        }
     }
 }

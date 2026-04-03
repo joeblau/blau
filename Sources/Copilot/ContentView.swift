@@ -15,9 +15,9 @@ struct ContentView: View {
             .toolbar {
                 deviceToolbar
             }
-        }
-        .safeAreaInset(edge: .bottom) {
-            trackpadInset
+            .safeAreaInset(edge: .bottom) {
+                trackpadInset
+            }
         }
         .task { setupSync() }
         .onChange(of: watchDelegate.isWatchReachable) {
@@ -87,9 +87,6 @@ struct ContentView: View {
                     .background(.red, in: Capsule())
             }
             Spacer()
-            if isHighlighted {
-                Image(systemName: "chevron.right")
-            }
         }
         .padding(.vertical, 4)
     }
