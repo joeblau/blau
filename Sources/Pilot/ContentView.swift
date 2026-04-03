@@ -5,11 +5,10 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var store: WorkspaceStore
     var syncService: PeerSyncService
-    @State private var showInspector = false
     @State private var gitStore = GitCommitStore()
 
     var body: some View {
-        let activeInspectorRepoPath = selectedTerminalRepoPath
+        let activeInspectorRepoPath = selectedWorkspaceInspectorPresented ? selectedTerminalRepoPath : nil
         let _ = store.changeCount  // observation dependency for pin/unpin re-sort
         let workspaces = store.workspaces
 
@@ -57,6 +56,7 @@ struct ContentView: View {
                     ForEach(workspaces) { workspace in
                         let isActive = workspace.id == selectedWorkspaceID
                         WorkspaceView(workspace: workspace)
+                            .zIndex(isActive ? 1 : 0)
                             .opacity(isActive ? 1 : 0)
                             .allowsHitTesting(isActive)
                             .accessibilityHidden(!isActive)
@@ -68,12 +68,12 @@ struct ContentView: View {
                                        description: Text("Create a workspace with the + button."))
             }
         }
-        .inspector(isPresented: $showInspector) {
-            InspectorPanelView(gitStore: gitStore)
+        .inspector(isPresented: selectedWorkspaceInspectorPresentedBinding) {
+            InspectorPanelView(
+                gitStore: gitStore,
+                selectedTab: selectedWorkspaceInspectorTabBinding
+            )
                 .inspectorColumnWidth(min: 220, ideal: 280, max: 400)
-        }
-        .onChange(of: showInspector) {
-            syncInspectorRepo(activeInspectorRepoPath)
         }
         .onChange(of: activeInspectorRepoPath) {
             syncInspectorRepo(activeInspectorRepoPath)
@@ -111,7 +111,8 @@ struct ContentView: View {
                 .disabled(store.selectedWorkspace == nil)
 
                 Button {
-                    showInspector.toggle()
+                    guard let workspace = store.selectedWorkspace else { return }
+                    workspace.setInspectorPresented(!workspace.isInspectorPresented)
                 } label: {
                     Label("Inspector", systemImage: "sidebar.trailing")
                 }
@@ -227,6 +228,28 @@ struct ContentView: View {
         case .light: "sun.max"
         case .dark: "moon"
         }
+    }
+
+    private var selectedWorkspaceInspectorPresented: Bool {
+        store.selectedWorkspace?.isInspectorPresented ?? false
+    }
+
+    private var selectedWorkspaceInspectorPresentedBinding: Binding<Bool> {
+        Binding(
+            get: { self.selectedWorkspaceInspectorPresented },
+            set: { isPresented in
+                self.store.selectedWorkspace?.setInspectorPresented(isPresented)
+            }
+        )
+    }
+
+    private var selectedWorkspaceInspectorTabBinding: Binding<InspectorTab> {
+        Binding(
+            get: { self.store.selectedWorkspace?.inspectorTab ?? .actions },
+            set: { tab in
+                self.store.selectedWorkspace?.setInspectorTab(tab)
+            }
+        )
     }
 
     private var selectedTerminalRepoPath: String? {

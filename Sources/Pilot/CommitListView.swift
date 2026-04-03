@@ -40,14 +40,9 @@ struct RoundedSegmentedPicker: NSViewRepresentable {
     }
 }
 
-enum InspectorTab: String, CaseIterable {
-    case actions = "Actions"
-    case commits = "Commits"
-}
-
 struct InspectorPanelView: View {
     let gitStore: GitCommitStore
-    @State private var selectedTab: InspectorTab = .actions
+    @Binding var selectedTab: InspectorTab
 
     var body: some View {
         VStack(spacing: 0) {

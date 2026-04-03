@@ -12,6 +12,11 @@ enum AppearanceMode: String, Codable, CaseIterable {
     case dark = "Dark"
 }
 
+enum InspectorTab: String, Codable, CaseIterable {
+    case actions = "Actions"
+    case commits = "Commits"
+}
+
 @Model
 final class BrowserState {
     var urlText: String = "https://apple.com"
@@ -113,6 +118,8 @@ final class Workspace {
     var name: String = ""
     var selectedPaneID: UUID?
     var axisRaw: String = PaneAxis.vertical.rawValue
+    var isInspectorPresented: Bool = false
+    var inspectorTabRaw: String = InspectorTab.actions.rawValue
     var isPinned: Bool = false
     var workspaceSortOrder: Int = 0
 
@@ -130,6 +137,11 @@ final class Workspace {
     var axis: PaneAxis {
         get { PaneAxis(rawValue: axisRaw) ?? .vertical }
         set { axisRaw = newValue.rawValue }
+    }
+
+    var inspectorTab: InspectorTab {
+        get { InspectorTab(rawValue: inspectorTabRaw) ?? .actions }
+        set { inspectorTabRaw = newValue.rawValue }
     }
 
     init(name: String) {
@@ -180,6 +192,18 @@ final class Workspace {
         if selectedPaneID == pane.id {
             selectedPaneID = sortedPanes.first?.id
         }
+    }
+
+    func setInspectorPresented(_ isPresented: Bool) {
+        guard isInspectorPresented != isPresented else { return }
+        isInspectorPresented = isPresented
+        try? modelContext?.save()
+    }
+
+    func setInspectorTab(_ tab: InspectorTab) {
+        guard inspectorTab != tab else { return }
+        inspectorTab = tab
+        try? modelContext?.save()
     }
 
     enum Side {
