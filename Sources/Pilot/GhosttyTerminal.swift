@@ -1,5 +1,4 @@
 import AppKit
-import Carbon.HIToolbox
 import SwiftUI
 import GhosttyKit
 
@@ -338,6 +337,11 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     // Text accumulated during keyDown via insertText
     private var keyTextAccumulator: [String]?
 
+    // Records the timestamp of the last event to performKeyEquivalent.
+    // Used to re-dispatch command-modded key events that AppKit intercepted
+    // via doCommand before our keyDown could handle them.
+    private var lastPerformKeyEvent: TimeInterval?
+
     // MARK: - Keyboard
 
     override func keyDown(with event: NSEvent) {
@@ -384,6 +388,9 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         keyTextAccumulator = []
         defer { keyTextAccumulator = nil }
 
+        // Reset the re-dispatch timestamp since interpretKeyEvents may trigger doCommand.
+        self.lastPerformKeyEvent = nil
+
         interpretKeyEvents([translationEvent])
 
         if let texts = keyTextAccumulator, !texts.isEmpty {
@@ -407,30 +414,68 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown else { return false }
         guard surface != nil else { return false }
-        guard event.timestamp != 0 else { return false }
 
-        // Must have a modifier to be a key equivalent
-        guard event.modifierFlags.contains(.command) ||
-              event.modifierFlags.contains(.control) else {
-            return false
+        let equivalent: String
+        switch event.charactersIgnoringModifiers {
+        case "\r":
+            // Pass C-<return> through verbatim
+            // (prevent the default context menu equivalent)
+            if !event.modifierFlags.contains(.control) {
+                return false
+            }
+            equivalent = "\r"
+
+        case "/":
+            // Treat C-/ as C-_. We do this because C-/ makes macOS beep.
+            if !event.modifierFlags.contains(.control) ||
+                !event.modifierFlags.isDisjoint(with: [.shift, .command, .option]) {
+                return false
+            }
+            equivalent = "_"
+
+        default:
+            // Ignore synthetic events with zero timestamp
+            if event.timestamp == 0 {
+                return false
+            }
+
+            // Ignore all non-command/control events
+            if !event.modifierFlags.contains(.command) &&
+                !event.modifierFlags.contains(.control) {
+                lastPerformKeyEvent = nil
+                return false
+            }
+
+            // If we have a prior command binding and the timestamp matches,
+            // re-dispatch through keyDown for encoding.
+            if let lastPerformKeyEvent {
+                self.lastPerformKeyEvent = nil
+                if lastPerformKeyEvent == event.timestamp {
+                    equivalent = event.characters ?? ""
+                    break
+                }
+            }
+
+            // Send all Cmd/Ctrl combos through keyDown so Ghostty's C-level
+            // binding system can handle them (paste, copy, etc.).
+            self.keyDown(with: event)
+            return true
         }
 
-        // Cmd+V: paste from clipboard (Ghostty binding)
-        if event.modifierFlags.contains(.command),
-           event.charactersIgnoringModifiers?.lowercased() == "v" {
-            return performPasteFromClipboard()
-        }
+        let finalEvent = NSEvent.keyEvent(
+            with: .keyDown,
+            location: event.locationInWindow,
+            modifierFlags: event.modifierFlags,
+            timestamp: event.timestamp,
+            windowNumber: event.windowNumber,
+            context: nil,
+            characters: equivalent,
+            charactersIgnoringModifiers: equivalent,
+            isARepeat: event.isARepeat,
+            keyCode: event.keyCode
+        )
 
-        // Cmd+C: copy to clipboard (Ghostty binding)
-        if event.modifierFlags.contains(.command),
-           event.charactersIgnoringModifiers?.lowercased() == "c" {
-            guard let surface else { return false }
-            let action = "copy_to_clipboard"
-            return ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
-        }
-
-        // All other Cmd/Ctrl combos: send through keyDown → Ghostty handles bindings at C level
-        keyDown(with: event)
+        self.keyDown(with: finalEvent!)
         return true
     }
 
@@ -454,6 +499,9 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         default:
             return
         }
+
+        // If we're in the middle of a preedit, don't do anything with mods.
+        if hasMarkedText() { return }
 
         let mods = ghosttyMods(event.modifierFlags)
         var action = GHOSTTY_ACTION_RELEASE
@@ -677,21 +725,43 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
 extension GhosttyMetalView: @MainActor NSTextInputClient {
     func insertText(_ string: Any, replacementRange: NSRange) {
-        let str: String
+        // We must have an associated event
+        guard NSApp.currentEvent != nil else { return }
+
+        let chars: String
         if let s = string as? NSAttributedString {
-            str = s.string
+            chars = s.string
         } else if let s = string as? String {
-            str = s
+            chars = s
         } else {
             return
         }
-        keyTextAccumulator?.append(str)
+
+        // If insertText is called, our preedit must be over.
+        unmarkText()
+
+        // If we have an accumulator we're in a keyDown event so we just
+        // accumulate and return.
+        if var acc = keyTextAccumulator {
+            acc.append(chars)
+            keyTextAccumulator = acc
+            return
+        }
     }
 
     override func doCommand(by selector: Selector) {
-        // Commands like deleteBackward:, insertNewline: etc. are handled
-        // by keyDown sending the physical key event to Ghostty directly.
-        // No additional action needed here.
+        // If we are being processed by performKeyEquivalent with a command binding,
+        // we send it back through the event system so it can be encoded.
+        if let lastPerformKeyEvent,
+           let current = NSApp.currentEvent,
+           lastPerformKeyEvent == current.timestamp {
+            NSApp.sendEvent(current)
+            return
+        }
+
+        // This function needs to exist to prevent audible NSBeep for
+        // unimplemented actions. Commands like deleteBackward:, insertNewline:
+        // etc. are handled by keyDown sending the key event to Ghostty directly.
     }
 
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {}
@@ -748,131 +818,6 @@ private func ghosttyMods(_ flags: NSEvent.ModifierFlags) -> ghostty_input_mods_e
     return ghostty_input_mods_e(rawValue: mods)
 }
 
-private func ghosttyPhysicalKeyCode(for macKeyCode: UInt16) -> UInt32 {
-    let key: ghostty_input_key_e = switch macKeyCode {
-    case UInt16(kVK_ANSI_A): GHOSTTY_KEY_A
-    case UInt16(kVK_ANSI_B): GHOSTTY_KEY_B
-    case UInt16(kVK_ANSI_C): GHOSTTY_KEY_C
-    case UInt16(kVK_ANSI_D): GHOSTTY_KEY_D
-    case UInt16(kVK_ANSI_E): GHOSTTY_KEY_E
-    case UInt16(kVK_ANSI_F): GHOSTTY_KEY_F
-    case UInt16(kVK_ANSI_G): GHOSTTY_KEY_G
-    case UInt16(kVK_ANSI_H): GHOSTTY_KEY_H
-    case UInt16(kVK_ANSI_I): GHOSTTY_KEY_I
-    case UInt16(kVK_ANSI_J): GHOSTTY_KEY_J
-    case UInt16(kVK_ANSI_K): GHOSTTY_KEY_K
-    case UInt16(kVK_ANSI_L): GHOSTTY_KEY_L
-    case UInt16(kVK_ANSI_M): GHOSTTY_KEY_M
-    case UInt16(kVK_ANSI_N): GHOSTTY_KEY_N
-    case UInt16(kVK_ANSI_O): GHOSTTY_KEY_O
-    case UInt16(kVK_ANSI_P): GHOSTTY_KEY_P
-    case UInt16(kVK_ANSI_Q): GHOSTTY_KEY_Q
-    case UInt16(kVK_ANSI_R): GHOSTTY_KEY_R
-    case UInt16(kVK_ANSI_S): GHOSTTY_KEY_S
-    case UInt16(kVK_ANSI_T): GHOSTTY_KEY_T
-    case UInt16(kVK_ANSI_U): GHOSTTY_KEY_U
-    case UInt16(kVK_ANSI_V): GHOSTTY_KEY_V
-    case UInt16(kVK_ANSI_W): GHOSTTY_KEY_W
-    case UInt16(kVK_ANSI_X): GHOSTTY_KEY_X
-    case UInt16(kVK_ANSI_Y): GHOSTTY_KEY_Y
-    case UInt16(kVK_ANSI_Z): GHOSTTY_KEY_Z
-    case UInt16(kVK_ANSI_0): GHOSTTY_KEY_DIGIT_0
-    case UInt16(kVK_ANSI_1): GHOSTTY_KEY_DIGIT_1
-    case UInt16(kVK_ANSI_2): GHOSTTY_KEY_DIGIT_2
-    case UInt16(kVK_ANSI_3): GHOSTTY_KEY_DIGIT_3
-    case UInt16(kVK_ANSI_4): GHOSTTY_KEY_DIGIT_4
-    case UInt16(kVK_ANSI_5): GHOSTTY_KEY_DIGIT_5
-    case UInt16(kVK_ANSI_6): GHOSTTY_KEY_DIGIT_6
-    case UInt16(kVK_ANSI_7): GHOSTTY_KEY_DIGIT_7
-    case UInt16(kVK_ANSI_8): GHOSTTY_KEY_DIGIT_8
-    case UInt16(kVK_ANSI_9): GHOSTTY_KEY_DIGIT_9
-    case UInt16(kVK_ANSI_Equal): GHOSTTY_KEY_EQUAL
-    case UInt16(kVK_ANSI_Minus): GHOSTTY_KEY_MINUS
-    case UInt16(kVK_ANSI_LeftBracket): GHOSTTY_KEY_BRACKET_LEFT
-    case UInt16(kVK_ANSI_RightBracket): GHOSTTY_KEY_BRACKET_RIGHT
-    case UInt16(kVK_ANSI_Semicolon): GHOSTTY_KEY_SEMICOLON
-    case UInt16(kVK_ANSI_Quote): GHOSTTY_KEY_QUOTE
-    case UInt16(kVK_ANSI_Backslash): GHOSTTY_KEY_BACKSLASH
-    case UInt16(kVK_ANSI_Comma): GHOSTTY_KEY_COMMA
-    case UInt16(kVK_ANSI_Period): GHOSTTY_KEY_PERIOD
-    case UInt16(kVK_ANSI_Slash): GHOSTTY_KEY_SLASH
-    case UInt16(kVK_ANSI_Grave): GHOSTTY_KEY_BACKQUOTE
-    case UInt16(kVK_ISO_Section): GHOSTTY_KEY_INTL_BACKSLASH
-    case UInt16(kVK_JIS_Yen): GHOSTTY_KEY_INTL_YEN
-    case UInt16(kVK_JIS_Underscore): GHOSTTY_KEY_INTL_RO
-    case UInt16(kVK_Return): GHOSTTY_KEY_ENTER
-    case UInt16(kVK_Tab): GHOSTTY_KEY_TAB
-    case UInt16(kVK_Space): GHOSTTY_KEY_SPACE
-    case UInt16(kVK_Delete): GHOSTTY_KEY_BACKSPACE
-    case UInt16(kVK_ForwardDelete): GHOSTTY_KEY_DELETE
-    case UInt16(kVK_Escape): GHOSTTY_KEY_ESCAPE
-    case UInt16(kVK_Command): GHOSTTY_KEY_META_LEFT
-    case UInt16(kVK_RightCommand): GHOSTTY_KEY_META_RIGHT
-    case UInt16(kVK_Shift): GHOSTTY_KEY_SHIFT_LEFT
-    case UInt16(kVK_RightShift): GHOSTTY_KEY_SHIFT_RIGHT
-    case UInt16(kVK_Option): GHOSTTY_KEY_ALT_LEFT
-    case UInt16(kVK_RightOption): GHOSTTY_KEY_ALT_RIGHT
-    case UInt16(kVK_Control): GHOSTTY_KEY_CONTROL_LEFT
-    case UInt16(kVK_RightControl): GHOSTTY_KEY_CONTROL_RIGHT
-    case UInt16(kVK_CapsLock): GHOSTTY_KEY_CAPS_LOCK
-    case UInt16(kVK_Function): GHOSTTY_KEY_FN
-    case UInt16(kVK_Help): GHOSTTY_KEY_HELP
-    case UInt16(kVK_Home): GHOSTTY_KEY_HOME
-    case UInt16(kVK_End): GHOSTTY_KEY_END
-    case UInt16(kVK_PageUp): GHOSTTY_KEY_PAGE_UP
-    case UInt16(kVK_PageDown): GHOSTTY_KEY_PAGE_DOWN
-    case UInt16(kVK_LeftArrow): GHOSTTY_KEY_ARROW_LEFT
-    case UInt16(kVK_RightArrow): GHOSTTY_KEY_ARROW_RIGHT
-    case UInt16(kVK_DownArrow): GHOSTTY_KEY_ARROW_DOWN
-    case UInt16(kVK_UpArrow): GHOSTTY_KEY_ARROW_UP
-    case UInt16(kVK_F1): GHOSTTY_KEY_F1
-    case UInt16(kVK_F2): GHOSTTY_KEY_F2
-    case UInt16(kVK_F3): GHOSTTY_KEY_F3
-    case UInt16(kVK_F4): GHOSTTY_KEY_F4
-    case UInt16(kVK_F5): GHOSTTY_KEY_F5
-    case UInt16(kVK_F6): GHOSTTY_KEY_F6
-    case UInt16(kVK_F7): GHOSTTY_KEY_F7
-    case UInt16(kVK_F8): GHOSTTY_KEY_F8
-    case UInt16(kVK_F9): GHOSTTY_KEY_F9
-    case UInt16(kVK_F10): GHOSTTY_KEY_F10
-    case UInt16(kVK_F11): GHOSTTY_KEY_F11
-    case UInt16(kVK_F12): GHOSTTY_KEY_F12
-    case UInt16(kVK_F13): GHOSTTY_KEY_F13
-    case UInt16(kVK_F14): GHOSTTY_KEY_F14
-    case UInt16(kVK_F15): GHOSTTY_KEY_F15
-    case UInt16(kVK_F16): GHOSTTY_KEY_F16
-    case UInt16(kVK_F17): GHOSTTY_KEY_F17
-    case UInt16(kVK_F18): GHOSTTY_KEY_F18
-    case UInt16(kVK_F19): GHOSTTY_KEY_F19
-    case UInt16(kVK_F20): GHOSTTY_KEY_F20
-    case UInt16(kVK_ANSI_Keypad0): GHOSTTY_KEY_NUMPAD_0
-    case UInt16(kVK_ANSI_Keypad1): GHOSTTY_KEY_NUMPAD_1
-    case UInt16(kVK_ANSI_Keypad2): GHOSTTY_KEY_NUMPAD_2
-    case UInt16(kVK_ANSI_Keypad3): GHOSTTY_KEY_NUMPAD_3
-    case UInt16(kVK_ANSI_Keypad4): GHOSTTY_KEY_NUMPAD_4
-    case UInt16(kVK_ANSI_Keypad5): GHOSTTY_KEY_NUMPAD_5
-    case UInt16(kVK_ANSI_Keypad6): GHOSTTY_KEY_NUMPAD_6
-    case UInt16(kVK_ANSI_Keypad7): GHOSTTY_KEY_NUMPAD_7
-    case UInt16(kVK_ANSI_Keypad8): GHOSTTY_KEY_NUMPAD_8
-    case UInt16(kVK_ANSI_Keypad9): GHOSTTY_KEY_NUMPAD_9
-    case UInt16(kVK_ANSI_KeypadDecimal): GHOSTTY_KEY_NUMPAD_DECIMAL
-    case UInt16(kVK_ANSI_KeypadMultiply): GHOSTTY_KEY_NUMPAD_MULTIPLY
-    case UInt16(kVK_ANSI_KeypadPlus): GHOSTTY_KEY_NUMPAD_ADD
-    case UInt16(kVK_ANSI_KeypadClear): GHOSTTY_KEY_NUMPAD_CLEAR
-    case UInt16(kVK_ANSI_KeypadDivide): GHOSTTY_KEY_NUMPAD_DIVIDE
-    case UInt16(kVK_ANSI_KeypadEnter): GHOSTTY_KEY_NUMPAD_ENTER
-    case UInt16(kVK_ANSI_KeypadMinus): GHOSTTY_KEY_NUMPAD_SUBTRACT
-    case UInt16(kVK_ANSI_KeypadEquals): GHOSTTY_KEY_NUMPAD_EQUAL
-    case UInt16(kVK_JIS_KeypadComma): GHOSTTY_KEY_NUMPAD_COMMA
-    case UInt16(kVK_VolumeUp): GHOSTTY_KEY_AUDIO_VOLUME_UP
-    case UInt16(kVK_VolumeDown): GHOSTTY_KEY_AUDIO_VOLUME_DOWN
-    case UInt16(kVK_Mute): GHOSTTY_KEY_AUDIO_VOLUME_MUTE
-    default: GHOSTTY_KEY_UNIDENTIFIED
-    }
-
-    return UInt32(key.rawValue)
-}
-
 private extension NSEvent {
     func ghosttyKeyEvent(
         _ action: ghostty_input_action_e,
@@ -880,7 +825,7 @@ private extension NSEvent {
     ) -> ghostty_input_key_s {
         var key = ghostty_input_key_s()
         key.action = action
-        key.keycode = ghosttyPhysicalKeyCode(for: keyCode)
+        key.keycode = UInt32(keyCode)
         key.text = nil
         key.composing = false
 
@@ -905,10 +850,6 @@ private extension NSEvent {
            let scalar = characters.unicodeScalars.first {
             if scalar.value < 0x20 {
                 return self.characters(byApplyingModifiers: modifierFlags.subtracting(.control))
-            }
-
-            if scalar.value == 0x7F {
-                return nil
             }
 
             if scalar.value >= 0xF700 && scalar.value <= 0xF8FF {
