@@ -6,6 +6,7 @@ struct ContentView: View {
 
     @State private var workspaces: [WorkspaceSummary] = []
     @State private var selectedID: UUID?
+    @State private var audioCapture = AudioCaptureService()
 
     var body: some View {
         NavigationStack {
@@ -56,6 +57,16 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Copilot")
+            .safeAreaInset(edge: .bottom) {
+                WalkieTalkieButton(isRecording: audioCapture.isRecording) {
+                    audioCapture.startRecording()
+                    syncService.send(.audioControl(.start))
+                } onRelease: {
+                    syncService.send(.audioControl(.stop))
+                    audioCapture.stopRecording()
+                }
+                .padding(.bottom, 8)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     DeviceStatusButton(emoji: "💻", isConnected: syncService.isConnected)
@@ -84,9 +95,14 @@ struct ContentView: View {
                 break
             case .deviceStatus:
                 break
+            case .audioControl, .audioChunk:
+                break
             }
         }
         syncService.start()
+        audioCapture.configure { chunk in
+            syncService.send(.audioChunk(chunk), reliable: false)
+        }
     }
 
     private func sendDeviceStatus() {
@@ -112,6 +128,30 @@ private struct DeviceStatusButton: View {
                         .offset(x: 6, y: -6)
                 }
         }
+    }
+}
+
+private struct WalkieTalkieButton: View {
+    let isRecording: Bool
+    let onPress: () -> Void
+    let onRelease: () -> Void
+
+    var body: some View {
+        Circle()
+            .fill(isRecording ? .red : .accentColor)
+            .frame(width: 72, height: 72)
+            .overlay {
+                Image(systemName: isRecording ? "waveform" : "mic.fill")
+                    .font(.title)
+                    .foregroundStyle(.white)
+                    .symbolEffect(.variableColor.iterative, isActive: isRecording)
+            }
+            .gesture(
+                LongPressGesture(minimumDuration: 0.3)
+                    .onEnded { _ in onPress() }
+                    .sequenced(before: DragGesture(minimumDistance: 0)
+                        .onEnded { _ in onRelease() })
+            )
     }
 }
 

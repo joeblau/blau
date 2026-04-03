@@ -28,6 +28,8 @@
     </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Copilot uses the local network to sync with Pilot.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Copilot uses the microphone for walkie-talkie audio to Pilot.</string>
     <key>UILaunchScreen</key>
     <dict>
         <key>UILaunchScreen</key>

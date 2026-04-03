@@ -52,10 +52,10 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         isConnected = false
     }
 
-    func send(_ message: SyncMessage) {
+    func send(_ message: SyncMessage, reliable: Bool = true) {
         guard !session.connectedPeers.isEmpty else { return }
         guard let data = try? JSONEncoder().encode(message) else { return }
-        try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
+        try? session.send(data, toPeers: session.connectedPeers, with: reliable ? .reliable : .unreliable)
     }
 
     private func restartBrowsingAfterDelay() {

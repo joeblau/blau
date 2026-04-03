@@ -7,6 +7,7 @@ struct PilotApp: App {
 
     @State private var store: WorkspaceStore
     @State private var deviceStatus = DeviceStatus()
+    @State private var audioPlayback = AudioPlaybackService()
     @State private var syncService = PeerSyncService(
         role: .advertiser,
         displayName: Host.current().localizedName ?? "Mac"
@@ -46,6 +47,13 @@ struct PilotApp: App {
                 break
             case .deviceStatus(let status):
                 deviceStatus = status
+            case .audioControl(let control):
+                switch control {
+                case .start: audioPlayback.startPlayback()
+                case .stop:  audioPlayback.stopPlayback()
+                }
+            case .audioChunk(let data):
+                audioPlayback.enqueue(data)
             }
         }
         syncService.start()
