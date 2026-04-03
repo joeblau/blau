@@ -38,11 +38,16 @@ struct ContentView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 12) {
-                    DeviceStatusIndicator(emoji: "📱", isConnected: syncService.isConnected)
-                    DeviceStatusIndicator(emoji: "⌚", isConnected: deviceStatus.isWatchConnected)
-                    DeviceStatusIndicator(emoji: "🎧", isConnected: deviceStatus.isAirPodsConnected)
+                    RecordingStatusIndicator(isRecording: transcriptionService.isTranscribing)
+
+                    Spacer(minLength: 0)
+
+                    HStack(spacing: 12) {
+                        DeviceStatusIndicator(emoji: "📱", isConnected: syncService.isConnected)
+                        DeviceStatusIndicator(emoji: "⌚", isConnected: deviceStatus.isWatchConnected)
+                        DeviceStatusIndicator(emoji: "🎧", isConnected: deviceStatus.isAirPodsConnected)
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
@@ -332,6 +337,21 @@ private struct DeviceStatusIndicator: View {
                     .frame(width: 8, height: 8)
                     .offset(x: 3, y: -3)
             }
+    }
+}
+
+private struct RecordingStatusIndicator: View {
+    let isRecording: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: isRecording ? "waveform.circle.fill" : "waveform.circle")
+                .foregroundStyle(isRecording ? .red : .secondary)
+
+            Text(isRecording ? "Recording" : "Mic Idle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

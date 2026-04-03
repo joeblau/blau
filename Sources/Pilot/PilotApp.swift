@@ -55,13 +55,16 @@ struct PilotApp: App {
                 case .start: audioPlayback.startPlayback()
                 case .stop:  audioPlayback.stopPlayback()
                 }
-            case .audioChunk(let data):
-                audioPlayback.enqueue(data)
+            case .audioChunk:
+                break
             case .mouseMove(let m):
                 MouseBridge.shared.move(dx: m.dx, dy: m.dy)
             case .mouseClick:
                 MouseBridge.shared.click()
             }
+        }
+        syncService.onReceiveAudioData = { data in
+            audioPlayback.enqueue(data)
         }
         syncService.start()
 

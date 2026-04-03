@@ -5,17 +5,29 @@ import UIKit
 @Observable
 final class AudioCaptureService {
     private(set) var isRecording = false
+    private(set) var hasPermission = false
 
     private let engine = AVAudioEngine()
     private let haptic = UIImpactFeedbackGenerator(style: .heavy)
     private var sendChunk: ((Data) -> Void)?
+    private var activeCount = 0
 
     func configure(sendChunk: @escaping (Data) -> Void) {
         self.sendChunk = sendChunk
+        hasPermission = AVAudioApplication.shared.recordPermission == .granted
+    }
+
+    func requestPermission() {
+        AVAudioApplication.requestRecordPermission { [weak self] granted in
+            Task { @MainActor [weak self] in
+                self?.hasPermission = granted
+            }
+        }
     }
 
     func startRecording() {
-        guard !isRecording else { return }
+        activeCount += 1
+        guard activeCount == 1, hasPermission else { return }
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
         try? session.setActive(true)
@@ -49,7 +61,8 @@ final class AudioCaptureService {
     }
 
     func stopRecording() {
-        guard isRecording else { return }
+        activeCount = max(activeCount - 1, 0)
+        guard activeCount == 0, isRecording else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         isRecording = false

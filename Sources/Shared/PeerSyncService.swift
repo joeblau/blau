@@ -9,6 +9,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
     private(set) var isConnected = false
 
     var onReceive: ((SyncMessage) -> Void)?
+    var onReceiveAudioData: ((Data) -> Void)?
 
     private let role: Role
     private nonisolated(unsafe) let peerID: MCPeerID
@@ -58,6 +59,11 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         try? session.send(data, toPeers: session.connectedPeers, with: reliable ? .reliable : .unreliable)
     }
 
+    func sendAudioData(_ data: Data) {
+        guard !session.connectedPeers.isEmpty else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: .unreliable)
+    }
+
     private func restartBrowsingAfterDelay() {
         guard role == .browser else { return }
         Task { @MainActor [weak self] in
@@ -86,9 +92,14 @@ extension PeerSyncService: MCSessionDelegate {
     }
 
     nonisolated func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
-        guard let message = try? JSONDecoder().decode(SyncMessage.self, from: data) else { return }
-        Task { @MainActor [weak self] in
-            self?.onReceive?(message)
+        if let message = try? JSONDecoder().decode(SyncMessage.self, from: data) {
+            Task { @MainActor [weak self] in
+                self?.onReceive?(message)
+            }
+        } else {
+            Task { @MainActor [weak self] in
+                self?.onReceiveAudioData?(data)
+            }
         }
     }
 

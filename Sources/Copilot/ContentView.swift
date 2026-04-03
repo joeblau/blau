@@ -29,6 +29,16 @@ struct ContentView: View {
                         selectedID: $selectedID,
                         onHighlightChanged: { workspace in
                             syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspace.id)))
+                        },
+                        onVolumeHoldStart: {
+                            guard audioCapture.hasPermission else { return }
+                            audioCapture.startRecording()
+                            syncService.send(.audioControl(.start))
+                        },
+                        onVolumeHoldEnd: {
+                            guard audioCapture.isRecording else { return }
+                            syncService.send(.audioControl(.stop))
+                            audioCapture.stopRecording()
                         }
                     ) { workspace, isHighlighted in
                         HStack {
@@ -57,17 +67,18 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Copilot")
-            .safeAreaInset(edge: .bottom) {
-                WalkieTalkieButton(isRecording: audioCapture.isRecording) {
-                    audioCapture.startRecording()
-                    syncService.send(.audioControl(.start))
-                } onRelease: {
-                    syncService.send(.audioControl(.stop))
-                    audioCapture.stopRecording()
-                }
-                .padding(.bottom, 8)
-            }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    MicButton(
+                        hasPermission: audioCapture.hasPermission,
+                        isRecording: audioCapture.isRecording,
+                        onTap: {
+                            if !audioCapture.hasPermission {
+                                audioCapture.requestPermission()
+                            }
+                        }
+                    )
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     DeviceStatusButton(emoji: "💻", isConnected: syncService.isConnected)
                 }
@@ -100,13 +111,11 @@ struct ContentView: View {
                 break
             case .audioControl, .audioChunk:
                 break
-            case .mouseMove, .mouseClick:
-                break
             }
         }
         syncService.start()
         audioCapture.configure { chunk in
-            syncService.send(.audioChunk(chunk), reliable: false)
+            syncService.sendAudioData(chunk)
         }
     }
 
@@ -124,39 +133,45 @@ private struct DeviceStatusButton: View {
     let isConnected: Bool
 
     var body: some View {
-        Button {} label: {
-            Text(emoji)
-                .overlay(alignment: .topTrailing) {
-                    Circle()
-                        .fill(isConnected ? .green : .red)
-                        .frame(width: 12, height: 12)
-                        .offset(x: 6, y: -6)
-                }
-        }
+        Text(emoji)
+            .overlay(alignment: .topTrailing) {
+                Circle()
+                    .fill(isConnected ? .green : .red)
+                    .frame(width: 12, height: 12)
+                    .offset(x: 6, y: -6)
+            }
+            .frame(minWidth: 24)
     }
 }
 
-private struct WalkieTalkieButton: View {
+private struct MicButton: View {
+    let hasPermission: Bool
     let isRecording: Bool
-    let onPress: () -> Void
-    let onRelease: () -> Void
+    let onTap: () -> Void
+
+    private var iconName: String {
+        if isRecording { return "waveform" }
+        if hasPermission { return "mic.fill" }
+        return "mic.slash.fill"
+    }
+
+    private var fillColor: Color {
+        if isRecording { return .red }
+        if hasPermission { return .accentColor }
+        return .gray
+    }
 
     var body: some View {
         Circle()
-            .fill(isRecording ? .red : .accentColor)
-            .frame(width: 72, height: 72)
+            .fill(fillColor)
+            .frame(width: 32, height: 32)
             .overlay {
-                Image(systemName: isRecording ? "waveform" : "mic.fill")
-                    .font(.title)
+                Image(systemName: iconName)
+                    .font(.system(size: 14))
                     .foregroundStyle(.white)
                     .symbolEffect(.variableColor.iterative, isActive: isRecording)
             }
-            .gesture(
-                LongPressGesture(minimumDuration: 0.3)
-                    .onEnded { _ in onPress() }
-                    .sequenced(before: DragGesture(minimumDistance: 0)
-                        .onEnded { _ in onRelease() })
-            )
+            .onTapGesture { onTap() }
     }
 }
 
