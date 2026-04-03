@@ -7,12 +7,17 @@ struct WorkspaceSummary: Identifiable, Codable, Sendable, Hashable {
     var badgeCount: Int = 0
 }
 
+enum VoiceRecordControl: String, Codable, Sendable {
+    case start, stop
+}
+
 enum SyncMessage: Codable, Sendable {
     case workspaceState(WorkspaceState)
     case selectWorkspace(SelectWorkspace)
     case deviceStatus(DeviceStatus)
     case mouseMove(MouseMove)
     case mouseClick(MouseClick)
+    case voiceRecord(VoiceRecordControl)
 }
 
 struct MouseMove: Codable, Sendable {

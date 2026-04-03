@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     let syncService: PeerSyncService
     let watchDelegate: PhoneSessionDelegate
+    let headphoneRouteMonitor: HeadphoneRouteMonitor
 
     @State private var workspaces: [WorkspaceSummary] = []
     @State private var selectedID: UUID?
@@ -28,6 +29,12 @@ struct ContentView: View {
                         onHighlightChanged: { workspace in
                             syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspace.id)))
                         },
+                        onVolumeHoldStart: {
+                            syncService.send(.voiceRecord(.start))
+                        },
+                        onVolumeHoldEnd: {
+                            syncService.send(.voiceRecord(.stop))
+                        }
                     ) { workspace, isHighlighted in
                         HStack {
                             if workspace.isPinned {
@@ -55,15 +62,21 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Copilot")
+            .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    DeviceStatusButton(emoji: "💻", isConnected: syncService.isConnected)
+                    Image(systemName: "laptopcomputer")
+                        .symbolVariant(.fill)
+                        .foregroundStyle(syncService.isConnected ? .green : .red)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    DeviceStatusButton(emoji: "⌚", isConnected: watchDelegate.isWatchReachable)
+                    Image(systemName: "applewatch")
+                        .symbolVariant(.fill)
+                        .foregroundStyle(watchDelegate.isWatchReachable ? .green : .red)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    DeviceStatusButton(emoji: "🎧", isConnected: false)
+                    Image(systemName: "airpods.pro")
+                        .foregroundStyle(headphoneRouteMonitor.isHeadphonesConnected ? .green : .red)
                 }
             }
         }
@@ -76,6 +89,13 @@ struct ContentView: View {
         .onChange(of: watchDelegate.isWatchReachable) {
             sendDeviceStatus()
         }
+        .onChange(of: headphoneRouteMonitor.isHeadphonesConnected) {
+            sendDeviceStatus()
+        }
+        .onChange(of: syncService.isConnected) {
+            guard syncService.isConnected else { return }
+            sendDeviceStatus()
+        }
     }
 
     private func setupSync() {
@@ -84,7 +104,7 @@ struct ContentView: View {
             case .workspaceState(let state):
                 workspaces = state.workspaces
                 selectedID = state.selectedWorkspaceID
-            case .selectWorkspace, .deviceStatus, .mouseMove, .mouseClick:
+            case .selectWorkspace, .deviceStatus, .mouseMove, .mouseClick, .voiceRecord:
                 break
             }
         }
@@ -94,30 +114,14 @@ struct ContentView: View {
     private func sendDeviceStatus() {
         let status = DeviceStatus(
             isWatchConnected: watchDelegate.isWatchReachable,
-            isAirPodsConnected: false
+            isAirPodsConnected: headphoneRouteMonitor.isHeadphonesConnected
         )
         syncService.send(.deviceStatus(status))
     }
 }
 
-private struct DeviceStatusButton: View {
-    let emoji: String
-    let isConnected: Bool
-
-    var body: some View {
-        Button {} label: {
-            Text(emoji)
-                .overlay(alignment: .topTrailing) {
-                    Circle()
-                        .fill(isConnected ? .green : .red)
-                        .frame(width: 12, height: 12)
-                        .offset(x: 6, y: -6)
-                }
-        }
-    }
-}
-
 #Preview {
     ContentView(syncService: PeerSyncService(role: .browser, displayName: "Preview"),
-               watchDelegate: PhoneSessionDelegate())
+               watchDelegate: PhoneSessionDelegate(),
+               headphoneRouteMonitor: HeadphoneRouteMonitor())
 }

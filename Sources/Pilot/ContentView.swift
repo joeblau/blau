@@ -6,6 +6,7 @@ struct ContentView: View {
     @Bindable var store: WorkspaceStore
     var syncService: PeerSyncService
     var deviceStatus: DeviceStatus
+    var remoteTranscription: TranscriptionService
     @State private var gitStore = GitCommitStore()
     @State private var showInspector = false
     @State private var transcriptionService = TranscriptionService()
@@ -38,14 +39,18 @@ struct ContentView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 12) {
-                    RecordingStatusIndicator(isRecording: transcriptionService.isTranscribing)
+                    RecordingStatusIndicator(isRecording: remoteTranscription.isTranscribing)
 
                     Spacer(minLength: 0)
 
                     HStack(spacing: 12) {
-                        DeviceStatusIndicator(emoji: "📱", isConnected: syncService.isConnected)
-                        DeviceStatusIndicator(emoji: "⌚", isConnected: deviceStatus.isWatchConnected)
-                        DeviceStatusIndicator(emoji: "🎧", isConnected: deviceStatus.isAirPodsConnected)
+                        Image(systemName: "iphone")
+                            .foregroundStyle(syncService.isConnected ? .green : .red)
+                        Image(systemName: "applewatch")
+                            .symbolVariant(.fill)
+                            .foregroundStyle(deviceStatus.isWatchConnected ? .green : .red)
+                        Image(systemName: "airpods.pro")
+                            .foregroundStyle(deviceStatus.isAirPodsConnected ? .green : .red)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -325,21 +330,6 @@ struct ContentView: View {
     }
 }
 
-private struct DeviceStatusIndicator: View {
-    let emoji: String
-    let isConnected: Bool
-
-    var body: some View {
-        Text(emoji)
-            .overlay(alignment: .topTrailing) {
-                Circle()
-                    .fill(isConnected ? .green : .red)
-                    .frame(width: 8, height: 8)
-                    .offset(x: 3, y: -3)
-            }
-    }
-}
-
 private struct RecordingStatusIndicator: View {
     let isRecording: Bool
 
@@ -373,7 +363,8 @@ private enum ContentViewPreviewData {
     ContentView(
         store: WorkspaceStore(modelContext: ContentViewPreviewData.container.mainContext),
         syncService: PeerSyncService(role: .advertiser, displayName: "Preview"),
-        deviceStatus: DeviceStatus()
+        deviceStatus: DeviceStatus(),
+        remoteTranscription: TranscriptionService()
     )
     .modelContainer(ContentViewPreviewData.container)
 }

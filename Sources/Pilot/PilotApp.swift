@@ -1,3 +1,4 @@
+import AppKit
 import SwiftData
 import SwiftUI
 
@@ -7,6 +8,7 @@ struct PilotApp: App {
 
     @State private var store: WorkspaceStore
     @State private var deviceStatus = DeviceStatus()
+    @State private var remoteTranscription = TranscriptionService()
     @State private var syncService = PeerSyncService(
         role: .advertiser,
         displayName: Host.current().localizedName ?? "Mac"
@@ -21,7 +23,7 @@ struct PilotApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(store: store, syncService: syncService, deviceStatus: deviceStatus)
+            ContentView(store: store, syncService: syncService, deviceStatus: deviceStatus, remoteTranscription: remoteTranscription)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                 .task {
                     _ = MouseBridge.shared.ensurePermissions()
@@ -53,6 +55,36 @@ struct PilotApp: App {
                 MouseBridge.shared.move(dx: m.dx, dy: m.dy)
             case .mouseClick:
                 MouseBridge.shared.click()
+            case .voiceRecord(let control):
+                switch control {
+                case .start:
+                    Task { await remoteTranscription.start() }
+                case .stop:
+                    Task {
+                        await remoteTranscription.stop()
+                        let text = [remoteTranscription.finalText, remoteTranscription.partialText]
+                            .filter { !$0.isEmpty }
+                            .joined(separator: " ")
+                        guard !text.isEmpty else { return }
+                        let pb = NSPasteboard.general
+                        let saved = pb.pasteboardItems?.compactMap { item -> (NSPasteboard.PasteboardType, Data)? in
+                            guard let type = item.types.first,
+                                  let data = item.data(forType: type) else { return nil }
+                            return (type, data)
+                        }
+                        pb.clearContents()
+                        pb.setString(text, forType: .string)
+                        NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            if let saved, !saved.isEmpty {
+                                pb.clearContents()
+                                for (type, data) in saved {
+                                    pb.setData(data, forType: type)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         syncService.start()

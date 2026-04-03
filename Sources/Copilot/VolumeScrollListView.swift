@@ -7,6 +7,8 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
     let items: [Item]
     @Binding var selectedID: Item.ID?
     var onHighlightChanged: ((Item) -> Void)?
+    var onVolumeHoldStart: (() -> Void)?
+    var onVolumeHoldEnd: (() -> Void)?
     @ViewBuilder let rowContent: (Item, Bool) -> RowContent
 
     @State private var volumeObserver = VolumeObserver()
@@ -54,7 +56,11 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
                 }
             }
         }
-        .onAppear { volumeObserver.start() }
+        .onAppear {
+            volumeObserver.onHoldStart = onVolumeHoldStart
+            volumeObserver.onHoldEnd = onVolumeHoldEnd
+            volumeObserver.start()
+        }
         .onDisappear { volumeObserver.stop() }
     }
 
@@ -85,11 +91,16 @@ enum VolumeDirection {
 final class VolumeObserver {
     var direction: VolumeDirection = .none
     var eventID: Int = 0
+    private(set) var isVolumeHeld = false
+
+    var onHoldStart: (() -> Void)?
+    var onHoldEnd: (() -> Void)?
 
     private var cancellable: AnyCancellable?
     private var previousVolume: Float?
     private var pendingProgrammaticVolume: Float?
     private var resetTask: Task<Void, Never>?
+    private var holdReleaseTask: Task<Void, Never>?
     private weak var volumeView: MPVolumeView?
     private let session = AVAudioSession.sharedInstance()
     private let midpointVolume: Float = 0.5
@@ -154,6 +165,27 @@ final class VolumeObserver {
         self.direction = direction
         eventID += 1
         haptic.impactOccurred()
+        trackHold()
+    }
+
+    private var holdEventCount = 0
+
+    private func trackHold() {
+        holdEventCount += 1
+        if !isVolumeHeld && holdEventCount >= 2 {
+            isVolumeHeld = true
+            onHoldStart?()
+        }
+        holdReleaseTask?.cancel()
+        holdReleaseTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self, !Task.isCancelled else { return }
+            self.holdEventCount = 0
+            if self.isVolumeHeld {
+                self.isVolumeHeld = false
+                self.onHoldEnd?()
+            }
+        }
     }
 
     private func scheduleMidpointReset() {
@@ -186,10 +218,17 @@ final class VolumeObserver {
     func stop() {
         cancellable?.cancel()
         resetTask?.cancel()
+        holdReleaseTask?.cancel()
         cancellable = nil
         resetTask = nil
+        holdReleaseTask = nil
+        holdEventCount = 0
         previousVolume = nil
         pendingProgrammaticVolume = nil
+        if isVolumeHeld {
+            isVolumeHeld = false
+            onHoldEnd?()
+        }
     }
 }
 

@@ -101,4 +101,19 @@ struct SyncMessagesTests {
         let summary = WorkspaceSummary(id: UUID(), name: "Test")
         #expect(summary.badgeCount == 0)
     }
+
+    @Test("VoiceRecordControl round-trip")
+    func voiceRecordRoundTrip() throws {
+        for control in [VoiceRecordControl.start, VoiceRecordControl.stop] {
+            let message = SyncMessage.voiceRecord(control)
+            let data = try encoder.encode(message)
+            let decoded = try decoder.decode(SyncMessage.self, from: data)
+
+            if case .voiceRecord(let decodedControl) = decoded {
+                #expect(decodedControl == control)
+            } else {
+                Issue.record("Expected voiceRecord case for \(control)")
+            }
+        }
+    }
 }
