@@ -38,7 +38,7 @@ final class GhosttyRuntime: @unchecked Sendable {
         // Create the runtime config with C callbacks
         var runtime_cfg = ghostty_runtime_config_s(
             userdata: Unmanaged.passUnretained(self).toOpaque(),
-            supports_selection_clipboard: false,
+            supports_selection_clipboard: true,
             wakeup_cb: { _ in
                 DispatchQueue.main.async {
                     GhosttyRuntime.shared.tick()
@@ -62,14 +62,33 @@ final class GhosttyRuntime: @unchecked Sendable {
                 guard let content, len > 0 else { return }
                 guard let dataPtr = content.pointee.data else { return }
                 let str = String(cString: dataPtr)
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(str, forType: .string)
+                let pb = GhosttyRuntime.pasteboard(for: loc)
+                pb.clearContents()
+                pb.setString(str, forType: .string)
             },
             close_surface_cb: { _, _ in }
         )
 
         guard let ghosttyApp = ghostty_app_new(&runtime_cfg, cfg) else { return }
         self.app = ghosttyApp
+
+        // Track app focus for cursor blink, etc.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let app = self?.app else { return }
+            ghostty_app_set_focus(app, true)
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let app = self?.app else { return }
+            ghostty_app_set_focus(app, false)
+        }
     }
 
     func tick() {
@@ -77,19 +96,25 @@ final class GhosttyRuntime: @unchecked Sendable {
         ghostty_app_tick(app)
     }
 
+    private static let selectionPasteboard = NSPasteboard(name: NSPasteboard.Name("com.mitchellh.ghostty.selection"))
+
+    private static func pasteboard(for location: ghostty_clipboard_e) -> NSPasteboard {
+        location == GHOSTTY_CLIPBOARD_SELECTION ? selectionPasteboard : .general
+    }
+
     private static func readClipboard(
         _ userdata: UnsafeMutableRawPointer?,
         location: ghostty_clipboard_e,
         state: UnsafeMutableRawPointer?
     ) -> Bool {
-        guard location == GHOSTTY_CLIPBOARD_STANDARD else { return false }
         guard let surface = surface(from: userdata) else { return false }
+        let pb = pasteboard(for: location)
 
         let pasteString: String? = if Thread.isMainThread {
-            NSPasteboard.general.string(forType: .string)
+            pb.string(forType: .string)
         } else {
             DispatchQueue.main.sync {
-                NSPasteboard.general.string(forType: .string)
+                pb.string(forType: .string)
             }
         }
 
@@ -350,6 +375,17 @@ class GhosttyMetalView: NSView, CALayerDelegate {
             return
         }
 
+        let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
+
+        // Fast path for Ctrl-modified keys (Ctrl+C, Ctrl+D, etc.)
+        // Bypass interpretKeyEvents entirely and send raw keycode to Ghostty.
+        if event.modifierFlags.contains(.control) &&
+            !event.modifierFlags.contains(.command) {
+            let text = event.charactersIgnoringModifiers
+            _ = keyAction(action, event: event, text: text)
+            return
+        }
+
         let translationModsGhostty = eventModifierFlags(
             mods: ghostty_surface_key_translation_mods(surface, ghosttyMods(event.modifierFlags))
         )
@@ -381,10 +417,6 @@ class GhosttyMetalView: NSView, CALayerDelegate {
             ) ?? event
         }
 
-        let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
-
-        // Always go through interpretKeyEvents for proper macOS text input handling.
-        // This matches upstream Ghostty behavior. Do NOT short-circuit for modifier combos.
         keyTextAccumulator = []
         defer { keyTextAccumulator = nil }
 
@@ -392,6 +424,9 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         self.lastPerformKeyEvent = nil
 
         interpretKeyEvents([translationEvent])
+
+        // Sync preedit state after interpretKeyEvents
+        syncPreedit()
 
         if let texts = keyTextAccumulator, !texts.isEmpty {
             for text in texts {
@@ -550,12 +585,64 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     }
 
     override func mouseDragged(with event: NSEvent) { mouseMoved(with: event) }
-    override func rightMouseDown(with event: NSEvent) { mouseDown(with: event) }
-    override func rightMouseUp(with event: NSEvent) { mouseUp(with: event) }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let surface else { super.rightMouseDown(with: event); return }
+        // If the terminal app has captured the mouse, send the event to Ghostty.
+        // Otherwise, show the system context menu.
+        if ghostty_surface_mouse_captured(surface) {
+            _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, mods(event))
+        } else {
+            super.rightMouseDown(with: event)
+        }
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        guard let surface else { return }
+        if ghostty_surface_mouse_captured(surface) {
+            _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, mods(event))
+        }
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        guard let surface, event.buttonNumber == 2 else { return }
+        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_MIDDLE, mods(event))
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        guard let surface, event.buttonNumber == 2 else { return }
+        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_MIDDLE, mods(event))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard let surface else { return }
+        ghostty_surface_mouse_pos(surface, -1, -1, mods(event))
+    }
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
-        ghostty_surface_mouse_scroll(surface, event.scrollingDeltaX, event.scrollingDeltaY, 0)
+        var x = event.scrollingDeltaX
+        var y = event.scrollingDeltaY
+        if event.hasPreciseScrollingDeltas {
+            x *= 2
+            y *= 2
+        }
+        var scrollMods = mods(event)
+        if event.hasPreciseScrollingDeltas {
+            scrollMods = ghostty_input_mods_e(rawValue: scrollMods.rawValue | GHOSTTY_MODS_SCROLL_PRECISE.rawValue)
+        }
+        // Map momentum phase
+        switch event.momentumPhase {
+        case .began:
+            scrollMods = ghostty_input_mods_e(rawValue: scrollMods.rawValue | GHOSTTY_MODS_MOMENTUM_BEGAN.rawValue)
+        case .changed:
+            scrollMods = ghostty_input_mods_e(rawValue: scrollMods.rawValue | GHOSTTY_MODS_MOMENTUM_CHANGED.rawValue)
+        case .ended, .cancelled:
+            scrollMods = ghostty_input_mods_e(rawValue: scrollMods.rawValue | GHOSTTY_MODS_MOMENTUM_ENDED.rawValue)
+        default:
+            break
+        }
+        ghostty_surface_mouse_scroll(surface, x, y, scrollMods)
     }
 
     // MARK: - Helpers
@@ -725,9 +812,6 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
 extension GhosttyMetalView: @MainActor NSTextInputClient {
     func insertText(_ string: Any, replacementRange: NSRange) {
-        // We must have an associated event
-        guard NSApp.currentEvent != nil else { return }
-
         let chars: String
         if let s = string as? NSAttributedString {
             chars = s.string
@@ -747,6 +831,72 @@ extension GhosttyMetalView: @MainActor NSTextInputClient {
             keyTextAccumulator = acc
             return
         }
+
+        // Fallback: text arriving outside keyDown (dictation, accessibility, etc.)
+        sendTextToSurface(chars)
+    }
+
+    /// Send text directly to the surface, handling special characters.
+    /// Used for text that arrives outside the normal keyDown path.
+    private func sendTextToSurface(_ text: String) {
+        guard let surface else { return }
+        var buffer = ""
+        var prevWasCR = false
+
+        func flush() {
+            guard !buffer.isEmpty else { return }
+            buffer.withCString { ptr in
+                var key = ghostty_input_key_s()
+                key.action = GHOSTTY_ACTION_PRESS
+                key.keycode = 0
+                key.mods = GHOSTTY_MODS_NONE
+                key.consumed_mods = GHOSTTY_MODS_NONE
+                key.text = ptr
+                key.composing = false
+                key.unshifted_codepoint = 0
+                _ = ghostty_surface_key(surface, key)
+            }
+            buffer = ""
+        }
+
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x0D: // CR
+                flush()
+                _ = keyAction(GHOSTTY_ACTION_PRESS, keycode: 0x24) // kVK_Return
+                prevWasCR = true
+                continue
+            case 0x0A: // LF
+                if !prevWasCR {
+                    flush()
+                    _ = keyAction(GHOSTTY_ACTION_PRESS, keycode: 0x24)
+                }
+            case 0x09: // Tab
+                flush()
+                _ = keyAction(GHOSTTY_ACTION_PRESS, keycode: 0x30) // kVK_Tab
+            case 0x1B: // Escape
+                flush()
+                _ = keyAction(GHOSTTY_ACTION_PRESS, keycode: 0x35) // kVK_Escape
+            default:
+                buffer.append(Character(scalar))
+            }
+            prevWasCR = false
+        }
+        flush()
+    }
+
+    /// Send a bare keycode press (no text) for special keys.
+    private func keyAction(_ action: ghostty_input_action_e, keycode: UInt32) -> Bool {
+        guard let surface else { return false }
+        var key = ghostty_input_key_s()
+        key.action = action
+        key.keycode = keycode
+        key.mods = GHOSTTY_MODS_NONE
+        key.consumed_mods = GHOSTTY_MODS_NONE
+        key.text = nil
+        key.composing = false
+        key.unshifted_codepoint = 0
+        return ghostty_surface_key(surface, key)
     }
 
     override func doCommand(by selector: Selector) {
@@ -764,14 +914,77 @@ extension GhosttyMetalView: @MainActor NSTextInputClient {
         // etc. are handled by keyDown sending the key event to Ghostty directly.
     }
 
-    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {}
-    func unmarkText() {}
+    // MARK: - IME / Marked Text
+
+    private static var markedTextKey: UInt8 = 0
+
+    private var markedText: NSMutableAttributedString {
+        get {
+            objc_getAssociatedObject(self, &Self.markedTextKey) as? NSMutableAttributedString
+                ?? NSMutableAttributedString()
+        }
+        set {
+            objc_setAssociatedObject(self, &Self.markedTextKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+    }
+
+    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        if let s = string as? NSAttributedString {
+            markedText = NSMutableAttributedString(attributedString: s)
+        } else if let s = string as? String {
+            markedText = NSMutableAttributedString(string: s)
+        }
+
+        // If not inside keyDown, sync preedit immediately
+        if keyTextAccumulator == nil {
+            syncPreedit()
+        }
+    }
+
+    func unmarkText() {
+        markedText = NSMutableAttributedString()
+        syncPreedit()
+    }
+
+    func syncPreedit() {
+        guard let surface else { return }
+        let text = markedText.string
+        if text.isEmpty {
+            ghostty_surface_preedit(surface, nil, 0)
+        } else {
+            let codepoints = Array(text.unicodeScalars.map { UInt32($0.value) })
+            codepoints.withUnsafeBufferPointer { buf in
+                ghostty_surface_preedit(surface, buf.baseAddress, buf.count)
+            }
+        }
+    }
+
     func selectedRange() -> NSRange { NSRange(location: NSNotFound, length: 0) }
-    func markedRange() -> NSRange { NSRange(location: NSNotFound, length: 0) }
-    func hasMarkedText() -> Bool { false }
+
+    func markedRange() -> NSRange {
+        if markedText.length > 0 {
+            return NSRange(location: 0, length: markedText.length)
+        }
+        return NSRange(location: NSNotFound, length: 0)
+    }
+
+    func hasMarkedText() -> Bool { markedText.length > 0 }
+
     func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? { nil }
     func validAttributesForMarkedText() -> [NSAttributedString.Key] { [] }
-    func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect { .zero }
+
+    func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+        guard let surface, let window else { return .zero }
+        var x: Double = 0
+        var y: Double = 0
+        ghostty_surface_ime_point(surface, &x, &y)
+        // Convert from Ghostty top-left to AppKit bottom-left
+        let viewPoint = NSPoint(x: x, y: bounds.height - y)
+        let windowPoint = convert(viewPoint, to: nil)
+        let screenPoint = window.convertPoint(toScreen: windowPoint)
+        return NSRect(x: screenPoint.x, y: screenPoint.y - 20, width: 0, height: 20)
+    }
+
     func characterIndex(for point: NSPoint) -> Int { 0 }
 }
 
