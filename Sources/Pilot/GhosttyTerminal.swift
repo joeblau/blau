@@ -195,7 +195,6 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     private var renderObserver: NSObjectProtocol?
     private var trackingArea: NSTrackingArea?
     private let pane: Pane
-    private var cwdPollTimer: Timer?
 
     init(app: ghostty_app_t, pane: Pane) {
         self.pane = pane
@@ -206,11 +205,21 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         let rawDirectory = pane.currentDirectory
         let persistedDirectory = Self.validWorkingDirectory(from: rawDirectory)
         print("[Ghostty] Pane \(pane.id): rawDirectory='\(rawDirectory)' persistedDirectory='\(persistedDirectory ?? "nil")'")
+
+        // Install OSC 7 hook silently via ZDOTDIR override.
+        // We create a temp .zshenv that installs the precmd hook, then restores
+        // the real ZDOTDIR so the user's normal config loads.
+        let zdotdir = Self.setupOSC7ZdotDir()
+        let envVars: [(key: String, value: String)] = zdotdir != nil
+            ? [("ZDOTDIR", zdotdir!), ("__PILOT_REAL_ZDOTDIR", NSHomeDirectory())]
+            : []
+
         let surface = Self.makeSurface(
             app: app,
             view: self,
             workingDirectory: persistedDirectory,
-            initialInput: nil
+            initialInput: nil,
+            envVars: envVars
         )
 
         guard let surface else { return }
@@ -236,12 +245,8 @@ class GhosttyMetalView: NSView, CALayerDelegate {
             object: nil
         )
 
-        // Poll child process cwd as fallback for shells without OSC 7
-        cwdPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.pollChildCwd()
-            }
-        }
+        // OSC 7 precmd hook (installed via ZDOTDIR) handles per-surface cwd tracking.
+        // No polling needed. Each shell reports its own directory via Ghostty's PWD action.
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -251,8 +256,6 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     }
 
     override func removeFromSuperview() {
-        cwdPollTimer?.invalidate()
-        cwdPollTimer = nil
         if let renderObserver {
             NotificationCenter.default.removeObserver(renderObserver)
             self.renderObserver = nil
@@ -514,50 +517,6 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         return ghostty_surface_key(surface, key)
     }
 
-    private func pollChildCwd() {
-        guard isSingleTerminalInWorkspace else { return }
-        Task.detached { [weak self] in
-            guard let self else { return }
-            let pid = ProcessInfo.processInfo.processIdentifier
-            let cwds = Self.findChildShellCwds(parentPID: pid)
-            await MainActor.run {
-                // Find the best cwd for this pane. If we only have one terminal,
-                // use any child cwd. If multiple, use the last one (most recent shell).
-                guard let cwd = cwds.last, !cwd.isEmpty else { return }
-                self.pane.setCurrentDirectory(cwd)
-            }
-        }
-    }
-
-    private nonisolated static func findChildShellCwds(parentPID: Int32) -> [String] {
-        // Ghostty spawns shells via login which double-forks (ppid becomes 1).
-        // We find all user's zsh/bash processes and get their cwds,
-        // filtering out uninteresting directories (/, ~).
-        let home = NSHomeDirectory()
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", """
-            for pid in $(pgrep -u "$(whoami)" -x zsh 2>/dev/null; pgrep -u "$(whoami)" -x bash 2>/dev/null); do
-                cwd=$(lsof -p "$pid" -a -d cwd -Fn 2>/dev/null | grep '^n/' | cut -c2-)
-                if [ -n "$cwd" ] && [ "$cwd" != "/" ] && [ "$cwd" != "\(home)" ]; then
-                    echo "$cwd"
-                fi
-            done
-            """]
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return []
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return output.components(separatedBy: "\n").filter { !$0.isEmpty }
-    }
-
     @objc
     private func handleWorkingDirectoryDidChange(_ notification: Notification) {
         guard let changedSurfaceID = notification.userInfo?["surfaceID"] as? UInt else { return }
@@ -581,13 +540,28 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         return expandedDirectory
     }
 
-    private var isSingleTerminalInWorkspace: Bool {
-        guard let workspace = pane.workspace else { return true }
-        return workspace.panes.filter { $0.kind == .terminal }.count <= 1
-    }
+    /// Creates a temp directory with a .zshenv that installs an OSC 7 precmd hook,
+    /// then restores the real ZDOTDIR so the user's normal config loads.
+    private nonisolated static func setupOSC7ZdotDir() -> String? {
+        let dir = NSTemporaryDirectory() + "pilot-zsh-\(ProcessInfo.processInfo.processIdentifier)"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 
-    private nonisolated static func restoreCommand(for directory: String) -> String {
-        "cd -- \(shellEscape(directory))\n"
+        let zshenv = """
+        # Pilot: install OSC 7 working directory reporting
+        __pilot_osc7_precmd() { printf '\\e]7;file://%s%s\\a' "$(hostname)" "$(pwd)"; }
+        precmd_functions+=(__pilot_osc7_precmd)
+        # Restore real ZDOTDIR and source the user's .zshenv if it exists
+        export ZDOTDIR="$__PILOT_REAL_ZDOTDIR"
+        unset __PILOT_REAL_ZDOTDIR
+        [[ -f "$ZDOTDIR/.zshenv" ]] && source "$ZDOTDIR/.zshenv"
+        """
+
+        do {
+            try zshenv.write(toFile: dir + "/.zshenv", atomically: true, encoding: .utf8)
+            return dir
+        } catch {
+            return nil
+        }
     }
 
     private nonisolated static func shellEscape(_ string: String) -> String {
@@ -598,9 +572,15 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         app: ghostty_app_t,
         view: GhosttyMetalView,
         workingDirectory: String?,
-        initialInput: String?
+        initialInput: String?,
+        envVars: [(key: String, value: String)] = []
     ) -> ghostty_surface_t? {
-        func build(_ directory: UnsafePointer<CChar>?, _ input: UnsafePointer<CChar>?) -> ghostty_surface_t? {
+        func build(
+            _ directory: UnsafePointer<CChar>?,
+            _ input: UnsafePointer<CChar>?,
+            _ envPtrs: UnsafeMutablePointer<ghostty_env_var_s>?,
+            _ envCount: Int
+        ) -> ghostty_surface_t? {
             var surfaceCfg = ghostty_surface_config_new()
             surfaceCfg.userdata = Unmanaged.passUnretained(view).toOpaque()
             surfaceCfg.platform_tag = GHOSTTY_PLATFORM_MACOS
@@ -612,28 +592,41 @@ class GhosttyMetalView: NSView, CALayerDelegate {
             surfaceCfg.scale_factor = Double(NSScreen.main?.backingScaleFactor ?? 2.0)
             surfaceCfg.working_directory = directory
             surfaceCfg.initial_input = input
+            surfaceCfg.env_vars = envPtrs
+            surfaceCfg.env_var_count = envCount
             return ghostty_surface_new(app, &surfaceCfg)
         }
 
-        if let workingDirectory {
-            return workingDirectory.withCString { directoryPtr in
-                if let initialInput {
-                    return initialInput.withCString { inputPtr in
-                        build(directoryPtr, inputPtr)
-                    }
+        // All string -> CString conversions must be nested so pointers stay valid
+        func withOptionalCString<R>(_ string: String?, _ body: (UnsafePointer<CChar>?) -> R) -> R {
+            if let string { return string.withCString { body($0) } }
+            return body(nil)
+        }
+
+        if envVars.isEmpty {
+            return withOptionalCString(workingDirectory) { dirPtr in
+                withOptionalCString(initialInput) { inputPtr in
+                    build(dirPtr, inputPtr, nil, 0)
                 }
-
-                return build(directoryPtr, nil)
             }
         }
 
-        if let initialInput {
-            return initialInput.withCString { inputPtr in
-                build(nil, inputPtr)
+        // Keep NSStrings alive so utf8String pointers remain valid through build()
+        let nsKeys = envVars.map { NSString(string: $0.key) }
+        let nsValues = envVars.map { NSString(string: $0.value) }
+        var envArray = (0..<envVars.count).map { i in
+            ghostty_env_var_s(key: nsKeys[i].utf8String, value: nsValues[i].utf8String)
+        }
+        _ = nsKeys   // prevent premature deallocation
+        _ = nsValues
+
+        return withOptionalCString(workingDirectory) { dirPtr in
+            withOptionalCString(initialInput) { inputPtr in
+                envArray.withUnsafeMutableBufferPointer { buf in
+                    build(dirPtr, inputPtr, buf.baseAddress, buf.count)
+                }
             }
         }
-
-        return build(nil, nil)
     }
 }
 
