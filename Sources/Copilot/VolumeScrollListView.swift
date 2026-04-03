@@ -160,30 +160,40 @@ final class VolumeObserver {
     }
 
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
+    private var holdEventCount = 0
+    private var pendingDirection: VolumeDirection = .none
+    private var tapConfirmTask: Task<Void, Never>?
 
     private func publish(_ direction: VolumeDirection) {
-        self.direction = direction
-        eventID += 1
-        haptic.impactOccurred()
-        trackHold()
-    }
-
-    private var holdEventCount = 0
-
-    private func trackHold() {
         holdEventCount += 1
-        if !isVolumeHeld && holdEventCount >= 2 {
+        pendingDirection = direction
+
+        if holdEventCount >= 2 && !isVolumeHeld {
+            // Auto-repeat detected. This is a hold.
             isVolumeHeld = true
+            haptic.impactOccurred()
             onHoldStart?()
         }
+        // While held, ignore further events (no navigation, no haptic).
+
+        // Reset the release timer on every event.
+        // 600ms window covers iOS's ~500ms auto-repeat delay.
         holdReleaseTask?.cancel()
         holdReleaseTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(250))
+            try? await Task.sleep(for: .milliseconds(600))
             guard let self, !Task.isCancelled else { return }
-            self.holdEventCount = 0
             if self.isVolumeHeld {
+                // Was holding. Release.
                 self.isVolumeHeld = false
+                self.holdEventCount = 0
+                self.haptic.impactOccurred()
                 self.onHoldEnd?()
+            } else {
+                // No second event came. Single tap. Navigate.
+                self.direction = self.pendingDirection
+                self.eventID += 1
+                self.holdEventCount = 0
+                self.haptic.impactOccurred()
             }
         }
     }
@@ -219,9 +229,11 @@ final class VolumeObserver {
         cancellable?.cancel()
         resetTask?.cancel()
         holdReleaseTask?.cancel()
+        tapConfirmTask?.cancel()
         cancellable = nil
         resetTask = nil
         holdReleaseTask = nil
+        tapConfirmTask = nil
         holdEventCount = 0
         previousVolume = nil
         pendingProgrammaticVolume = nil

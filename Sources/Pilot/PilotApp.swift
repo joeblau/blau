@@ -72,6 +72,8 @@ struct PilotApp: App {
                         let text = [remoteTranscription.finalText, remoteTranscription.partialText]
                             .filter { !$0.isEmpty }
                             .joined(separator: " ")
+                            .replacingOccurrences(of: "Waiting for speech...", with: "")
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !text.isEmpty else { return }
                         let pb = NSPasteboard.general
                         let saved = pb.pasteboardItems?.compactMap { item -> (NSPasteboard.PasteboardType, Data)? in
