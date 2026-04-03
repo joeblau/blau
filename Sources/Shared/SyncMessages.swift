@@ -4,11 +4,18 @@ struct WorkspaceSummary: Identifiable, Codable, Sendable, Hashable {
     let id: UUID
     var name: String
     var isPinned: Bool = false
+    var badgeCount: Int = 0
 }
 
 enum SyncMessage: Codable, Sendable {
     case workspaceState(WorkspaceState)
     case selectWorkspace(SelectWorkspace)
+    case deviceStatus(DeviceStatus)
+}
+
+struct DeviceStatus: Codable, Sendable {
+    var isWatchConnected: Bool = false
+    var isAirPodsConnected: Bool = false
 }
 
 struct WorkspaceState: Codable, Sendable {

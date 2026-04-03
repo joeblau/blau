@@ -87,4 +87,18 @@ struct SyncMessagesTests {
         #expect(decoded.id == id)
         #expect(decoded.name == "Test")
     }
+
+    @Test("WorkspaceSummary preserves badgeCount")
+    func workspaceSummaryBadgeCount() throws {
+        let summary = WorkspaceSummary(id: UUID(), name: "Test", badgeCount: 3)
+        let data = try encoder.encode(summary)
+        let decoded = try decoder.decode(WorkspaceSummary.self, from: data)
+        #expect(decoded.badgeCount == 3)
+    }
+
+    @Test("WorkspaceSummary badgeCount defaults to zero")
+    func workspaceSummaryBadgeCountDefault() throws {
+        let summary = WorkspaceSummary(id: UUID(), name: "Test")
+        #expect(summary.badgeCount == 0)
+    }
 }

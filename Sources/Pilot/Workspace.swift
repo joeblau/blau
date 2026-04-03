@@ -73,6 +73,7 @@ final class Pane {
     var kindRaw: String = PaneKind.terminal.rawValue
     var sortOrder: Int = 0
     var currentDirectory: String = ""
+    var bellCount: Int = 0
 
     @Relationship(deleteRule: .cascade)
     var browserState: BrowserState?
@@ -92,6 +93,15 @@ final class Pane {
         if kind == .browser {
             self.browserState = BrowserState()
         }
+    }
+
+    func incrementBellCount() {
+        bellCount += 1
+    }
+
+    func resetBellCount() {
+        guard bellCount != 0 else { return }
+        bellCount = 0
     }
 
     func setCurrentDirectory(_ directory: String) {
@@ -132,6 +142,10 @@ final class Workspace {
 
     var sortedPanes: [Pane] {
         panes.sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    var badgeCount: Int {
+        panes.filter { $0.kind == .terminal }.reduce(0) { $0 + $1.bellCount }
     }
 
     var axis: PaneAxis {

@@ -58,7 +58,7 @@ final class WorkspaceStore {
     }
 
     var summaries: [WorkspaceSummary] {
-        workspaces.map { WorkspaceSummary(id: $0.id, name: $0.name, isPinned: $0.isPinned) }
+        workspaces.map { WorkspaceSummary(id: $0.id, name: $0.name, isPinned: $0.isPinned, badgeCount: $0.badgeCount) }
     }
 
     init(modelContext: ModelContext) {
