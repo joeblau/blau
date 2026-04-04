@@ -86,6 +86,7 @@ final class WorkspaceStore {
         workspace.workspaceSortOrder = workspaces.count
         modelContext.insert(workspace)
         try? modelContext.save()
+        changeCount += 1
         selectedWorkspaceID = workspace.id
     }
 
@@ -94,9 +95,21 @@ final class WorkspaceStore {
         modelContext.delete(workspace)
         normalizeWorkspaceSortOrder(workspaces.filter { $0.id != workspace.id })
         try? modelContext.save()
+        changeCount += 1
         if wasSelected {
             selectedWorkspaceID = workspaces.first?.id
         }
+    }
+
+    func workspaceForShortcut(_ index: Int) -> Workspace? {
+        guard index > 0 else { return nil }
+        let ordered = workspaces
+        guard index <= ordered.count else { return nil }
+        return ordered[index - 1]
+    }
+
+    func selectWorkspace(atShortcutIndex index: Int) {
+        selectedWorkspaceID = workspaceForShortcut(index)?.id
     }
 
     private func normalizeWorkspaceSortOrder(_ orderedWorkspaces: [Workspace]) {

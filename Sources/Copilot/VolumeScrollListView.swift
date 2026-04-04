@@ -110,6 +110,9 @@ final class VolumeObserver {
     private weak var volumeView: MPVolumeView?
     private let session = AVAudioSession.sharedInstance()
     private let midpointVolume: Float = 0.5
+    /// True after a midpoint reset during a hold. If the next timer fires
+    /// and this is still true (no events arrived), the user released.
+    private var awaitingResumeAfterReset = false
 
     func attach(volumeView: MPVolumeView) {
         guard self.volumeView !== volumeView else { return }
@@ -173,6 +176,8 @@ final class VolumeObserver {
     var onFirstEvent: (() -> Void)?
 
     private func publish(_ direction: VolumeDirection) {
+        awaitingResumeAfterReset = false
+
         holdEventCount += 1
         pendingDirection = direction
 
@@ -192,35 +197,43 @@ final class VolumeObserver {
         scheduleHoldRelease()
     }
 
-    /// When the release timer fires during a hold and volume is at a limit
-    /// (0 or 1), iOS has stopped generating events — but the user may still be
-    /// pressing.  Reset volume to midpoint and wait again instead of ending.
+    /// During a hold, when no volume events arrive for 800ms, we cannot
+    /// tell if the user released the button or if iOS just stopped
+    /// generating events (e.g. volume hit a limit).  The only reliable
+    /// release signal: reset volume to midpoint and check whether
+    /// auto-repeat events resume.  If they do, still holding.  If not,
+    /// the user released.
     private func scheduleHoldRelease() {
         holdReleaseTask?.cancel()
         holdReleaseTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(800))
             guard let self, !Task.isCancelled else { return }
             if self.isVolumeHeld {
-                let vol = self.session.outputVolume
-                if vol <= 0.0001 || vol >= 0.9999 {
-                    // Volume hit a limit — iOS stopped auto-repeating but
-                    // the user is likely still holding.  Reset and keep waiting.
-                    self.setVolumeMidpoint()
-                    self.scheduleHoldRelease()
+                if self.awaitingResumeAfterReset {
+                    // We already reset to midpoint and waited 800ms.
+                    // No events arrived.  The user released.
+                    self.awaitingResumeAfterReset = false
+                    self.isVolumeHeld = false
+                    self.holdEventCount = 0
+                    self.haptic.impactOccurred()
+                    self.onHoldEnd?()
+                    self.scheduleMidpointReset()
                     return
                 }
-                self.isVolumeHeld = false
-                self.holdEventCount = 0
-                self.haptic.impactOccurred()
-                self.onHoldEnd?()
+                // First timeout during hold.  Reset to midpoint and
+                // wait for auto-repeat to resume.  publish() clears
+                // awaitingResumeAfterReset when an event arrives.
+                self.setVolumeMidpoint()
+                self.awaitingResumeAfterReset = true
+                self.scheduleHoldRelease()
             } else {
                 // No hold detected. Single tap — navigate.
                 self.direction = self.pendingDirection
                 self.eventID += 1
                 self.holdEventCount = 0
                 self.haptic.impactOccurred()
+                self.scheduleMidpointReset()
             }
-            self.scheduleMidpointReset()
         }
     }
 
@@ -266,6 +279,7 @@ final class VolumeObserver {
         holdEventCount = 0
         previousVolume = nil
         pendingProgrammaticVolume = nil
+        awaitingResumeAfterReset = false
         if isVolumeHeld {
             isVolumeHeld = false
             onHoldEnd?()

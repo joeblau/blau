@@ -17,7 +17,6 @@ struct WorkspaceView: View {
             Divider()
             panesContent
         }
-        .navigationTitle(workspace.name)
         .onAppear {
             focusTerminalIfNeededForWorkspaceActivation()
         }
