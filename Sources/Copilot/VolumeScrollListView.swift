@@ -156,19 +156,27 @@ enum VolumeDirection {
     case none, up, down
 }
 
-// Volume-button state machine:
+// Volume-button PTT state machine:
 //
-//   IDLE ──(event)──▶ NAVIGATE ──(rapid 2nd event)──▶ HOLDING
-//    ▲                    │                               │
-//    │                    │ (no 2nd event within 300ms)   │
-//    │                    ▼                               │
-//    │               RESET TO MID                        │
-//    │                                                    │
-//    └──────────(opposite button or stop())───────────────┘
+//   IDLE ──(1st event)──▶ NAVIGATE ──(2nd event <300ms)──▶ HOLDING
+//    ▲                       │                                 │
+//    │                 (no 2nd event)                          │
+//    │                       │                         (events flow)
+//    │                       ▼                                 │
+//    │                  reset to mid                           ▼
+//    │                                              (2s silence) ──▶ TESTING
+//    │                                                                 │
+//    │                                              reset to mid ──────┤
+//    │                                              events resume:     │
+//    │                                              → HOLDING    no events:
+//    │                                                           → RELEASED
+//    └─────────────────────────────────────────────────────────────────┘
 //
-// Single tap: navigates immediately, resets volume to midpoint after.
-// Hold (2+ rapid events): starts recording. Ends on opposite button.
-// Volume is NEVER reset during a hold (causes cycling).
+// True push-to-talk: hold same button to record, release to stop.
+// Release is detected by resetting volume to midpoint and checking
+// if auto-repeat resumes.  The hold NEVER ends during testing, it
+// stays active.  Only a confirmed release (no events after reset)
+// ends the hold.
 
 @MainActor
 @Observable
@@ -186,14 +194,19 @@ final class VolumeObserver {
     private var pendingProgrammaticVolume: Float?
     private var resetTask: Task<Void, Never>?
     private var holdDetectTask: Task<Void, Never>?
+    private var releaseTestTask: Task<Void, Never>?
     private weak var volumeView: MPVolumeView?
     private let session = AVAudioSession.sharedInstance()
     private let midpointVolume: Float = 0.5
 
-    private let haptic = UIImpactFeedbackGenerator(style: .medium)
+    private let tapHaptic = UIImpactFeedbackGenerator(style: .medium)
+    private let holdHaptic = UINotificationFeedbackGenerator()
     private var eventCount = 0
     private var lastDirection: VolumeDirection = .none
-    private var holdDirection: VolumeDirection = .none
+
+    /// True while we've reset to midpoint to test if the user released.
+    /// Events during this phase are "still holding" signals, not new holds.
+    private var isTestingRelease = false
 
     func attach(volumeView: MPVolumeView) {
         guard self.volumeView !== volumeView else { return }
@@ -247,61 +260,110 @@ final class VolumeObserver {
     }
 
     private func publish(_ dir: VolumeDirection) {
-        // Hold active: opposite direction ends it.
-        if isVolumeHeld {
-            if dir != holdDirection {
-                isVolumeHeld = false
-                eventCount = 0
-                holdDirection = .none
-                haptic.impactOccurred()
-                onHoldEnd?()
-                // Schedule midpoint reset after hold ends.  Delay long enough
-                // for the user to lift their finger so iOS won't auto-repeat
-                // from the new midpoint.
-                scheduleMidpointReset(delay: 2.0)
-            }
-            // Same direction during hold: absorb silently.
+        // During a release test: events mean the user is still holding.
+        // Cancel the release confirmation and go back to normal holding.
+        if isVolumeHeld && isTestingRelease {
+            isTestingRelease = false
+            releaseTestTask?.cancel()
+            // Reschedule the next release test (events will flow until
+            // volume hits the limit again, then 2s silence triggers test).
+            scheduleReleaseTest()
             return
         }
 
+        // Hold active (not testing): absorb events, reset release timer.
+        if isVolumeHeld {
+            scheduleReleaseTest()
+            return
+        }
+
+        // Not in a hold. Normal tap/hold detection.
         eventCount += 1
 
         if eventCount == 1 {
             onFirstEvent?()
             lastDirection = dir
 
-            // Navigate immediately on first event — no 800ms delay.
+            // Navigate immediately.
             direction = dir
             eventID += 1
-            haptic.impactOccurred()
+            tapHaptic.impactOccurred()
 
-            // Start hold detection window: if a second event arrives
-            // within 300ms, this is a hold, not a tap.
+            // Wait 150ms to see if this becomes a hold. iOS auto-repeat
+            // fires at ~150ms intervals, so the 2nd event arrives fast.
             holdDetectTask?.cancel()
             holdDetectTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(300))
+                try? await Task.sleep(for: .milliseconds(150))
                 guard let self, !Task.isCancelled else { return }
-                // No second event arrived — this was a single tap.
+                // Single tap confirmed.
                 self.eventCount = 0
-                self.scheduleMidpointReset(delay: 0.3)
+                self.scheduleMidpointReset()
             }
             return
         }
 
-        // Second+ event within 300ms — this is a hold.
+        // 2nd event within 150ms: this is a hold.
         holdDetectTask?.cancel()
         holdDetectTask = nil
         isVolumeHeld = true
-        holdDirection = lastDirection
-        haptic.impactOccurred()
+        holdHaptic.notificationOccurred(.success)
         onHoldStart?()
+        scheduleReleaseTest()
     }
 
-    private func scheduleMidpointReset(delay: TimeInterval) {
+    /// After 2 seconds of silence during a hold, test if the user released
+    /// by resetting volume to midpoint and checking for resumed events.
+    private func scheduleReleaseTest() {
+        releaseTestTask?.cancel()
+        releaseTestTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled, self.isVolumeHeld else { return }
+
+            // No events for 2 seconds. Reset to midpoint to test release.
+            self.isTestingRelease = true
+            self.setVolumeMidpointForTest()
+
+            // Wait 1 second for events to resume.
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+
+            if self.isTestingRelease {
+                // No events arrived after reset. User released.
+                self.isTestingRelease = false
+                self.isVolumeHeld = false
+                self.eventCount = 0
+                self.holdHaptic.notificationOccurred(.warning)
+                self.onHoldEnd?()
+                self.scheduleMidpointReset()
+            }
+            // If isTestingRelease was cleared by publish(), user is still
+            // holding and scheduleReleaseTest was already called.
+        }
+    }
+
+    /// Reset volume to midpoint during a release test. Unlike the normal
+    /// setVolumeMidpoint(), this is allowed during a hold because we need
+    /// to probe whether the user is still pressing the button.
+    private func setVolumeMidpointForTest() {
+        guard let slider = volumeView?.subviews.compactMap({ $0 as? UISlider }).first else {
+            return
+        }
+        guard abs(session.outputVolume - midpointVolume) >= 0.001 else {
+            previousVolume = session.outputVolume
+            pendingProgrammaticVolume = nil
+            return
+        }
+        pendingProgrammaticVolume = midpointVolume
+        previousVolume = midpointVolume
+        slider.setValue(midpointVolume, animated: false)
+        slider.sendActions(for: .valueChanged)
+    }
+
+    private func scheduleMidpointReset() {
         resetTask?.cancel()
         guard !isVolumeHeld else { return }
         resetTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
+            try? await Task.sleep(for: .milliseconds(300))
             guard let self, !Task.isCancelled else { return }
             guard !self.isVolumeHeld else { return }
             self.setVolumeMidpoint()
@@ -328,11 +390,13 @@ final class VolumeObserver {
         cancellable?.cancel()
         resetTask?.cancel()
         holdDetectTask?.cancel()
+        releaseTestTask?.cancel()
         cancellable = nil
         resetTask = nil
         holdDetectTask = nil
+        releaseTestTask = nil
         eventCount = 0
-        holdDirection = .none
+        isTestingRelease = false
         previousVolume = nil
         pendingProgrammaticVolume = nil
         if isVolumeHeld {
