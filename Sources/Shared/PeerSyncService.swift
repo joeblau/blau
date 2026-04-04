@@ -18,6 +18,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
     )
     private var advertiser: MCNearbyServiceAdvertiser?
     private var browser: MCNearbyServiceBrowser?
+    private var reconnectWork: DispatchWorkItem?
 
     private static let serviceType = "blau-sync"
 
@@ -70,6 +71,8 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
     }
 
     private func stopTransport() {
+        reconnectWork?.cancel()
+        reconnectWork = nil
         advertiser?.stopAdvertisingPeer()
         advertiser = nil
         browser?.stopBrowsingForPeers()
@@ -80,15 +83,36 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         }
     }
 
-    private func restartBrowsingAfterDelay() {
-        guard role == .browser else { return }
-        transportQueue.asyncAfter(deadline: .now() + 2) { [weak self] in
+    /// Debounced reconnection — cancels any pending restart before scheduling a new one.
+    /// Both roles restart their respective transport so either side can recover.
+    private func scheduleReconnect() {
+        reconnectWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            let br = MCNearbyServiceBrowser(peer: self.peerID, serviceType: Self.serviceType)
-            br.delegate = self
-            br.startBrowsingForPeers()
-            self.browser = br
+            self.reconnectWork = nil
+            // Don't reconnect if we already have peers
+            guard self.session.connectedPeers.isEmpty else { return }
+            switch self.role {
+            case .advertiser:
+                self.advertiser?.stopAdvertisingPeer()
+                let adv = MCNearbyServiceAdvertiser(
+                    peer: self.peerID,
+                    discoveryInfo: nil,
+                    serviceType: Self.serviceType
+                )
+                adv.delegate = self
+                adv.startAdvertisingPeer()
+                self.advertiser = adv
+            case .browser:
+                self.browser?.stopBrowsingForPeers()
+                let br = MCNearbyServiceBrowser(peer: self.peerID, serviceType: Self.serviceType)
+                br.delegate = self
+                br.startBrowsingForPeers()
+                self.browser = br
+            }
         }
+        reconnectWork = work
+        transportQueue.asyncAfter(deadline: .now() + 2, execute: work)
     }
 
     private func send(_ data: Data, mode: MCSessionSendDataMode) {
@@ -105,8 +129,10 @@ extension PeerSyncService: MCSessionDelegate {
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.isConnected = connected
-            if state == .notConnected {
-                self.restartBrowsingAfterDelay()
+        }
+        if state == .notConnected {
+            transportQueue.async { [weak self] in
+                self?.scheduleReconnect()
             }
         }
     }

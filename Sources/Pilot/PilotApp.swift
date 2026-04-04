@@ -115,14 +115,14 @@ struct PilotApp: App {
         }
         syncService.start()
 
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             Task { @MainActor in
                 guard syncService.isConnected else { return }
                 let state = WorkspaceState(
                     workspaces: store.summaries,
                     selectedWorkspaceID: store.selectedWorkspaceID
                 )
-                syncService.send(.workspaceState(state))
+                syncService.send(.workspaceState(state), reliable: false)
             }
         }
     }
