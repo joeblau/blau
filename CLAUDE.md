@@ -3,6 +3,14 @@
 Three-app ecosystem: Pilot (macOS), Copilot (iOS), Wingman (watchOS).
 Built with SwiftUI, XcodeGen (project.yml), Swift 6.0.
 
+## Setup
+
+```bash
+brew bundle
+xcodegen generate
+open blau.xcodeproj
+```
+
 ## Skill routing
 
 When the user's request matches an available skill, ALWAYS invoke it using the Skill
