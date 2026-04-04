@@ -162,7 +162,6 @@ final class VolumeObserver {
         }
 
         previousVolume = newVolume
-        scheduleMidpointReset()
     }
 
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
@@ -182,39 +181,57 @@ final class VolumeObserver {
         }
 
         if holdEventCount >= 2 && !isVolumeHeld {
-            // Auto-repeat detected. This is a hold.
+            // Auto-repeat detected — this is a hold.
             isVolumeHeld = true
             haptic.impactOccurred()
             onHoldStart?()
         }
-        // While held, ignore further events (no navigation, no haptic).
+
+        // During a hold, reset volume to midpoint so it never drifts to 0 or 1.
+        // Without this, iOS stops generating auto-repeat events at volume limits,
+        // causing a false hold-end after 800ms, then the cycle repeats.
+        if isVolumeHeld {
+            resetTask?.cancel()
+            resetTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(100))
+                guard let self, !Task.isCancelled else { return }
+                self.setVolumeMidpoint()
+            }
+        }
 
         // Reset the release timer on every event.
-        // 600ms window covers iOS's ~500ms auto-repeat delay.
+        // We need a long window before a hold is confirmed, because the second
+        // auto-repeat event from iOS can take about half a second to arrive.
+        // Once the hold is active, release should feel much faster.
         holdReleaseTask?.cancel()
+        let releaseDelay: Duration = isVolumeHeld ? .milliseconds(250) : .milliseconds(800)
         holdReleaseTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(600))
+            try? await Task.sleep(for: releaseDelay)
             guard let self, !Task.isCancelled else { return }
             if self.isVolumeHeld {
-                // Was holding. Release.
                 self.isVolumeHeld = false
                 self.holdEventCount = 0
                 self.haptic.impactOccurred()
                 self.onHoldEnd?()
             } else {
-                // No second event came. Single tap. Navigate.
+                // No hold detected. Single tap — navigate.
                 self.direction = self.pendingDirection
                 self.eventID += 1
                 self.holdEventCount = 0
                 self.haptic.impactOccurred()
             }
+            // Reset volume to midpoint now that the interaction is complete.
+            self.scheduleMidpointReset()
         }
     }
 
     private func scheduleMidpointReset() {
         resetTask?.cancel()
+        // Don't reset volume while detecting or in a hold — the programmatic
+        // change can prevent iOS from generating auto-repeat events.
+        guard holdEventCount == 0 else { return }
         resetTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(50))
+            try? await Task.sleep(for: .milliseconds(100))
             guard let self, !Task.isCancelled else { return }
             self.setVolumeMidpoint()
         }

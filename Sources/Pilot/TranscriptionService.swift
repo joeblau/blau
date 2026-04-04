@@ -13,6 +13,7 @@ final class TranscriptionService: @unchecked Sendable {
 
     private var whisperKit: WhisperKit?
     private var streamTranscriber: AudioStreamTranscriber?
+    private var transcriptionGeneration = 0
 
     func loadModel() async {
         guard !isModelLoaded else { return }
@@ -44,6 +45,9 @@ final class TranscriptionService: @unchecked Sendable {
             await loadModel()
         }
         guard let kit = whisperKit else { return }
+
+        transcriptionGeneration += 1
+        let generation = transcriptionGeneration
 
         partialText = ""
         finalText = ""
@@ -101,11 +105,15 @@ final class TranscriptionService: @unchecked Sendable {
         do {
             try await transcriber.startStreamTranscription()
         } catch {
-            isTranscribing = false
+            // Only clear state if no newer transcription has started.
+            if transcriptionGeneration == generation {
+                isTranscribing = false
+            }
         }
     }
 
     func stop() async {
+        transcriptionGeneration += 1
         await streamTranscriber?.stopStreamTranscription()
         streamTranscriber = nil
         isTranscribing = false
