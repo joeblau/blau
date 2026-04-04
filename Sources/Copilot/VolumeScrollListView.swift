@@ -187,27 +187,28 @@ final class VolumeObserver {
             onHoldStart?()
         }
 
-        // During a hold, reset volume to midpoint so it never drifts to 0 or 1.
-        // Without this, iOS stops generating auto-repeat events at volume limits,
-        // causing a false hold-end after 800ms, then the cycle repeats.
-        if isVolumeHeld {
-            resetTask?.cancel()
-            resetTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(100))
-                guard let self, !Task.isCancelled else { return }
-                self.setVolumeMidpoint()
-            }
-        }
-
         // Reset the release timer on every event.
-        // iOS auto-repeat fires every ~500ms, so the release window must be
-        // longer than that to avoid false releases between events.
         holdReleaseTask?.cancel()
-        let releaseDelay: Duration = .milliseconds(800)
+        scheduleHoldRelease()
+    }
+
+    /// When the release timer fires during a hold and volume is at a limit
+    /// (0 or 1), iOS has stopped generating events — but the user may still be
+    /// pressing.  Reset volume to midpoint and wait again instead of ending.
+    private func scheduleHoldRelease() {
+        holdReleaseTask?.cancel()
         holdReleaseTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: releaseDelay)
+            try? await Task.sleep(for: .milliseconds(800))
             guard let self, !Task.isCancelled else { return }
             if self.isVolumeHeld {
+                let vol = self.session.outputVolume
+                if vol <= 0.0001 || vol >= 0.9999 {
+                    // Volume hit a limit — iOS stopped auto-repeating but
+                    // the user is likely still holding.  Reset and keep waiting.
+                    self.setVolumeMidpoint()
+                    self.scheduleHoldRelease()
+                    return
+                }
                 self.isVolumeHeld = false
                 self.holdEventCount = 0
                 self.haptic.impactOccurred()
@@ -219,7 +220,6 @@ final class VolumeObserver {
                 self.holdEventCount = 0
                 self.haptic.impactOccurred()
             }
-            // Reset volume to midpoint now that the interaction is complete.
             self.scheduleMidpointReset()
         }
     }
