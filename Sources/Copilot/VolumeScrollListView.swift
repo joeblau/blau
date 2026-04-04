@@ -200,11 +200,10 @@ final class VolumeObserver {
         }
 
         // Reset the release timer on every event.
-        // We need a long window before a hold is confirmed, because the second
-        // auto-repeat event from iOS can take about half a second to arrive.
-        // Once the hold is active, release should feel much faster.
+        // iOS auto-repeat fires every ~500ms, so the release window must be
+        // longer than that to avoid false releases between events.
         holdReleaseTask?.cancel()
-        let releaseDelay: Duration = isVolumeHeld ? .milliseconds(250) : .milliseconds(800)
+        let releaseDelay: Duration = .milliseconds(800)
         holdReleaseTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: releaseDelay)
             guard let self, !Task.isCancelled else { return }
