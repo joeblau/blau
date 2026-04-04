@@ -15,6 +15,7 @@ struct ContentView: View {
         let activeInspectorRepoPath = showInspector ? selectedTerminalRepoPath : nil
         let _ = store.changeCount  // observation dependency for pin/unpin re-sort
         let workspaces = store.workspaces
+        let workspaceShortcutIDs = workspaces.prefix(9).map(\.id)
 
         NavigationSplitView {
             List(selection: $store.selectedWorkspaceID) {
@@ -144,6 +145,17 @@ struct ContentView: View {
             }
         }
         .background {
+            Group {
+                ForEach(1...9, id: \.self) { index in
+                    Button("") {
+                        guard index - 1 < workspaceShortcutIDs.count else { return }
+                        store.selectedWorkspaceID = workspaceShortcutIDs[index - 1]
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
+                    .hidden()
+                }
+            }
+            .id(workspaceShortcutIDs)
             Button("") {
                 guard let workspace = store.selectedWorkspace,
                       let pane = workspace.selectedPane else { return }

@@ -110,9 +110,6 @@ final class VolumeObserver {
     private weak var volumeView: MPVolumeView?
     private let session = AVAudioSession.sharedInstance()
     private let midpointVolume: Float = 0.5
-    /// True after a midpoint reset during a hold. If the next timer fires
-    /// and this is still true (no events arrived), the user released.
-    private var awaitingResumeAfterReset = false
 
     func attach(volumeView: MPVolumeView) {
         guard self.volumeView !== volumeView else { return }
@@ -175,8 +172,34 @@ final class VolumeObserver {
     /// Called on first volume event to capture state before hold detection.
     var onFirstEvent: (() -> Void)?
 
+    // Hold detection:
+    //
+    // iOS volume buttons produce "volume changed" KVO events but NO
+    // "button released" event.  When the user holds a button:
+    //   1. Auto-repeat fires (~150ms) moving volume toward 0 or 1.
+    //   2. At the limit, events stop.  User may still be holding.
+    //
+    // We CANNOT detect release.  Any approach that resets volume to
+    // midpoint (during or after a hold) will restart auto-repeat if
+    // the user is still holding, creating a start-stop cycle.
+    //
+    // Solution: the hold is PERMANENT once started.  It ends only when
+    // the user presses the OPPOSITE volume button, which produces an
+    // unambiguous direction-change event.  Hold volume-down to start
+    // recording, press volume-up to stop (or vice versa).
+    //
+    // After the hold ends, volume resets to midpoint for future taps.
+
+    /// Direction that started the current hold.
+    private var holdDirection: VolumeDirection = .none
+
     private func publish(_ direction: VolumeDirection) {
-        awaitingResumeAfterReset = false
+        // If a hold is active and the user presses the OPPOSITE direction,
+        // that's the stop signal.  End the hold immediately.
+        if isVolumeHeld && direction != holdDirection {
+            endHold()
+            return
+        }
 
         holdEventCount += 1
         pendingDirection = direction
@@ -188,45 +211,17 @@ final class VolumeObserver {
         if holdEventCount >= 2 && !isVolumeHeld {
             // Auto-repeat detected — this is a hold.
             isVolumeHeld = true
+            holdDirection = direction
             haptic.impactOccurred()
             onHoldStart?()
         }
 
-        // Reset the release timer on every event.
-        holdReleaseTask?.cancel()
-        scheduleHoldRelease()
-    }
-
-    /// During a hold, when no volume events arrive for 800ms, we cannot
-    /// tell if the user released the button or if iOS just stopped
-    /// generating events (e.g. volume hit a limit).  The only reliable
-    /// release signal: reset volume to midpoint and check whether
-    /// auto-repeat events resume.  If they do, still holding.  If not,
-    /// the user released.
-    private func scheduleHoldRelease() {
-        holdReleaseTask?.cancel()
-        holdReleaseTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(800))
-            guard let self, !Task.isCancelled else { return }
-            if self.isVolumeHeld {
-                if self.awaitingResumeAfterReset {
-                    // We already reset to midpoint and waited 800ms.
-                    // No events arrived.  The user released.
-                    self.awaitingResumeAfterReset = false
-                    self.isVolumeHeld = false
-                    self.holdEventCount = 0
-                    self.haptic.impactOccurred()
-                    self.onHoldEnd?()
-                    self.scheduleMidpointReset()
-                    return
-                }
-                // First timeout during hold.  Reset to midpoint and
-                // wait for auto-repeat to resume.  publish() clears
-                // awaitingResumeAfterReset when an event arrives.
-                self.setVolumeMidpoint()
-                self.awaitingResumeAfterReset = true
-                self.scheduleHoldRelease()
-            } else {
+        if !isVolumeHeld {
+            // Not yet a hold. Use the tap/hold detection timer.
+            holdReleaseTask?.cancel()
+            holdReleaseTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(800))
+                guard let self, !Task.isCancelled else { return }
                 // No hold detected. Single tap — navigate.
                 self.direction = self.pendingDirection
                 self.eventID += 1
@@ -237,13 +232,20 @@ final class VolumeObserver {
         }
     }
 
+    private func endHold() {
+        guard isVolumeHeld else { return }
+        isVolumeHeld = false
+        holdEventCount = 0
+        holdDirection = .none
+        haptic.impactOccurred()
+        onHoldEnd?()
+        scheduleMidpointReset()
+    }
+
     private func scheduleMidpointReset() {
         resetTask?.cancel()
-        // Don't reset volume while detecting or in a hold — the programmatic
-        // change can prevent iOS from generating auto-repeat events.
-        guard holdEventCount == 0 else { return }
         resetTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(100))
+            try? await Task.sleep(for: .milliseconds(300))
             guard let self, !Task.isCancelled else { return }
             self.setVolumeMidpoint()
         }
@@ -264,7 +266,6 @@ final class VolumeObserver {
         previousVolume = midpointVolume
         slider.setValue(midpointVolume, animated: false)
         slider.sendActions(for: .valueChanged)
-        slider.sendActions(for: .touchUpInside)
     }
 
     func stop() {
@@ -277,9 +278,9 @@ final class VolumeObserver {
         holdReleaseTask = nil
         tapConfirmTask = nil
         holdEventCount = 0
+        holdDirection = .none
         previousVolume = nil
         pendingProgrammaticVolume = nil
-        awaitingResumeAfterReset = false
         if isVolumeHeld {
             isVolumeHeld = false
             onHoldEnd?()

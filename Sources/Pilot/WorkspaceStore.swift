@@ -101,17 +101,6 @@ final class WorkspaceStore {
         }
     }
 
-    func workspaceForShortcut(_ index: Int) -> Workspace? {
-        guard index > 0 else { return nil }
-        let ordered = workspaces
-        guard index <= ordered.count else { return nil }
-        return ordered[index - 1]
-    }
-
-    func selectWorkspace(atShortcutIndex index: Int) {
-        selectedWorkspaceID = workspaceForShortcut(index)?.id
-    }
-
     private func normalizeWorkspaceSortOrder(_ orderedWorkspaces: [Workspace]) {
         for (index, workspace) in orderedWorkspaces.enumerated() {
             workspace.workspaceSortOrder = index

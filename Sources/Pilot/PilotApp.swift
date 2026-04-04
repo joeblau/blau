@@ -34,16 +34,6 @@ struct PilotApp: App {
         }
         .modelContainer(modelContainer)
         .commands {
-            CommandMenu("Workspace") {
-                ForEach(1...9, id: \.self) { index in
-                    let workspace = store.workspaceForShortcut(index)
-                    Button(workspace?.name ?? "Workspace \(index)") {
-                        store.selectWorkspace(atShortcutIndex: index)
-                    }
-                    .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
-                    .disabled(workspace == nil)
-                }
-            }
             CommandMenu("Browser") {
                 Button("Focus Address Bar") {
                     NotificationCenter.default.post(name: .pilotFocusBrowserAddressBar, object: nil)
