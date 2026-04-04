@@ -58,7 +58,7 @@ struct ContentView: View {
 
     private var workspaceList: some View {
         VolumeScrollListView(
-            items: workspaces,
+            sections: workspaceSections,
             selectedID: $selectedID,
             onHighlightChanged: { workspace in
                 syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspace.id)))
@@ -89,11 +89,6 @@ struct ContentView: View {
     @ViewBuilder
     private func workspaceRow(_ workspace: WorkspaceSummary, isHighlighted: Bool) -> some View {
         HStack {
-            if workspace.isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-            }
             Text(workspace.name)
                 .fontWeight(isHighlighted ? .semibold : .regular)
             if workspace.badgeCount > 0 {
@@ -107,6 +102,20 @@ struct ContentView: View {
             Spacer()
         }
         .padding(.vertical, 4)
+    }
+
+    private var workspaceSections: [VolumeScrollSection<WorkspaceSummary>] {
+        let pinned = workspaces.filter(\.isPinned)
+        let unpinned = workspaces.filter { !$0.isPinned }
+
+        var sections: [VolumeScrollSection<WorkspaceSummary>] = []
+        if !pinned.isEmpty {
+            sections.append(VolumeScrollSection(id: "pinned", title: "Pinned", items: pinned))
+        }
+        if !unpinned.isEmpty {
+            sections.append(VolumeScrollSection(id: "workspaces", title: "Workspaces", items: unpinned))
+        }
+        return sections
     }
 
     @ToolbarContentBuilder

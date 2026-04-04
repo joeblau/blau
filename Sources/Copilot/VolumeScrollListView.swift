@@ -3,8 +3,14 @@ import Combine
 import MediaPlayer
 import SwiftUI
 
-struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
+struct VolumeScrollSection<Item: Identifiable>: Identifiable {
+    let id: String
+    let title: String?
     let items: [Item]
+}
+
+struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
+    let sections: [VolumeScrollSection<Item>]
     @Binding var selectedID: Item.ID?
     var onHighlightChanged: ((Item) -> Void)?
     var onFirstEvent: (() -> Void)?
@@ -14,6 +20,48 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
 
     @State private var volumeObserver = VolumeObserver()
 
+    init(
+        items: [Item],
+        selectedID: Binding<Item.ID?>,
+        onHighlightChanged: ((Item) -> Void)? = nil,
+        onFirstEvent: (() -> Void)? = nil,
+        onVolumeHoldStart: (() -> Void)? = nil,
+        onVolumeHoldEnd: (() -> Void)? = nil,
+        @ViewBuilder rowContent: @escaping (Item, Bool) -> RowContent
+    ) {
+        self.sections = [
+            VolumeScrollSection(id: "workspaces", title: "Workspaces", items: items)
+        ]
+        self._selectedID = selectedID
+        self.onHighlightChanged = onHighlightChanged
+        self.onFirstEvent = onFirstEvent
+        self.onVolumeHoldStart = onVolumeHoldStart
+        self.onVolumeHoldEnd = onVolumeHoldEnd
+        self.rowContent = rowContent
+    }
+
+    init(
+        sections: [VolumeScrollSection<Item>],
+        selectedID: Binding<Item.ID?>,
+        onHighlightChanged: ((Item) -> Void)? = nil,
+        onFirstEvent: (() -> Void)? = nil,
+        onVolumeHoldStart: (() -> Void)? = nil,
+        onVolumeHoldEnd: (() -> Void)? = nil,
+        @ViewBuilder rowContent: @escaping (Item, Bool) -> RowContent
+    ) {
+        self.sections = sections
+        self._selectedID = selectedID
+        self.onHighlightChanged = onHighlightChanged
+        self.onFirstEvent = onFirstEvent
+        self.onVolumeHoldStart = onVolumeHoldStart
+        self.onVolumeHoldEnd = onVolumeHoldEnd
+        self.rowContent = rowContent
+    }
+
+    private var items: [Item] {
+        sections.flatMap(\.items)
+    }
+
     private var highlightedIndex: Int? {
         guard let selectedID else { return nil }
         return items.firstIndex(where: { $0.id == selectedID })
@@ -22,16 +70,8 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
     var body: some View {
         ScrollViewReader { proxy in
             List {
-                Section("Workspaces") {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        rowContent(item, item.id == selectedID)
-                            .listRowBackground(
-                                item.id == selectedID
-                                    ? Color.accentColor.opacity(0.2)
-                                    : nil
-                            )
-                            .id(index)
-                    }
+                ForEach(sections) { section in
+                    sectionContent(section)
                 }
             }
             .listStyle(.insetGrouped)
@@ -51,13 +91,13 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
                 selectedID = items[newIndex].id
                 onHighlightChanged?(items[newIndex])
                 withAnimation {
-                    proxy.scrollTo(newIndex, anchor: .center)
+                    proxy.scrollTo(items[newIndex].id, anchor: .center)
                 }
             }
             .onChange(of: selectedID) {
-                guard let highlightedIndex else { return }
+                guard let selectedID else { return }
                 withAnimation {
-                    proxy.scrollTo(highlightedIndex, anchor: .center)
+                    proxy.scrollTo(selectedID, anchor: .center)
                 }
             }
         }
@@ -68,6 +108,30 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
             volumeObserver.start()
         }
         .onDisappear { volumeObserver.stop() }
+    }
+
+    @ViewBuilder
+    private func sectionContent(_ section: VolumeScrollSection<Item>) -> some View {
+        if let title = section.title {
+            Section(title) {
+                rows(for: section.items)
+            }
+        } else {
+            rows(for: section.items)
+        }
+    }
+
+    @ViewBuilder
+    private func rows(for sectionItems: [Item]) -> some View {
+        ForEach(sectionItems) { item in
+            rowContent(item, item.id == selectedID)
+                .listRowBackground(
+                    item.id == selectedID
+                        ? Color.accentColor.opacity(0.2)
+                        : nil
+                )
+                .id(item.id)
+        }
     }
 
     private func nextIndex(
@@ -92,26 +156,19 @@ enum VolumeDirection {
     case none, up, down
 }
 
-// Volume-button PTT (push-to-talk) state machine:
+// Volume-button state machine:
 //
-//   IDLE ──(2+ rapid events)──▶ HOLDING ──(opposite button)──▶ IDLE
-//    │                              │
-//    │ (single event + 800ms)       │ (stop() from view lifecycle)
-//    ▼                              ▼
-//   TAP (navigate)             END HOLD (fire onHoldEnd)
+//   IDLE ──(event)──▶ NAVIGATE ──(rapid 2nd event)──▶ HOLDING
+//    ▲                    │                               │
+//    │                    │ (no 2nd event within 300ms)   │
+//    │                    ▼                               │
+//    │               RESET TO MID                        │
+//    │                                                    │
+//    └──────────(opposite button or stop())───────────────┘
 //
-// iOS volume buttons produce "volume changed" KVO events.  There is
-// NO "button released" event.  When the user holds a button, auto-repeat
-// fires until volume hits 0 or 1, then stops.
-//
-// The hold is PERMANENT once detected.  It ends ONLY when:
-//   - The user presses the OPPOSITE volume button, OR
-//   - The view disappears (stop() called by onDisappear)
-//
-// Volume is NEVER reset to midpoint during or immediately after a hold.
-// Any programmatic volume change while the user is holding a hardware
-// button restarts iOS auto-repeat, creating a start/stop cycle.
-// The midpoint reset happens only after a single-tap navigation.
+// Single tap: navigates immediately, resets volume to midpoint after.
+// Hold (2+ rapid events): starts recording. Ends on opposite button.
+// Volume is NEVER reset during a hold (causes cycling).
 
 @MainActor
 @Observable
@@ -122,50 +179,38 @@ final class VolumeObserver {
 
     var onHoldStart: (() -> Void)?
     var onHoldEnd: (() -> Void)?
+    var onFirstEvent: (() -> Void)?
 
     private var cancellable: AnyCancellable?
     private var previousVolume: Float?
     private var pendingProgrammaticVolume: Float?
     private var resetTask: Task<Void, Never>?
-    private var holdReleaseTask: Task<Void, Never>?
+    private var holdDetectTask: Task<Void, Never>?
     private weak var volumeView: MPVolumeView?
     private let session = AVAudioSession.sharedInstance()
     private let midpointVolume: Float = 0.5
 
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
-    private var holdEventCount = 0
-    private var pendingDirection: VolumeDirection = .none
+    private var eventCount = 0
+    private var lastDirection: VolumeDirection = .none
     private var holdDirection: VolumeDirection = .none
-
-    /// Called on first volume event to capture state before hold detection.
-    var onFirstEvent: (() -> Void)?
 
     func attach(volumeView: MPVolumeView) {
         guard self.volumeView !== volumeView else { return }
         self.volumeView = volumeView
-
-        // NEVER reset volume if a hold is active.  The programmatic change
-        // would restart iOS auto-repeat and cause the hold to cycle.
         guard !isVolumeHeld else { return }
-
         guard cancellable != nil else {
             previousVolume = session.outputVolume
             return
         }
-
         setVolumeMidpoint()
     }
 
     func start() {
         guard cancellable == nil else { return }
-
         try? session.setActive(true)
         previousVolume = session.outputVolume
-
-        // Only reset to midpoint if no hold is active.
-        if !isVolumeHeld {
-            setVolumeMidpoint()
-        }
+        if !isVolumeHeld { setVolumeMidpoint() }
 
         cancellable = session.publisher(for: \.outputVolume)
             .sink { @Sendable [weak self] newVolume in
@@ -176,7 +221,6 @@ final class VolumeObserver {
     }
 
     private func handleVolumeChange(_ newVolume: Float) {
-        // Skip programmatic volume changes (from setVolumeMidpoint).
         if let pendingVolume = pendingProgrammaticVolume {
             pendingProgrammaticVolume = nil
             if abs(newVolume - pendingVolume) < 0.001 {
@@ -202,65 +246,62 @@ final class VolumeObserver {
         previousVolume = newVolume
     }
 
-    private func publish(_ direction: VolumeDirection) {
-        // If a hold is active and the user presses the OPPOSITE direction,
-        // that is the explicit stop signal.
-        if isVolumeHeld && direction != holdDirection {
-            isVolumeHeld = false
-            holdEventCount = 0
-            holdDirection = .none
-            haptic.impactOccurred()
-            onHoldEnd?()
-            // Do NOT reset volume here.  The user just pressed a button,
-            // which means volume is changing.  Let it settle, then the
-            // next single-tap will trigger a midpoint reset.
-            return
-        }
-
-        // If a hold is active and same direction, absorb the event.
-        // No action needed — the hold persists.
+    private func publish(_ dir: VolumeDirection) {
+        // Hold active: opposite direction ends it.
         if isVolumeHeld {
+            if dir != holdDirection {
+                isVolumeHeld = false
+                eventCount = 0
+                holdDirection = .none
+                haptic.impactOccurred()
+                onHoldEnd?()
+                // Schedule midpoint reset after hold ends.  Delay long enough
+                // for the user to lift their finger so iOS won't auto-repeat
+                // from the new midpoint.
+                scheduleMidpointReset(delay: 2.0)
+            }
+            // Same direction during hold: absorb silently.
             return
         }
 
-        holdEventCount += 1
-        pendingDirection = direction
+        eventCount += 1
 
-        if holdEventCount == 1 {
+        if eventCount == 1 {
             onFirstEvent?()
-        }
+            lastDirection = dir
 
-        if holdEventCount >= 2 {
-            // Auto-repeat detected — this is a hold.
-            isVolumeHeld = true
-            holdDirection = direction
-            holdReleaseTask?.cancel()
-            holdReleaseTask = nil
+            // Navigate immediately on first event — no 800ms delay.
+            direction = dir
+            eventID += 1
             haptic.impactOccurred()
-            onHoldStart?()
+
+            // Start hold detection window: if a second event arrives
+            // within 300ms, this is a hold, not a tap.
+            holdDetectTask?.cancel()
+            holdDetectTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(300))
+                guard let self, !Task.isCancelled else { return }
+                // No second event arrived — this was a single tap.
+                self.eventCount = 0
+                self.scheduleMidpointReset(delay: 0.3)
+            }
             return
         }
 
-        // Single event so far.  Start tap timer.
-        holdReleaseTask?.cancel()
-        holdReleaseTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(800))
-            guard let self, !Task.isCancelled else { return }
-            // No hold detected.  Single tap — navigate.
-            self.direction = self.pendingDirection
-            self.eventID += 1
-            self.holdEventCount = 0
-            self.haptic.impactOccurred()
-            self.scheduleMidpointReset()
-        }
+        // Second+ event within 300ms — this is a hold.
+        holdDetectTask?.cancel()
+        holdDetectTask = nil
+        isVolumeHeld = true
+        holdDirection = lastDirection
+        haptic.impactOccurred()
+        onHoldStart?()
     }
 
-    private func scheduleMidpointReset() {
+    private func scheduleMidpointReset(delay: TimeInterval) {
         resetTask?.cancel()
-        // NEVER reset volume during a hold.
         guard !isVolumeHeld else { return }
         resetTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(300))
+            try? await Task.sleep(for: .seconds(delay))
             guard let self, !Task.isCancelled else { return }
             guard !self.isVolumeHeld else { return }
             self.setVolumeMidpoint()
@@ -268,19 +309,15 @@ final class VolumeObserver {
     }
 
     private func setVolumeMidpoint() {
-        // Triple-check: never during a hold.
         guard !isVolumeHeld else { return }
-
         guard let slider = volumeView?.subviews.compactMap({ $0 as? UISlider }).first else {
             return
         }
-
         guard abs(session.outputVolume - midpointVolume) >= 0.001 else {
             previousVolume = session.outputVolume
             pendingProgrammaticVolume = nil
             return
         }
-
         pendingProgrammaticVolume = midpointVolume
         previousVolume = midpointVolume
         slider.setValue(midpointVolume, animated: false)
@@ -290,11 +327,11 @@ final class VolumeObserver {
     func stop() {
         cancellable?.cancel()
         resetTask?.cancel()
-        holdReleaseTask?.cancel()
+        holdDetectTask?.cancel()
         cancellable = nil
         resetTask = nil
-        holdReleaseTask = nil
-        holdEventCount = 0
+        holdDetectTask = nil
+        eventCount = 0
         holdDirection = .none
         previousVolume = nil
         pendingProgrammaticVolume = nil

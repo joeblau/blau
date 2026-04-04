@@ -82,7 +82,7 @@ struct CommitListView: View {
 
     private func commitRow(_ commit: GitCommit) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            ciIcon(commit.ciStatus)
+            commitIcon
                 .frame(width: 14)
                 .padding(.top, 2)
 
@@ -110,26 +110,10 @@ struct CommitListView: View {
         }
     }
 
-    @ViewBuilder
-    private func ciIcon(_ status: GitCommit.CIStatus) -> some View {
-        switch status {
-        case .success:
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(.green)
-        case .failure:
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(.red)
-        case .pending:
-            Image(systemName: "clock.circle.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(.orange)
-        case .unknown:
-            Image(systemName: "circle")
-                .font(.system(size: 12))
-                .foregroundStyle(.quaternary)
-        }
+    private var commitIcon: some View {
+        Image(systemName: "circle")
+            .font(.system(size: 12))
+            .foregroundStyle(.blue)
     }
 }
 

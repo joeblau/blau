@@ -6,11 +6,6 @@ struct GitCommit: Identifiable {
     let message: String
     let author: String
     let date: String
-    var ciStatus: CIStatus = .unknown
-
-    enum CIStatus: String {
-        case success, failure, pending, unknown
-    }
 }
 
 struct GitAction: Identifiable {
@@ -117,36 +112,10 @@ final class GitCommitStore {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let logResult = shellRun("git", args: ["log", "--oneline", "--format=%H||%h||%s||%an||%ar", "-10"], in: directory)
-                var parsed = logResult.components(separatedBy: "\n").compactMap { line -> GitCommit? in
+                let parsed = logResult.components(separatedBy: "\n").compactMap { line -> GitCommit? in
                     let parts = line.components(separatedBy: "||")
                     guard parts.count >= 5 else { return nil }
                     return GitCommit(id: parts[1], fullSHA: parts[0], message: parts[2], author: parts[3], date: parts[4])
-                }
-
-                let statusResult = shellRun("gh", args: [
-                    "run", "list", "--limit", "5",
-                    "--json", "headSha,status,conclusion,displayTitle"
-                ], in: directory)
-                var statusMap: [String: GitCommit.CIStatus] = [:]
-                if let data = statusResult.data(using: .utf8),
-                   let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                    for item in items {
-                        guard let sha = item["headSha"] as? String else { continue }
-                        let shortSHA = String(sha.prefix(7))
-                        let conclusion = item["conclusion"] as? String ?? ""
-                        let status = item["status"] as? String ?? ""
-                        if conclusion == "success" {
-                            statusMap[shortSHA] = .success
-                        } else if conclusion == "failure" {
-                            statusMap[shortSHA] = .failure
-                        } else if status == "in_progress" || status == "queued" {
-                            statusMap[shortSHA] = .pending
-                        }
-                    }
-                }
-
-                for i in parsed.indices {
-                    parsed[i].ciStatus = statusMap[parsed[i].id] ?? .unknown
                 }
                 continuation.resume(returning: parsed)
             }
