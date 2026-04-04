@@ -284,18 +284,17 @@ final class VolumeObserver {
             onFirstEvent?()
             lastDirection = dir
 
-            // Navigate immediately.
-            direction = dir
-            eventID += 1
-            tapHaptic.impactOccurred()
-
-            // Wait 150ms to see if this becomes a hold. iOS auto-repeat
-            // fires at ~150ms intervals, so the 2nd event arrives fast.
+            // Don't navigate yet. Wait 150ms to distinguish tap from hold.
+            // If a 2nd event arrives (hold), skip navigation entirely.
+            // If no 2nd event (tap), navigate then.
             holdDetectTask?.cancel()
             holdDetectTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .milliseconds(150))
                 guard let self, !Task.isCancelled else { return }
-                // Single tap confirmed.
+                // Single tap confirmed. Navigate now.
+                self.direction = dir
+                self.eventID += 1
+                self.tapHaptic.impactOccurred()
                 self.eventCount = 0
                 self.scheduleMidpointReset()
             }
