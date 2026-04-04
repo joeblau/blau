@@ -26,7 +26,7 @@ struct ContentView: View {
         .onChange(of: watchDelegate.isWatchReachable) {
             sendDeviceStatus()
         }
-        .onChange(of: headphoneRouteMonitor.connectedHeadphones) {
+        .onChange(of: headphoneRouteMonitor.audioOutput) {
             sendDeviceStatus()
         }
         .onChange(of: syncService.isConnected) {
@@ -136,7 +136,7 @@ struct ContentView: View {
     private var localDeviceStatus: DeviceStatus {
         DeviceStatus(
             isWatchConnected: watchDelegate.isWatchReachable,
-            connectedHeadphones: headphoneRouteMonitor.connectedHeadphones
+            audioOutput: headphoneRouteMonitor.audioOutput
         )
     }
 

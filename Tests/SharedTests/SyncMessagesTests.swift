@@ -102,18 +102,183 @@ struct SyncMessagesTests {
         #expect(summary.badgeCount == 0)
     }
 
-    @Test("VoiceRecordControl round-trip")
-    func voiceRecordRoundTrip() throws {
+    @Test("VoiceRecordCommand round-trip")
+    func voiceRecordCommandRoundTrip() throws {
+        let id = UUID()
         for control in [VoiceRecordControl.start, VoiceRecordControl.stop] {
-            let message = SyncMessage.voiceRecord(control)
+            let command = VoiceRecordCommand(control: control, workspaceID: id)
+            let message = SyncMessage.voiceRecord(command)
             let data = try encoder.encode(message)
             let decoded = try decoder.decode(SyncMessage.self, from: data)
 
-            if case .voiceRecord(let decodedControl) = decoded {
-                #expect(decodedControl == control)
+            if case .voiceRecord(let decodedCommand) = decoded {
+                #expect(decodedCommand.control == control)
+                #expect(decodedCommand.workspaceID == id)
             } else {
                 Issue.record("Expected voiceRecord case for \(control)")
             }
         }
+    }
+
+    @Test("VoiceRecordCommand with nil workspaceID")
+    func voiceRecordCommandNilWorkspace() throws {
+        let command = VoiceRecordCommand(control: .start, workspaceID: nil)
+        let message = SyncMessage.voiceRecord(command)
+        let data = try encoder.encode(message)
+        let decoded = try decoder.decode(SyncMessage.self, from: data)
+
+        if case .voiceRecord(let decodedCommand) = decoded {
+            #expect(decodedCommand.workspaceID == nil)
+        } else {
+            Issue.record("Expected voiceRecord case")
+        }
+    }
+}
+
+@Suite("AudioOutputDevice")
+struct AudioOutputDeviceTests {
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+
+    @Test("AudioOutputDevice round-trip with new kinds",
+          arguments: [
+            ConnectedDeviceKind.beats,
+            ConnectedDeviceKind.usb,
+            ConnectedDeviceKind.speaker,
+            ConnectedDeviceKind.unknown,
+          ])
+    func audioOutputDeviceRoundTrip(kind: ConnectedDeviceKind) throws {
+        let device = AudioOutputDevice(kind: kind, name: "Test Device")
+        let data = try encoder.encode(device)
+        let decoded = try decoder.decode(AudioOutputDevice.self, from: data)
+        #expect(decoded.kind == kind)
+        #expect(decoded.name == "Test Device")
+    }
+
+    @Test("DeviceStatus with audioOutput round-trip")
+    func deviceStatusRoundTrip() throws {
+        let status = DeviceStatus(
+            isWatchConnected: true,
+            audioOutput: AudioOutputDevice(kind: .airpodsPro, name: "Joe's AirPods Pro")
+        )
+        let data = try encoder.encode(status)
+        let decoded = try decoder.decode(DeviceStatus.self, from: data)
+        #expect(decoded.isWatchConnected == true)
+        #expect(decoded.audioOutput?.kind == .airpodsPro)
+        #expect(decoded.audioOutput?.name == "Joe's AirPods Pro")
+    }
+
+    @Test("DeviceStatus with nil audioOutput")
+    func deviceStatusNilAudioOutput() throws {
+        let status = DeviceStatus()
+        let data = try encoder.encode(status)
+        let decoded = try decoder.decode(DeviceStatus.self, from: data)
+        #expect(decoded.audioOutput == nil)
+        #expect(decoded.isWatchConnected == false)
+    }
+}
+
+@Suite("ConnectedDeviceKind classification")
+struct ClassificationTests {
+    @Test("AirPods Max classified correctly")
+    func airpodsMax() {
+        let kind = ConnectedDeviceKind.classify(name: "Joe's AirPods Max", defaultKind: .headphonesBluetooth)
+        #expect(kind == .airpodsMax)
+    }
+
+    @Test("AirPods Pro classified correctly")
+    func airpodsPro() {
+        let kind = ConnectedDeviceKind.classify(name: "AirPods Pro", defaultKind: .headphonesBluetooth)
+        #expect(kind == .airpodsPro)
+    }
+
+    @Test("AirPods (regular) classified correctly")
+    func airpods() {
+        let kind = ConnectedDeviceKind.classify(name: "AirPods", defaultKind: .headphonesBluetooth)
+        #expect(kind == .airpods)
+    }
+
+    @Test("Beats classified correctly")
+    func beats() {
+        let kind = ConnectedDeviceKind.classify(name: "Beats Studio Pro", defaultKind: .headphonesBluetooth)
+        #expect(kind == .beats)
+    }
+
+    @Test("Case insensitive matching")
+    func caseInsensitive() {
+        #expect(ConnectedDeviceKind.classify(name: "AIRPODS PRO", defaultKind: .unknown) == .airpodsPro)
+        #expect(ConnectedDeviceKind.classify(name: "airpods max", defaultKind: .unknown) == .airpodsMax)
+        #expect(ConnectedDeviceKind.classify(name: "BEATS Solo", defaultKind: .unknown) == .beats)
+    }
+
+    @Test("Unknown device returns defaultKind")
+    func unknownDevice() {
+        let kind = ConnectedDeviceKind.classify(name: "Sony WH-1000XM5", defaultKind: .headphonesBluetooth)
+        #expect(kind == .headphonesBluetooth)
+    }
+
+    @Test("AirPods Max takes priority over AirPods")
+    func airpodsMaxPriority() {
+        let kind = ConnectedDeviceKind.classify(name: "AirPods Max", defaultKind: .unknown)
+        #expect(kind == .airpodsMax)
+    }
+
+    @Test("AirPods Pro takes priority over AirPods")
+    func airpodsProPriority() {
+        let kind = ConnectedDeviceKind.classify(name: "AirPods Pro", defaultKind: .unknown)
+        #expect(kind == .airpodsPro)
+    }
+
+    @Test("Empty name returns defaultKind")
+    func emptyName() {
+        let kind = ConnectedDeviceKind.classify(name: "", defaultKind: .speaker)
+        #expect(kind == .speaker)
+    }
+}
+
+@Suite("ConnectedDeviceKind properties")
+struct DeviceKindPropertyTests {
+    @Test("New kinds have systemImageName")
+    func systemImageNames() {
+        #expect(!ConnectedDeviceKind.beats.systemImageName.isEmpty)
+        #expect(!ConnectedDeviceKind.usb.systemImageName.isEmpty)
+        #expect(!ConnectedDeviceKind.speaker.systemImageName.isEmpty)
+        #expect(!ConnectedDeviceKind.unknown.systemImageName.isEmpty)
+    }
+
+    @Test("New kinds have displayName")
+    func displayNames() {
+        #expect(ConnectedDeviceKind.beats.displayName == "Beats")
+        #expect(ConnectedDeviceKind.usb.displayName == "USB Audio")
+        #expect(ConnectedDeviceKind.speaker.displayName == "Speaker")
+        #expect(ConnectedDeviceKind.unknown.displayName == "Audio Output")
+    }
+
+    @Test("isHeadphones correct for new kinds")
+    func isHeadphones() {
+        #expect(ConnectedDeviceKind.beats.isHeadphones == true)
+        #expect(ConnectedDeviceKind.usb.isHeadphones == true)
+        #expect(ConnectedDeviceKind.speaker.isHeadphones == false)
+        #expect(ConnectedDeviceKind.unknown.isHeadphones == false)
+    }
+
+    @Test("isHeadphones correct for existing kinds")
+    func isHeadphonesExisting() {
+        #expect(ConnectedDeviceKind.airpods.isHeadphones == true)
+        #expect(ConnectedDeviceKind.airpodsPro.isHeadphones == true)
+        #expect(ConnectedDeviceKind.airpodsMax.isHeadphones == true)
+        #expect(ConnectedDeviceKind.headphonesWired.isHeadphones == true)
+        #expect(ConnectedDeviceKind.headphonesBluetooth.isHeadphones == true)
+        #expect(ConnectedDeviceKind.computer.isHeadphones == false)
+        #expect(ConnectedDeviceKind.iphone.isHeadphones == false)
+        #expect(ConnectedDeviceKind.appleWatch.isHeadphones == false)
+    }
+
+    @Test("usesFillVariant for speaker")
+    func usesFillVariant() {
+        #expect(ConnectedDeviceKind.speaker.usesFillVariant == true)
+        #expect(ConnectedDeviceKind.beats.usesFillVariant == false)
+        #expect(ConnectedDeviceKind.usb.usesFillVariant == false)
+        #expect(ConnectedDeviceKind.unknown.usesFillVariant == false)
     }
 }

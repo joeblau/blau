@@ -7,7 +7,8 @@ struct PilotApp: App {
     let modelContainer: ModelContainer
 
     @State private var store: WorkspaceStore
-    @State private var deviceStatus = DeviceStatus()
+    @State private var peerDeviceStatus = DeviceStatus()
+    @State private var headphoneDetector = HeadphoneDetector()
     @State private var remoteTranscription = TranscriptionService()
     @State private var syncService = PeerSyncService(
         role: .advertiser,
@@ -25,11 +26,19 @@ struct PilotApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(store: store, syncService: syncService, deviceStatus: deviceStatus, remoteTranscription: remoteTranscription)
+            ContentView(store: store, syncService: syncService, peerDeviceStatus: peerDeviceStatus, localAudioOutput: headphoneDetector.audioOutput, remoteTranscription: remoteTranscription)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                 .task {
                     _ = MouseBridge.shared.ensurePermissions()
+                    headphoneDetector.start()
                     setupSync()
+                }
+                .onChange(of: headphoneDetector.audioOutput) {
+                    sendLocalDeviceStatus()
+                }
+                .onChange(of: syncService.isConnected) {
+                    guard syncService.isConnected else { return }
+                    sendLocalDeviceStatus()
                 }
         }
         .modelContainer(modelContainer)
@@ -78,7 +87,7 @@ struct PilotApp: App {
             case .workspaceState:
                 break
             case .deviceStatus(let status):
-                deviceStatus = status
+                peerDeviceStatus = status
             case .mouseMove(let m):
                 MouseBridge.shared.move(dx: m.dx, dy: m.dy)
             case .mouseClick:
@@ -125,5 +134,10 @@ struct PilotApp: App {
                 syncService.send(.workspaceState(state), reliable: false)
             }
         }
+    }
+
+    private func sendLocalDeviceStatus() {
+        let status = DeviceStatus(audioOutput: headphoneDetector.audioOutput)
+        syncService.send(.deviceStatus(status))
     }
 }

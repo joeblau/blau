@@ -5,7 +5,8 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var store: WorkspaceStore
     var syncService: PeerSyncService
-    var deviceStatus: DeviceStatus
+    var peerDeviceStatus: DeviceStatus
+    var localAudioOutput: AudioOutputDevice?
     var remoteTranscription: TranscriptionService
     @State private var gitStore = GitCommitStore()
     @State private var showInspector = false
@@ -167,11 +168,16 @@ struct ContentView: View {
     }
 
     private var connectedDevices: [ConnectedDevice] {
-        ConnectedDeviceCatalog.devices(
-            for: .pilot,
-            peerConnected: syncService.isConnected,
-            deviceStatus: deviceStatus
+        let audioDevice = ConnectedDevice(
+            kind: localAudioOutput?.kind ?? .headphonesBluetooth,
+            isConnected: localAudioOutput != nil,
+            name: localAudioOutput?.name
         )
+        return [
+            ConnectedDevice(kind: .iphone, isConnected: syncService.isConnected),
+            ConnectedDevice(kind: .appleWatch, isConnected: peerDeviceStatus.isWatchConnected),
+            audioDevice
+        ]
     }
 
     private func workspaceRow(_ workspace: Workspace) -> some View {
@@ -367,7 +373,8 @@ private enum ContentViewPreviewData {
     ContentView(
         store: WorkspaceStore(modelContext: ContentViewPreviewData.container.mainContext),
         syncService: PeerSyncService(role: .advertiser, displayName: "Preview"),
-        deviceStatus: DeviceStatus(),
+        peerDeviceStatus: DeviceStatus(),
+        localAudioOutput: nil,
         remoteTranscription: TranscriptionService()
     )
     .modelContainer(ContentViewPreviewData.container)

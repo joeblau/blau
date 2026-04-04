@@ -115,7 +115,7 @@ final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificatio
 @Observable
 @MainActor
 final class HeadphoneRouteMonitor {
-    var connectedHeadphones: ConnectedHeadphones?
+    var audioOutput: AudioOutputDevice?
 
     private let session = AVAudioSession.sharedInstance()
     private var routeChangeObserver: NSObjectProtocol?
@@ -135,51 +135,36 @@ final class HeadphoneRouteMonitor {
     }
 
     private func refresh() {
-        connectedHeadphones = Self.detectConnectedHeadphones(in: session.currentRoute.outputs)
+        audioOutput = Self.detectAudioOutput(in: session.currentRoute.outputs)
     }
 
-    private static func detectConnectedHeadphones(
+    private static func detectAudioOutput(
         in outputs: [AVAudioSessionPortDescription]
-    ) -> ConnectedHeadphones? {
+    ) -> AudioOutputDevice? {
         for output in outputs {
-            if let headphones = classify(output: output) {
-                return headphones
+            if let device = classifyOutput(output) {
+                return device
             }
         }
         return nil
     }
 
-    private static func classify(output: AVAudioSessionPortDescription) -> ConnectedHeadphones? {
+    private static func classifyOutput(_ output: AVAudioSessionPortDescription) -> AudioOutputDevice? {
         let kind: ConnectedDeviceKind
         switch output.portType {
         case .headphones:
-            kind = classify(name: output.portName, defaultKind: .headphonesWired)
+            kind = ConnectedDeviceKind.classify(name: output.portName, defaultKind: .headphonesWired)
         case .bluetoothA2DP, .bluetoothLE, .bluetoothHFP:
-            kind = classify(name: output.portName, defaultKind: .headphonesBluetooth)
+            kind = ConnectedDeviceKind.classify(name: output.portName, defaultKind: .headphonesBluetooth)
         default:
             return nil
         }
 
         let trimmedName = output.portName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return ConnectedHeadphones(
+        return AudioOutputDevice(
             kind: kind,
             name: trimmedName.isEmpty ? kind.displayName : trimmedName
         )
-    }
-
-    private static func classify(name: String, defaultKind: ConnectedDeviceKind) -> ConnectedDeviceKind {
-        let lowered = name.lowercased()
-
-        if lowered.contains("airpods max") {
-            return .airpodsMax
-        }
-        if lowered.contains("airpods pro") {
-            return .airpodsPro
-        }
-        if lowered.contains("airpods") {
-            return .airpods
-        }
-        return defaultKind
     }
 }
 
