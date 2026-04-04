@@ -9,8 +9,6 @@ struct ContentView: View {
     var remoteTranscription: TranscriptionService
     @State private var gitStore = GitCommitStore()
     @State private var showInspector = false
-    @State private var transcriptionService = TranscriptionService()
-    @State private var showTranscription = false
     @FocusState private var isBrowserURLFieldFocused: Bool
 
     var body: some View {
@@ -80,9 +78,6 @@ struct ContentView: View {
                                            description: Text("Create a workspace with the + button."))
                 }
 
-                if showTranscription && transcriptionService.isTranscribing {
-                    TranscriptionOverlay(service: transcriptionService)
-                }
             }
         }
         .inspector(isPresented: $showInspector) {
@@ -140,19 +135,6 @@ struct ContentView: View {
                     .keyboardShortcut("b", modifiers: .command)
                 }
                 .disabled(store.selectedWorkspace == nil)
-
-                Button {
-                    showTranscription.toggle()
-                    if showTranscription {
-                        Task { await transcriptionService.start() }
-                    } else {
-                        Task { await transcriptionService.stop() }
-                    }
-                } label: {
-                    Label("Transcription",
-                          systemImage: showTranscription ? "waveform.circle.fill" : "waveform.circle")
-                }
-
                 Button {
                     showInspector.toggle()
                 } label: {
