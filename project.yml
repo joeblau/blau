@@ -30,6 +30,7 @@ targets:
       - framework: GhosttyKit.xcframework
         embed: false
       - package: WhisperKit
+        product: WhisperKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.pilot

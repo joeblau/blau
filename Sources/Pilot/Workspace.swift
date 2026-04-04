@@ -127,6 +127,7 @@ final class Workspace {
     var id: UUID = UUID()
     var name: String = ""
     var selectedPaneID: UUID?
+    var frontmostTerminalPaneID: UUID?
     var axisRaw: String = PaneAxis.vertical.rawValue
     var isInspectorPresented: Bool = false
     var inspectorTabRaw: String = InspectorTab.actions.rawValue
@@ -138,6 +139,19 @@ final class Workspace {
 
     var selectedPane: Pane? {
         sortedPanes.first { $0.id == selectedPaneID }
+    }
+
+    var frontmostTerminalPane: Pane? {
+        if let frontmostTerminalPaneID,
+           let pane = sortedPanes.first(where: { $0.id == frontmostTerminalPaneID && $0.kind == .terminal }) {
+            return pane
+        }
+
+        if let selectedPane, selectedPane.kind == .terminal {
+            return selectedPane
+        }
+
+        return sortedPanes.first { $0.kind == .terminal }
     }
 
     var sortedPanes: [Pane] {
@@ -164,6 +178,7 @@ final class Workspace {
         let initialPane = Pane(kind: .terminal)
         self.panes = [initialPane]
         self.selectedPaneID = initialPane.id
+        self.frontmostTerminalPaneID = initialPane.id
     }
 
     func addPane(kind: PaneKind, side: Side) {
@@ -199,6 +214,9 @@ final class Workspace {
 
         panes.append(pane)
         selectedPaneID = pane.id
+        if kind == .terminal {
+            frontmostTerminalPaneID = pane.id
+        }
     }
 
     func removePane(_ pane: Pane) {
@@ -206,6 +224,15 @@ final class Workspace {
         if selectedPaneID == pane.id {
             selectedPaneID = sortedPanes.first?.id
         }
+        if frontmostTerminalPaneID == pane.id {
+            frontmostTerminalPaneID = sortedPanes.first(where: { $0.kind == .terminal })?.id
+        }
+    }
+
+    func setFrontmostTerminalPaneID(_ paneID: UUID?) {
+        guard frontmostTerminalPaneID != paneID else { return }
+        frontmostTerminalPaneID = paneID
+        try? modelContext?.save()
     }
 
     func setInspectorPresented(_ isPresented: Bool) {

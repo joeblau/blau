@@ -7,6 +7,7 @@ private let paneTabDragType = UTType.plainText
 
 struct WorkspaceView: View {
     @Bindable var workspace: Workspace
+    let isActive: Bool
     @State private var draggingPaneID: UUID?
     @State private var hoveredPaneID: UUID?
 
@@ -17,6 +18,15 @@ struct WorkspaceView: View {
             panesContent
         }
         .navigationTitle(workspace.name)
+        .onAppear {
+            focusTerminalIfNeededForWorkspaceActivation()
+        }
+        .onChange(of: isActive) {
+            focusTerminalIfNeededForWorkspaceActivation()
+        }
+        .onChange(of: workspace.selectedPaneID) {
+            focusSelectedTerminalIfNeeded()
+        }
     }
 
     // MARK: - Tab Bar
@@ -108,6 +118,26 @@ struct WorkspaceView: View {
         }
     }
 
+}
+
+private extension WorkspaceView {
+    func focusTerminalIfNeededForWorkspaceActivation() {
+        guard isActive, let pane = workspace.frontmostTerminalPane else { return }
+        workspace.setFrontmostTerminalPaneID(pane.id)
+        DispatchQueue.main.async {
+            _ = GhosttyMetalView.focus(paneID: pane.id)
+        }
+    }
+
+    func focusSelectedTerminalIfNeeded() {
+        guard isActive,
+              let pane = workspace.selectedPane,
+              pane.kind == .terminal else { return }
+        workspace.setFrontmostTerminalPaneID(pane.id)
+        DispatchQueue.main.async {
+            _ = GhosttyMetalView.focus(paneID: pane.id)
+        }
+    }
 }
 
 private struct PaneTabDropDelegate: DropDelegate {

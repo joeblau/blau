@@ -13,6 +13,8 @@ struct PilotApp: App {
         role: .advertiser,
         displayName: Host.current().localizedName ?? "Mac"
     )
+    @State private var recordingTargetPaneID: UUID?
+    @State private var didSetupSync = false
 
     init() {
         let schema = Schema([Workspace.self, Pane.self, BrowserState.self])
@@ -42,17 +44,37 @@ struct PilotApp: App {
         }
     }
 
+    private func activeTerminalPane(in workspaceID: UUID?) -> Pane? {
+        guard let workspaceID,
+              let workspace = store.workspaces.first(where: { $0.id == workspaceID }) else { return nil }
+        return workspace.frontmostTerminalPane
+    }
+
+    private func terminalView(for paneID: UUID?) -> GhosttyMetalView? {
+        guard let paneID else { return nil }
+        return GhosttyMetalView.view(for: paneID)
+    }
+
     private var activeTerminalView: GhosttyMetalView? {
-        guard let pane = store.selectedWorkspace?.selectedPane,
-              pane.kind == .terminal else { return nil }
-        return GhosttyMetalView.view(for: pane.id)
+        terminalView(for: activeTerminalPane(in: store.selectedWorkspaceID)?.id)
     }
 
     private func setupSync() {
+        guard !didSetupSync else { return }
+        didSetupSync = true
+
         syncService.onReceive = { (message: SyncMessage) in
             switch message {
             case .selectWorkspace(let sel):
                 store.selectedWorkspaceID = sel.workspaceID
+                // Ensure the workspace's terminal is selected and focused
+                if let workspace = store.workspaces.first(where: { $0.id == sel.workspaceID }),
+                   let terminalPane = workspace.frontmostTerminalPane {
+                    workspace.selectedPaneID = terminalPane.id
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        _ = GhosttyMetalView.focus(paneID: terminalPane.id)
+                    }
+                }
             case .workspaceState:
                 break
             case .deviceStatus(let status):
@@ -61,11 +83,18 @@ struct PilotApp: App {
                 MouseBridge.shared.move(dx: m.dx, dy: m.dy)
             case .mouseClick:
                 MouseBridge.shared.click()
-            case .voiceRecord(let control):
-                switch control {
+            case .voiceRecord(let command):
+                switch command.control {
                 case .start:
+                    let targetWorkspaceID = command.workspaceID ?? store.selectedWorkspaceID
+                    if let targetWorkspaceID {
+                        store.selectedWorkspaceID = targetWorkspaceID
+                    }
+                    recordingTargetPaneID = activeTerminalPane(in: targetWorkspaceID)?.id
                     Task { await remoteTranscription.start() }
                 case .stop:
+                    let targetPaneID = recordingTargetPaneID
+                    recordingTargetPaneID = nil
                     Task {
                         await remoteTranscription.stop()
                         let text = [remoteTranscription.finalText, remoteTranscription.partialText]
@@ -74,7 +103,7 @@ struct PilotApp: App {
                             .replacingOccurrences(of: "Waiting for speech...", with: "")
                             .trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !text.isEmpty else { return }
-                        activeTerminalView?.pasteText(text)
+                        terminalView(for: targetPaneID)?.pasteText(text)
                     }
                 }
             case .terminalInput(let input):

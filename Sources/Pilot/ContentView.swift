@@ -7,7 +7,6 @@ struct ContentView: View {
     var syncService: PeerSyncService
     var deviceStatus: DeviceStatus
     var remoteTranscription: TranscriptionService
-    var audioOutputMonitor: MacAudioOutputMonitor
     @State private var gitStore = GitCommitStore()
     @State private var showInspector = false
     @State private var transcriptionService = TranscriptionService()
@@ -49,6 +48,7 @@ struct ContentView: View {
                             Image(systemName: device.kind.systemImageName)
                                 .symbolVariant(device.kind.usesFillVariant ? .fill : .none)
                                 .foregroundStyle(device.isConnected ? .green : .red)
+                                .help(device.name ?? device.kind.displayName)
                         }
                     }
                 }
@@ -67,7 +67,7 @@ struct ContentView: View {
                     ZStack {
                         ForEach(workspaces) { workspace in
                             let isActive = workspace.id == selectedWorkspaceID
-                            WorkspaceView(workspace: workspace)
+                            WorkspaceView(workspace: workspace, isActive: isActive)
                                 .zIndex(isActive ? 1 : 0)
                                 .opacity(isActive ? 1 : 0)
                                 .allowsHitTesting(isActive)
@@ -101,9 +101,11 @@ struct ContentView: View {
                     pane.resetBellCount()
                 }
             }
+            focusSelectedWorkspaceTerminal()
         }
         .task {
             syncInspectorRepo(activeInspectorRepoPath)
+            focusSelectedWorkspaceTerminal()
         }
         .onReceive(NotificationCenter.default.publisher(for: .pilotFocusBrowserAddressBar)) { _ in
             focusBrowserAddressBar()
@@ -182,8 +184,7 @@ struct ContentView: View {
         ConnectedDeviceCatalog.devices(
             for: .pilot,
             peerConnected: syncService.isConnected,
-            deviceStatus: deviceStatus,
-            localHeadphoneKind: audioOutputMonitor.detectedKind
+            deviceStatus: deviceStatus
         )
     }
 
@@ -318,6 +319,15 @@ struct ContentView: View {
         }
     }
 
+    private func focusSelectedWorkspaceTerminal() {
+        guard let workspace = store.selectedWorkspace,
+              let pane = workspace.frontmostTerminalPane else { return }
+        workspace.setFrontmostTerminalPaneID(pane.id)
+        DispatchQueue.main.async {
+            _ = GhosttyMetalView.focus(paneID: pane.id)
+        }
+    }
+
     private var selectedTerminalRepoPath: String? {
         guard let pane = store.selectedWorkspace?.selectedPane else { return nil }
         guard pane.kind == .terminal else { return nil }
@@ -372,8 +382,7 @@ private enum ContentViewPreviewData {
         store: WorkspaceStore(modelContext: ContentViewPreviewData.container.mainContext),
         syncService: PeerSyncService(role: .advertiser, displayName: "Preview"),
         deviceStatus: DeviceStatus(),
-        remoteTranscription: TranscriptionService(),
-        audioOutputMonitor: MacAudioOutputMonitor()
+        remoteTranscription: TranscriptionService()
     )
     .modelContainer(ContentViewPreviewData.container)
 }

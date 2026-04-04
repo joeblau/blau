@@ -7,6 +7,7 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
     let items: [Item]
     @Binding var selectedID: Item.ID?
     var onHighlightChanged: ((Item) -> Void)?
+    var onFirstEvent: (() -> Void)?
     var onVolumeHoldStart: (() -> Void)?
     var onVolumeHoldEnd: (() -> Void)?
     @ViewBuilder let rowContent: (Item, Bool) -> RowContent
@@ -61,6 +62,7 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
             }
         }
         .onAppear {
+            volumeObserver.onFirstEvent = onFirstEvent
             volumeObserver.onHoldStart = onVolumeHoldStart
             volumeObserver.onHoldEnd = onVolumeHoldEnd
             volumeObserver.start()
@@ -168,9 +170,16 @@ final class VolumeObserver {
     private var pendingDirection: VolumeDirection = .none
     private var tapConfirmTask: Task<Void, Never>?
 
+    /// Called on first volume event to capture state before hold detection.
+    var onFirstEvent: (() -> Void)?
+
     private func publish(_ direction: VolumeDirection) {
         holdEventCount += 1
         pendingDirection = direction
+
+        if holdEventCount == 1 {
+            onFirstEvent?()
+        }
 
         if holdEventCount >= 2 && !isVolumeHeld {
             // Auto-repeat detected. This is a hold.

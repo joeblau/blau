@@ -11,6 +11,11 @@ enum VoiceRecordControl: String, Codable, Sendable {
     case start, stop
 }
 
+struct VoiceRecordCommand: Codable, Sendable {
+    let control: VoiceRecordControl
+    let workspaceID: UUID?
+}
+
 enum TerminalInput: String, Codable, Sendable {
     case enter
 }
@@ -21,7 +26,7 @@ enum SyncMessage: Codable, Sendable {
     case deviceStatus(DeviceStatus)
     case mouseMove(MouseMove)
     case mouseClick(MouseClick)
-    case voiceRecord(VoiceRecordControl)
+    case voiceRecord(VoiceRecordCommand)
     case terminalInput(TerminalInput)
 }
 
@@ -34,9 +39,14 @@ struct MouseClick: Codable, Sendable {
     let button: Int // 0 = left
 }
 
+struct ConnectedHeadphones: Codable, Sendable, Hashable {
+    let kind: ConnectedDeviceKind
+    let name: String
+}
+
 struct DeviceStatus: Codable, Sendable {
     var isWatchConnected: Bool = false
-    var isAirPodsConnected: Bool = false
+    var connectedHeadphones: ConnectedHeadphones?
 }
 
 enum ConnectedDeviceAppRole: String, Codable, Sendable {
@@ -69,6 +79,19 @@ enum ConnectedDeviceKind: String, Codable, Sendable, Hashable, Identifiable {
         }
     }
 
+    var displayName: String {
+        switch self {
+        case .computer: return "Computer"
+        case .iphone: return "iPhone"
+        case .appleWatch: return "Apple Watch"
+        case .airpods: return "AirPods"
+        case .airpodsPro: return "AirPods Pro"
+        case .airpodsMax: return "AirPods Max"
+        case .headphonesWired: return "Wired Headphones"
+        case .headphonesBluetooth: return "Bluetooth Headphones"
+        }
+    }
+
     var usesFillVariant: Bool {
         switch self {
         case .computer, .appleWatch:
@@ -91,6 +114,7 @@ enum ConnectedDeviceKind: String, Codable, Sendable, Hashable, Identifiable {
 struct ConnectedDevice: Codable, Sendable, Hashable, Identifiable {
     let kind: ConnectedDeviceKind
     let isConnected: Bool
+    var name: String? = nil
 
     var id: ConnectedDeviceKind { kind }
 }
@@ -99,12 +123,12 @@ enum ConnectedDeviceCatalog {
     static func devices(
         for role: ConnectedDeviceAppRole,
         peerConnected: Bool,
-        deviceStatus: DeviceStatus,
-        localHeadphoneKind: ConnectedDeviceKind? = nil
+        deviceStatus: DeviceStatus
     ) -> [ConnectedDevice] {
         let headphoneDevice = ConnectedDevice(
-            kind: localHeadphoneKind ?? .headphonesBluetooth,
-            isConnected: localHeadphoneKind != nil
+            kind: deviceStatus.connectedHeadphones?.kind ?? .headphonesBluetooth,
+            isConnected: deviceStatus.connectedHeadphones != nil,
+            name: deviceStatus.connectedHeadphones?.name
         )
         switch role {
         case .pilot:
@@ -117,6 +141,7 @@ enum ConnectedDeviceCatalog {
             return [
                 ConnectedDevice(kind: .computer, isConnected: peerConnected),
                 ConnectedDevice(kind: .appleWatch, isConnected: deviceStatus.isWatchConnected),
+                headphoneDevice
             ]
         }
     }

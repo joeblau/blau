@@ -3,9 +3,12 @@ import SwiftUI
 struct ContentView: View {
     let syncService: PeerSyncService
     let watchDelegate: PhoneSessionDelegate
+    let headphoneRouteMonitor: HeadphoneRouteMonitor
 
     @State private var workspaces: [WorkspaceSummary] = []
     @State private var selectedID: UUID?
+    @State private var recordingWorkspaceID: UUID?
+    @State private var preHoldWorkspaceID: UUID?
 
     var body: some View {
         NavigationStack {
@@ -21,6 +24,9 @@ struct ContentView: View {
         }
         .task { setupSync() }
         .onChange(of: watchDelegate.isWatchReachable) {
+            sendDeviceStatus()
+        }
+        .onChange(of: headphoneRouteMonitor.connectedHeadphones) {
             sendDeviceStatus()
         }
         .onChange(of: syncService.isConnected) {
@@ -57,11 +63,23 @@ struct ContentView: View {
             onHighlightChanged: { workspace in
                 syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspace.id)))
             },
+            onFirstEvent: {
+                preHoldWorkspaceID = selectedID
+            },
             onVolumeHoldStart: {
-                syncService.send(.voiceRecord(.start))
+                let workspaceID = preHoldWorkspaceID ?? selectedID
+                recordingWorkspaceID = workspaceID
+                syncService.send(.voiceRecord(
+                    VoiceRecordCommand(control: .start, workspaceID: workspaceID)
+                ))
             },
             onVolumeHoldEnd: {
-                syncService.send(.voiceRecord(.stop))
+                let workspaceID = recordingWorkspaceID ?? selectedID
+                syncService.send(.voiceRecord(
+                    VoiceRecordCommand(control: .stop, workspaceID: workspaceID)
+                ))
+                recordingWorkspaceID = nil
+                preHoldWorkspaceID = nil
             }
         ) { workspace, isHighlighted in
             workspaceRow(workspace, isHighlighted: isHighlighted)
@@ -105,6 +123,7 @@ struct ContentView: View {
         Image(systemName: device.kind.systemImageName)
             .symbolVariant(device.kind.usesFillVariant ? .fill : .none)
             .foregroundStyle(device.isConnected ? .green : .red)
+            .help(device.name ?? device.kind.displayName)
     }
 
     @ViewBuilder
@@ -117,7 +136,7 @@ struct ContentView: View {
     private var localDeviceStatus: DeviceStatus {
         DeviceStatus(
             isWatchConnected: watchDelegate.isWatchReachable,
-            isAirPodsConnected: false
+            connectedHeadphones: headphoneRouteMonitor.connectedHeadphones
         )
     }
 
@@ -149,5 +168,6 @@ struct ContentView: View {
 
 #Preview {
     ContentView(syncService: PeerSyncService(role: .browser, displayName: "Preview"),
-               watchDelegate: PhoneSessionDelegate())
+               watchDelegate: PhoneSessionDelegate(),
+               headphoneRouteMonitor: HeadphoneRouteMonitor())
 }

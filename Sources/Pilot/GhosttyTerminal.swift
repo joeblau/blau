@@ -96,10 +96,11 @@ final class GhosttyRuntime: @unchecked Sendable {
         ghostty_app_tick(app)
     }
 
-    private static let selectionPasteboard = NSPasteboard(name: NSPasteboard.Name("com.mitchellh.ghostty.selection"))
-
     private static func pasteboard(for location: ghostty_clipboard_e) -> NSPasteboard {
-        location == GHOSTTY_CLIPBOARD_SELECTION ? selectionPasteboard : .general
+        if location == GHOSTTY_CLIPBOARD_SELECTION {
+            return NSPasteboard(name: NSPasteboard.Name("com.mitchellh.ghostty.selection"))
+        }
+        return .general
     }
 
     private static func readClipboard(
@@ -234,6 +235,15 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         registry[paneID]
     }
 
+    @discardableResult
+    static func focus(paneID: UUID) -> Bool {
+        guard let view = registry[paneID], let window = view.window else { return false }
+        if window.firstResponder !== view {
+            window.makeFirstResponder(view)
+        }
+        return true
+    }
+
     var surface: ghostty_surface_t?
     nonisolated(unsafe) fileprivate var callbackSurface: ghostty_surface_t?
     private var renderObserver: NSObjectProtocol?
@@ -349,6 +359,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
     override func becomeFirstResponder() -> Bool {
         if let surface { ghostty_surface_set_focus(surface, true) }
+        pane.workspace?.setFrontmostTerminalPaneID(pane.id)
         return super.becomeFirstResponder()
     }
 
@@ -361,7 +372,10 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         super.viewDidMoveToWindow()
         DispatchQueue.main.async { [weak self] in
             guard let self, let window = self.window else { return }
-            window.makeFirstResponder(self)
+            // Don't grab focus here — all workspaces are rendered in a ZStack
+            // and the last terminal to fire would steal focus from the active
+            // workspace's terminal.  Workspace-level focus management
+            // (focusTerminalIfNeededForWorkspaceActivation, etc.) handles this.
             if let surface = self.surface {
                 let scale = window.backingScaleFactor
                 ghostty_surface_set_content_scale(surface, Double(scale), Double(scale))
@@ -459,6 +473,11 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown else { return false }
         guard surface != nil else { return false }
+        // Only handle key equivalents if we are the first responder.
+        // AppKit walks the view hierarchy for performKeyEquivalent, so
+        // terminals in inactive workspaces would otherwise intercept
+        // Cmd+V, Cmd+C, etc. before the active terminal sees them.
+        guard window?.firstResponder === self else { return false }
 
         let equivalent: String
         switch event.charactersIgnoringModifiers {
@@ -533,7 +552,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     func pasteText(_ text: String) {
         guard let surface else { return }
         text.withCString { ptr in
-            ghostty_surface_text(surface, ptr, text.utf8.count)
+            ghostty_surface_text(surface, ptr, UInt(text.utf8.count))
         }
     }
 
@@ -652,22 +671,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
             x *= 2
             y *= 2
         }
-        var scrollMods = mods(event)
-        if event.hasPreciseScrollingDeltas {
-            scrollMods = ghostty_input_mods_e(rawValue: scrollMods.rawValue | GHOSTTY_MODS_SCROLL_PRECISE.rawValue)
-        }
-        // Map momentum phase
-        switch event.momentumPhase {
-        case .began:
-            scrollMods = ghostty_input_mods_e(rawValue: scrollMods.rawValue | GHOSTTY_MODS_MOMENTUM_BEGAN.rawValue)
-        case .changed:
-            scrollMods = ghostty_input_mods_e(rawValue: scrollMods.rawValue | GHOSTTY_MODS_MOMENTUM_CHANGED.rawValue)
-        case .ended, .cancelled:
-            scrollMods = ghostty_input_mods_e(rawValue: scrollMods.rawValue | GHOSTTY_MODS_MOMENTUM_ENDED.rawValue)
-        default:
-            break
-        }
-        ghostty_surface_mouse_scroll(surface, x, y, scrollMods)
+        ghostty_surface_mouse_scroll(surface, x, y, scrollMods(event))
     }
 
     // MARK: - Helpers
@@ -685,6 +689,14 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
     private func mods(_ event: NSEvent) -> ghostty_input_mods_e {
         ghosttyMods(event.modifierFlags)
+    }
+
+    private func scrollMods(_ event: NSEvent) -> ghostty_input_scroll_mods_t {
+        // Newer Ghostty headers expose scroll modifiers as an opaque packed int
+        // and no longer vend the precise/momentum constants directly. Preserve
+        // the keyboard modifier bits and let Ghostty handle the rest internally.
+        let baseMods = Int32(bitPattern: ghosttyMods(event.modifierFlags).rawValue)
+        return ghostty_input_scroll_mods_t(baseMods)
     }
 
     private func keyAction(
@@ -977,9 +989,8 @@ extension GhosttyMetalView: @MainActor NSTextInputClient {
         if text.isEmpty {
             ghostty_surface_preedit(surface, nil, 0)
         } else {
-            let codepoints = Array(text.unicodeScalars.map { UInt32($0.value) })
-            codepoints.withUnsafeBufferPointer { buf in
-                ghostty_surface_preedit(surface, buf.baseAddress, buf.count)
+            text.withCString { ptr in
+                ghostty_surface_preedit(surface, ptr, UInt(text.utf8.count))
             }
         }
     }
@@ -1002,12 +1013,14 @@ extension GhosttyMetalView: @MainActor NSTextInputClient {
         guard let surface, let window else { return .zero }
         var x: Double = 0
         var y: Double = 0
-        ghostty_surface_ime_point(surface, &x, &y)
+        var width: Double = 0
+        var height: Double = 0
+        ghostty_surface_ime_point(surface, &x, &y, &width, &height)
         // Convert from Ghostty top-left to AppKit bottom-left
-        let viewPoint = NSPoint(x: x, y: bounds.height - y)
-        let windowPoint = convert(viewPoint, to: nil)
-        let screenPoint = window.convertPoint(toScreen: windowPoint)
-        return NSRect(x: screenPoint.x, y: screenPoint.y - 20, width: 0, height: 20)
+        let viewRect = NSRect(x: x, y: bounds.height - y - height, width: width, height: height)
+        let windowRect = convert(viewRect, to: nil)
+        let screenOrigin = window.convertPoint(toScreen: windowRect.origin)
+        return NSRect(origin: screenOrigin, size: windowRect.size)
     }
 
     func characterIndex(for point: NSPoint) -> Int { 0 }
@@ -1111,12 +1124,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
             v.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             return v
         }
-        let view = GhosttyMetalView(app: app, pane: pane)
-        // Ensure the view can become first responder for keyboard input
-        DispatchQueue.main.async {
-            view.window?.makeFirstResponder(view)
-        }
-        return view
+        return GhosttyMetalView(app: app, pane: pane)
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
