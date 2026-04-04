@@ -226,6 +226,14 @@ final class GhosttyRuntime: @unchecked Sendable {
 /// The surface creates its own Metal renderer using the NSView's layer.
 @MainActor
 class GhosttyMetalView: NSView, CALayerDelegate {
+    /// Registry of live terminal views keyed by Pane ID.
+    /// Used to target the active terminal for remote input (voice paste, watch Enter).
+    private static var registry: [UUID: GhosttyMetalView] = [:]
+
+    static func view(for paneID: UUID) -> GhosttyMetalView? {
+        registry[paneID]
+    }
+
     var surface: ghostty_surface_t?
     nonisolated(unsafe) fileprivate var callbackSurface: ghostty_surface_t?
     private var renderObserver: NSObjectProtocol?
@@ -261,6 +269,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         guard let surface else { return }
         self.surface = surface
         self.callbackSurface = surface
+        Self.registry[pane.id] = self
 
         // Listen for render notifications
         renderObserver = NotificationCenter.default.addObserver(
@@ -299,6 +308,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     }
 
     override func removeFromSuperview() {
+        Self.registry.removeValue(forKey: pane.id)
         if let renderObserver {
             NotificationCenter.default.removeObserver(renderObserver)
             self.renderObserver = nil
@@ -516,6 +526,21 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
     @objc func paste(_ sender: Any?) {
         _ = performPasteFromClipboard()
+    }
+
+    /// Paste text directly into the terminal surface (bypasses clipboard).
+    /// Used for remote voice-to-text input.
+    func pasteText(_ text: String) {
+        guard let surface else { return }
+        text.withCString { ptr in
+            ghostty_surface_text(surface, ptr, text.utf8.count)
+        }
+    }
+
+    /// Send an Enter keypress to the terminal surface.
+    /// Used for watch double-pinch → Enter.
+    func sendEnter() {
+        _ = keyAction(GHOSTTY_ACTION_PRESS, keycode: 0x24) // kVK_Return
     }
 
     override func flagsChanged(with event: NSEvent) {
