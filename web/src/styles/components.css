@@ -240,46 +240,10 @@
   width: 100%;
 }
 
-.phone-frame {
-  max-width: 280px;
+.device-image {
+  max-height: 480px;
+  width: auto;
   margin: 0 auto;
-  border: 3px solid rgba(255, 255, 255, 0.12);
-  border-radius: 36px;
-  padding: 6px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  overflow: hidden;
-}
-
-.phone-frame img {
-  border-radius: 30px;
-  width: 100%;
-}
-
-.watch-frame {
-  max-width: 200px;
-  margin: 0 auto;
-  border: 3px solid rgba(255, 255, 255, 0.12);
-  border-radius: 28%;
-  padding: 4px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  overflow: hidden;
-  position: relative;
-}
-
-.watch-frame::after {
-  content: '';
-  position: absolute;
-  right: -8px;
-  top: 30%;
-  width: 5px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-}
-
-.watch-frame img {
-  border-radius: 24%;
-  width: 100%;
 }
 
 /* ── Architecture Diagram ── */
