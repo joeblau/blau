@@ -1,10 +1,269 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import { Image } from 'astro:assets';
+import pilotImg from '../assets/screenshots/pilot.png';
+import copilotImg from '../assets/screenshots/copilot.png';
+import wingmanImg from '../assets/screenshots/wingman.png';
 ---
 
-<Layout title="blau">
-  <main>
-    <h1>blau</h1>
-    <p>Pilot. Copilot. Wingman.</p>
-  </main>
+<Layout title="blau — Pilot. Copilot. Wingman.">
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <p class="hero-kicker">Pilot &middot; Copilot &middot; Wingman</p>
+      <h1 class="hero-title">
+        Your entire dev environment,<br />
+        <span class="accent-gradient">across every screen.</span>
+      </h1>
+      <p class="hero-subtitle">
+        Three native Apple apps that sync your workspace
+        from Mac to iPhone to Apple Watch.
+        Peer-to-peer. No servers. No accounts.
+      </p>
+      <div class="hero-actions">
+        <a href="https://github.com/joeblau/blau" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
+          View on GitHub
+        </a>
+        <a href="#apps" class="btn btn-ghost">
+          See the apps &darr;
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Product Showcase -->
+  <section id="apps" class="showcase">
+    <div class="container">
+      <h2 class="section-title reveal">Three apps. One workflow.</h2>
+      <p class="section-subtitle reveal" style="--delay: 0.1s">
+        Each built native for its platform.
+        Connected through MultipeerConnectivity.
+      </p>
+
+      <div class="showcase-grid">
+
+        <!-- Pilot -->
+        <div class="showcase-card showcase-card--pilot reveal" style="--delay: 0.1s">
+          <div class="showcase-card-header">
+            <div>
+              <h3>Pilot</h3>
+              <p>The command center.</p>
+            </div>
+            <span class="badge">macOS</span>
+          </div>
+          <div class="showcase-screenshot">
+            <div class="screenshot-frame">
+              <Image
+                src={pilotImg}
+                alt="Pilot — macOS workspace manager with terminal panes, browser, and git inspector"
+                widths={[600, 900, 1200]}
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 90vw, 1100px"
+              />
+            </div>
+          </div>
+          <ul class="showcase-features">
+            <li>Ghostty terminal panes with split views</li>
+            <li>Built-in browser with address bar</li>
+            <li>Git inspector: commits, actions, file tree</li>
+            <li>Workspace persistence via SwiftData</li>
+          </ul>
+        </div>
+
+        <!-- Copilot -->
+        <div class="showcase-card showcase-card--copilot reveal" style="--delay: 0.2s">
+          <div class="showcase-card-header">
+            <div>
+              <h3>Copilot</h3>
+              <p>Your second screen.</p>
+            </div>
+            <span class="badge">iOS</span>
+          </div>
+          <div class="showcase-screenshot">
+            <div class="phone-frame">
+              <Image
+                src={copilotImg}
+                alt="Copilot — iOS companion showing workspace list and trackpad"
+                widths={[300, 500]}
+                sizes="280px"
+              />
+            </div>
+          </div>
+          <ul class="showcase-features">
+            <li>Live workspace list synced from Pilot</li>
+            <li>Touch trackpad for cursor control</li>
+            <li>Volume-button voice commands</li>
+            <li>Device connection status at a glance</li>
+          </ul>
+        </div>
+
+        <!-- Wingman -->
+        <div class="showcase-card showcase-card--wingman reveal" style="--delay: 0.3s">
+          <div class="showcase-card-header">
+            <div>
+              <h3>Wingman</h3>
+              <p>Wrist control.</p>
+            </div>
+            <span class="badge">watchOS</span>
+          </div>
+          <div class="showcase-screenshot">
+            <div class="watch-frame">
+              <Image
+                src={wingmanImg}
+                alt="Wingman — watchOS app with gesture controls"
+                widths={[200, 400]}
+                sizes="200px"
+              />
+            </div>
+          </div>
+          <ul class="showcase-features">
+            <li>Send commands to Copilot</li>
+            <li>Connection status indicator</li>
+            <li>Minimal, glanceable interface</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="features">
+    <div class="container">
+      <div class="features-grid">
+
+        <div class="feature-card reveal">
+          <div class="feature-icon">
+            <code>import SwiftUI</code>
+          </div>
+          <h3>Native to the core</h3>
+          <p>
+            Built with Swift, SwiftUI, and SwiftData.
+            No Electron. No React Native. No web views pretending to be apps.
+            Every pixel rendered by the platform it runs on.
+          </p>
+        </div>
+
+        <div class="feature-card reveal" style="--delay: 0.1s">
+          <div class="feature-icon">
+            <code>encryptionPreference: .required</code>
+          </div>
+          <h3>Serverless sync</h3>
+          <p>
+            Your code never leaves your devices.
+            Pilot, Copilot, and Wingman discover each other over
+            MultipeerConnectivity... encrypted, peer-to-peer,
+            no account required.
+          </p>
+        </div>
+
+        <div class="feature-card reveal" style="--delay: 0.2s">
+          <div class="feature-icon">
+            <code>MCSession &rarr; MCPeerID</code>
+          </div>
+          <h3>Context continuity</h3>
+          <p>
+            Switch from your Mac to your iPhone and your workspace
+            follows. Cursor position, workspace selection, terminal
+            scrollback... the state transfers, not a copy of it.
+          </p>
+        </div>
+
+        <div class="feature-card reveal" style="--delay: 0.3s">
+          <div class="feature-icon">
+            <code>.handGestureShortcut(.primaryAction)</code>
+          </div>
+          <h3>Wrist-level control</h3>
+          <p>
+            Tap your Apple Watch to trigger actions.
+            Wingman turns gestures into commands routed
+            through Copilot to Pilot. Your watch is an input device.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Architecture -->
+  <section id="architecture" class="architecture">
+    <div class="container">
+      <h2 class="section-title reveal">Zero infrastructure</h2>
+      <p class="section-subtitle reveal" style="--delay: 0.1s">
+        No servers to provision. No databases to manage.
+        No accounts to create. Just devices that find each other.
+      </p>
+
+      <div class="arch-diagram reveal" style="--delay: 0.2s">
+        <div class="arch-device">
+          <div class="arch-device-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <path d="M8 21h8" />
+              <path d="M12 17v4" />
+            </svg>
+          </div>
+          <span class="arch-device-label">Pilot</span>
+          <span class="arch-device-platform">macOS</span>
+        </div>
+
+        <div class="arch-connection">
+          <span class="arch-protocol">MultipeerConnectivity</span>
+        </div>
+
+        <div class="arch-device">
+          <div class="arch-device-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2" />
+              <path d="M12 18h.01" />
+            </svg>
+          </div>
+          <span class="arch-device-label">Copilot</span>
+          <span class="arch-device-platform">iOS</span>
+        </div>
+
+        <div class="arch-connection">
+          <span class="arch-protocol">WatchConnectivity</span>
+        </div>
+
+        <div class="arch-device">
+          <div class="arch-device-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="6" y="4" width="12" height="16" rx="4" />
+              <path d="M9 1h6" />
+              <path d="M9 23h6" />
+            </svg>
+          </div>
+          <span class="arch-device-label">Wingman</span>
+          <span class="arch-device-platform">watchOS</span>
+        </div>
+      </div>
+
+      <div class="arch-details">
+        <div class="arch-detail reveal">
+          <h4>Discovery</h4>
+          <p>
+            Bonjour-based peer discovery on your local network.
+            Pilot advertises, Copilot browses. No configuration needed.
+          </p>
+        </div>
+        <div class="arch-detail reveal" style="--delay: 0.1s">
+          <h4>Encryption</h4>
+          <p>
+            All sessions use <code>MCSession</code> with
+            <code>encryptionPreference: .required</code>.
+            No plaintext, ever.
+          </p>
+        </div>
+        <div class="arch-detail reveal" style="--delay: 0.2s">
+          <h4>Reconnection</h4>
+          <p>
+            Debounced auto-reconnect on disconnect.
+            Walk away, come back, and it just works.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
 </Layout>
