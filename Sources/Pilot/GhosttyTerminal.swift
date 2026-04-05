@@ -7,6 +7,13 @@ import GhosttyKit
 /// Manages the global Ghostty app instance. One per process.
 final class GhosttyRuntime: @unchecked Sendable {
     static let shared = GhosttyRuntime()
+    static let terminalBackgroundColor = NSColor(
+        srgbRed: 0x1C / 255.0,
+        green: 0x1C / 255.0,
+        blue: 0x1C / 255.0,
+        alpha: 1.0
+    )
+    static let terminalBackgroundHex = "#1c1c1c"
 
     private(set) var app: ghostty_app_t?
     private(set) var config: ghostty_config_t?
@@ -19,7 +26,7 @@ final class GhosttyRuntime: @unchecked Sendable {
         guard let cfg = ghostty_config_new() else { return }
         ghostty_config_load_default_files(cfg)
 
-        // Set background to match macOS window background
+        // Force a stable dark terminal background regardless of macOS appearance.
         let bgConfigPath = Self.writeBackgroundConfig()
         if let bgConfigPath {
             bgConfigPath.withCString { path in
@@ -193,18 +200,12 @@ final class GhosttyRuntime: @unchecked Sendable {
         }
     }
 
-    /// Resolves the current macOS window background color and writes a temporary
-    /// Ghostty config file that sets `background` to match.
+    /// Writes a temporary Ghostty config file that forces a consistent dark
+    /// terminal background to avoid light empty regions in terminal panes.
     private static func writeBackgroundConfig() -> String? {
-        guard let color = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) else { return nil }
-        let r = Int(color.redComponent * 255)
-        let g = Int(color.greenComponent * 255)
-        let b = Int(color.blueComponent * 255)
-        let hex = String(format: "#%02x%02x%02x", r, g, b)
-
         let path = NSTemporaryDirectory() + "ghostty-bg-\(ProcessInfo.processInfo.processIdentifier).conf"
         let content = """
-        background = \(hex)
+        background = \(terminalBackgroundHex)
         macos-option-as-alt = true
         """
         do {
@@ -254,6 +255,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         self.pane = pane
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         wantsLayer = true
+        layer?.backgroundColor = GhosttyRuntime.terminalBackgroundColor.cgColor
 
         // Create the surface - Ghostty will set up Metal on the layer itself
         let rawDirectory = pane.currentDirectory
@@ -1121,7 +1123,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
         guard let app = GhosttyRuntime.shared.app else {
             let v = NSView()
             v.wantsLayer = true
-            v.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            v.layer?.backgroundColor = GhosttyRuntime.terminalBackgroundColor.cgColor
             return v
         }
         return GhosttyMetalView(app: app, pane: pane)

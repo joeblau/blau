@@ -238,25 +238,17 @@ private struct PaneResizeHandle: View {
             width: isVertical ? PaneLayoutMetrics.dividerHitThickness : nil,
             height: isVertical ? nil : PaneLayoutMetrics.dividerHitThickness
         )
+        .background(
+            ResizeCursorRegion(cursor: isVertical ? .resizeLeftRight : .resizeUpDown)
+        )
         .contentShape(Rectangle())
         .zIndex(1)
         .onDisappear {
-            guard isHovering else { return }
             isHovering = false
-            NSCursor.pop()
         }
         .onHover { hovering in
             guard hovering != isHovering else { return }
             isHovering = hovering
-            if hovering {
-                if isVertical {
-                    NSCursor.resizeLeftRight.push()
-                } else {
-                    NSCursor.resizeUpDown.push()
-                }
-            } else {
-                NSCursor.pop()
-            }
         }
         .onTapGesture(count: 2) {
             workspace.resetPaneSizes()
@@ -278,8 +270,39 @@ private struct PaneResizeHandle: View {
                 }
                 .onEnded { _ in
                     isDragging = false
+                    workspace.persistPaneSizes()
                 }
         )
+    }
+}
+
+private struct ResizeCursorRegion: NSViewRepresentable {
+    let cursor: NSCursor
+
+    func makeNSView(context: Context) -> ResizeCursorNSView {
+        let view = ResizeCursorNSView()
+        view.cursor = cursor
+        return view
+    }
+
+    func updateNSView(_ nsView: ResizeCursorNSView, context: Context) {
+        nsView.cursor = cursor
+        nsView.window?.invalidateCursorRects(for: nsView)
+    }
+}
+
+private final class ResizeCursorNSView: NSView {
+    var cursor: NSCursor = .arrow
+
+    override var isOpaque: Bool { false }
+
+    override func resetCursorRects() {
+        discardCursorRects()
+        addCursorRect(bounds, cursor: cursor)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 }
 

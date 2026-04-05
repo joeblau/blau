@@ -9,11 +9,10 @@ struct ContentView: View {
     var localAudioOutput: AudioOutputDevice?
     var remoteTranscription: TranscriptionService
     @State private var gitStore = GitCommitStore()
-    @State private var showInspector = false
     @FocusState private var isBrowserURLFieldFocused: Bool
 
     var body: some View {
-        let activeInspectorRepoPath = showInspector ? selectedWorkspaceRootPath : nil
+        let activeInspectorRepoPath = isInspectorPresentedForSelectedWorkspace ? selectedWorkspaceRootPath : nil
         let _ = store.changeCount  // observation dependency for pin/unpin re-sort
         let workspaces = store.workspaces
         let workspaceShortcutIDs = workspaces.prefix(9).map(\.id)
@@ -85,7 +84,7 @@ struct ContentView: View {
             }
             .navigationTitle(store.selectedWorkspace?.name ?? "")
         }
-        .inspector(isPresented: $showInspector) {
+        .inspector(isPresented: selectedWorkspaceInspectorPresentedBinding) {
             InspectorPanelView(
                 gitStore: gitStore,
                 selectedTab: selectedWorkspaceInspectorTabBinding
@@ -143,10 +142,12 @@ struct ContentView: View {
                 }
                 .disabled(store.selectedWorkspace == nil)
                 Button {
-                    showInspector.toggle()
+                    guard let workspace = store.selectedWorkspace else { return }
+                    workspace.setInspectorPresented(!workspace.isInspectorPresented)
                 } label: {
                     Label("Inspector", systemImage: "sidebar.trailing")
                 }
+                .disabled(store.selectedWorkspace == nil)
             }
         }
         .background {
@@ -294,6 +295,19 @@ struct ContentView: View {
                 self.store.selectedWorkspace?.setInspectorTab(tab)
             }
         )
+    }
+
+    private var selectedWorkspaceInspectorPresentedBinding: Binding<Bool> {
+        Binding(
+            get: { isInspectorPresentedForSelectedWorkspace },
+            set: { isPresented in
+                store.selectedWorkspace?.setInspectorPresented(isPresented)
+            }
+        )
+    }
+
+    private var isInspectorPresentedForSelectedWorkspace: Bool {
+        store.selectedWorkspace?.isInspectorPresented ?? false
     }
 
     private var selectedBrowserState: BrowserState? {

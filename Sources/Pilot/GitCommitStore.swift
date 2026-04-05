@@ -111,11 +111,17 @@ final class GitCommitStore {
     private nonisolated static func fetchGitData(directory: String) async -> [GitCommit] {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let logResult = shellRun("git", args: ["log", "--oneline", "--format=%H||%h||%s||%an||%ar", "-10"], in: directory)
+                let logResult = shellRun("git", args: ["log", "--oneline", "--format=%H||%h||%s||%an||%aI", "-10"], in: directory)
                 let parsed = logResult.components(separatedBy: "\n").compactMap { line -> GitCommit? in
                     let parts = line.components(separatedBy: "||")
                     guard parts.count >= 5 else { return nil }
-                    return GitCommit(id: parts[1], fullSHA: parts[0], message: parts[2], author: parts[3], date: parts[4])
+                    return GitCommit(
+                        id: parts[1],
+                        fullSHA: parts[0],
+                        message: parts[2],
+                        author: parts[3],
+                        date: Self.relativeTime(from: parts[4])
+                    )
                 }
                 continuation.resume(returning: parsed)
             }
@@ -192,14 +198,26 @@ final class GitCommitStore {
     }
 
     private nonisolated static func relativeTime(from iso: String) -> String {
+        guard let date = parseISODate(iso) else { return iso }
+        return relativeTime(from: date)
+    }
+
+    private nonisolated static func relativeTime(from date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        formatter.locale = .autoupdatingCurrent
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    private nonisolated static func parseISODate(_ value: String) -> Date? {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = formatter.date(from: iso) else { return iso }
-        let seconds = Int(-date.timeIntervalSinceNow)
-        if seconds < 60 { return "\(seconds)s ago" }
-        if seconds < 3600 { return "\(seconds / 60)m ago" }
-        if seconds < 86400 { return "\(seconds / 3600)h ago" }
-        return "\(seconds / 86400)d ago"
+        if let date = formatter.date(from: value) {
+            return date
+        }
+
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 
     nonisolated static func findGitRoot(from directory: String) -> String? {

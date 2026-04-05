@@ -311,12 +311,21 @@ final class Workspace {
         }
     }
 
+    func persistPaneSizes() {
+        let fractions = normalizedSizeFractions
+        for pane in sortedPanes {
+            pane.sizeFraction = fractions[pane.id] ?? (1.0 / Double(max(panes.count, 1)))
+        }
+        try? modelContext?.save()
+    }
+
     /// Reset all panes to equal size.
     func resetPaneSizes() {
         let equal = 1.0 / Double(max(panes.count, 1))
         for pane in panes {
             pane.sizeFraction = equal
         }
+        try? modelContext?.save()
     }
 
     func syncDefaultRootPathIfNeeded(using pane: Pane? = nil) {
