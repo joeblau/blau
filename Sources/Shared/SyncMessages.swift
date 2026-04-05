@@ -171,8 +171,7 @@ enum ConnectedDeviceCatalog {
         case .copilot:
             return [
                 ConnectedDevice(kind: .computer, isConnected: peerConnected),
-                ConnectedDevice(kind: .appleWatch, isConnected: deviceStatus.isWatchConnected),
-                headphoneDevice
+                ConnectedDevice(kind: .appleWatch, isConnected: deviceStatus.isWatchConnected)
             ]
         }
     }

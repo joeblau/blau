@@ -1,5 +1,4 @@
 import SwiftUI
-import AVFAudio
 import WatchConnectivity
 import UserNotifications
 import OSLog
@@ -112,62 +111,6 @@ final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificatio
     }
 }
 
-@Observable
-@MainActor
-final class HeadphoneRouteMonitor {
-    var audioOutput: AudioOutputDevice?
-
-    private let session = AVAudioSession.sharedInstance()
-    private var routeChangeObserver: NSObjectProtocol?
-
-    func start() {
-        refresh()
-        guard routeChangeObserver == nil else { return }
-        routeChangeObserver = NotificationCenter.default.addObserver(
-            forName: AVAudioSession.routeChangeNotification,
-            object: session,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.refresh()
-            }
-        }
-    }
-
-    private func refresh() {
-        audioOutput = Self.detectAudioOutput(in: session.currentRoute.outputs)
-    }
-
-    private static func detectAudioOutput(
-        in outputs: [AVAudioSessionPortDescription]
-    ) -> AudioOutputDevice? {
-        for output in outputs {
-            if let device = classifyOutput(output) {
-                return device
-            }
-        }
-        return nil
-    }
-
-    private static func classifyOutput(_ output: AVAudioSessionPortDescription) -> AudioOutputDevice? {
-        let kind: ConnectedDeviceKind
-        switch output.portType {
-        case .headphones:
-            kind = ConnectedDeviceKind.classify(name: output.portName, defaultKind: .headphonesWired)
-        case .bluetoothA2DP, .bluetoothLE, .bluetoothHFP:
-            kind = ConnectedDeviceKind.classify(name: output.portName, defaultKind: .headphonesBluetooth)
-        default:
-            return nil
-        }
-
-        let trimmedName = output.portName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return AudioOutputDevice(
-            kind: kind,
-            name: trimmedName.isEmpty ? kind.displayName : trimmedName
-        )
-    }
-}
-
 @main
 struct CopilotApp: App {
     @State private var syncService = PeerSyncService(
@@ -175,18 +118,15 @@ struct CopilotApp: App {
         displayName: UIDevice.current.name
     )
     @State private var phoneSessionDelegate = PhoneSessionDelegate()
-    @State private var headphoneRouteMonitor = HeadphoneRouteMonitor()
 
     var body: some Scene {
         WindowGroup {
             ContentView(
                 syncService: syncService,
-                watchDelegate: phoneSessionDelegate,
-                headphoneRouteMonitor: headphoneRouteMonitor
+                watchDelegate: phoneSessionDelegate
             )
             .task {
                 phoneSessionDelegate.syncService = syncService
-                headphoneRouteMonitor.start()
             }
         }
     }

@@ -3,7 +3,6 @@ import SwiftUI
 struct ContentView: View {
     let syncService: PeerSyncService
     let watchDelegate: PhoneSessionDelegate
-    let headphoneRouteMonitor: HeadphoneRouteMonitor
 
     @State private var workspaces: [WorkspaceSummary] = []
     @State private var selectedID: UUID?
@@ -24,9 +23,6 @@ struct ContentView: View {
         }
         .task { setupSync() }
         .onChange(of: watchDelegate.isWatchReachable) {
-            sendDeviceStatus()
-        }
-        .onChange(of: headphoneRouteMonitor.audioOutput) {
             sendDeviceStatus()
         }
         .onChange(of: syncService.isConnected) {
@@ -144,8 +140,7 @@ struct ContentView: View {
 
     private var localDeviceStatus: DeviceStatus {
         DeviceStatus(
-            isWatchConnected: watchDelegate.isWatchReachable,
-            audioOutput: headphoneRouteMonitor.audioOutput
+            isWatchConnected: watchDelegate.isWatchReachable
         )
     }
 
@@ -177,6 +172,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView(syncService: PeerSyncService(role: .browser, displayName: "Preview"),
-               watchDelegate: PhoneSessionDelegate(),
-               headphoneRouteMonitor: HeadphoneRouteMonitor())
+               watchDelegate: PhoneSessionDelegate())
 }

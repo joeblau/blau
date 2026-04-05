@@ -141,7 +141,7 @@ final class GitCommitStore {
     private nonisolated static func fetchGitData(directory: String) async -> [GitCommit] {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let logResult = shellRun("git", args: ["log", "--oneline", "--format=%H||%h||%s||%an||%aI", "-10"], in: directory)
+                let logResult = shellRun("git", args: ["log", "--oneline", "--format=%H||%h||%s||%an||%aI", "-20"], in: directory)
                 let parsed = logResult.components(separatedBy: "\n").compactMap { line -> GitCommit? in
                     let parts = line.components(separatedBy: "||")
                     guard parts.count >= 5 else { return nil }
@@ -162,7 +162,7 @@ final class GitCommitStore {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = shellRun("gh", args: [
-                    "run", "list", "--limit", "10",
+                    "run", "list", "--limit", "20",
                     "--json", "status,conclusion,displayTitle,headBranch,headSha,name"
                 ], in: directory)
 
@@ -189,7 +189,7 @@ final class GitCommitStore {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = shellRun("gh", args: [
-                    "run", "list", "--limit", "10",
+                    "run", "list", "--limit", "20",
                     "--json", "databaseId,name,displayTitle,headBranch,status,conclusion,updatedAt"
                 ], in: directory)
 
