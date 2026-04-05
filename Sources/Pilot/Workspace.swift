@@ -15,6 +15,71 @@ enum AppearanceMode: String, Codable, CaseIterable {
 enum InspectorTab: String, Codable, CaseIterable {
     case actions = "Actions"
     case commits = "Commits"
+    case filesystem = "Files"
+}
+
+enum PersistentTerminalSession {
+    private static let tmuxCandidates = [
+        "/opt/homebrew/bin/tmux",
+        "/usr/local/bin/tmux",
+        "/usr/bin/tmux",
+    ]
+
+    static func bootstrapCommand(for pane: Pane, workingDirectory: String?) -> String? {
+        guard let tmuxPath = tmuxExecutablePath() else { return nil }
+
+        let sessionName = shellEscape(pane.persistentSessionName)
+        let tmux = shellEscape(tmuxPath)
+        let createCommand: String
+
+        if let workingDirectory = validWorkingDirectory(workingDirectory) {
+            createCommand = "\(tmux) new-session -d -s \(sessionName) -c \(shellEscape(workingDirectory))"
+        } else {
+            createCommand = "\(tmux) new-session -d -s \(sessionName)"
+        }
+
+        return """
+        if \(tmux) has-session -t \(sessionName) 2>/dev/null; then
+          exec \(tmux) attach-session -t \(sessionName)
+        else
+          \(createCommand)
+          \(tmux) set-option -t \(sessionName) status off >/dev/null 2>&1
+          exec \(tmux) attach-session -t \(sessionName)
+        fi
+        """ + "\n"
+    }
+
+    static func killSession(for pane: Pane) {
+        guard pane.kind == .terminal,
+              let tmuxPath = tmuxExecutablePath() else { return }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tmuxPath)
+        process.arguments = ["kill-session", "-t", pane.persistentSessionName]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return
+        }
+    }
+
+    private static func tmuxExecutablePath() -> String? {
+        tmuxCandidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    private static func validWorkingDirectory(_ directory: String?) -> String? {
+        guard let directory else { return nil }
+        let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func shellEscape(_ string: String) -> String {
+        "'" + string.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+    }
 }
 
 @Model
@@ -114,6 +179,10 @@ final class Pane {
         currentDirectory = trimmed
         workspace?.syncDefaultRootPathIfNeeded(using: self)
         try? modelContext?.save()
+    }
+
+    var persistentSessionName: String {
+        "pilot-\(id.uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
     }
 }
 
@@ -233,6 +302,7 @@ final class Workspace {
     }
 
     func removePane(_ pane: Pane) {
+        PersistentTerminalSession.killSession(for: pane)
         panes.removeAll { $0.id == pane.id }
         if selectedPaneID == pane.id {
             selectedPaneID = sortedPanes.first?.id

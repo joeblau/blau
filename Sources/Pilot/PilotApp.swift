@@ -43,12 +43,42 @@ struct PilotApp: App {
         }
         .modelContainer(modelContainer)
         .commands {
+            CommandGroup(replacing: .pasteboard) {
+                Button("Cut") {
+                    sendStandardEditAction(#selector(NSText.cut(_:)))
+                }
+                .keyboardShortcut("x", modifiers: .command)
+
+                Button("Copy") {
+                    sendStandardEditAction(#selector(NSText.copy(_:)))
+                }
+                .keyboardShortcut("c", modifiers: .command)
+
+                Button("Paste") {
+                    pasteIntoSelectedPane()
+                }
+                .keyboardShortcut("v", modifiers: .command)
+            }
+            CommandGroup(after: .sidebar) {
+                Button(store.selectedWorkspace?.isInspectorPresented == true ? "Hide Inspector" : "Show Inspector") {
+                    guard let workspace = store.selectedWorkspace else { return }
+                    workspace.setInspectorPresented(!workspace.isInspectorPresented)
+                }
+                .keyboardShortcut("i", modifiers: .command)
+                .disabled(store.selectedWorkspace == nil)
+            }
             CommandMenu("Browser") {
+                Button("Reload") {
+                    selectedBrowserState?.requestNavigationCommand("blau://reload")
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(selectedBrowserState == nil)
+
                 Button("Focus Address Bar") {
                     NotificationCenter.default.post(name: .pilotFocusBrowserAddressBar, object: nil)
                 }
                 .keyboardShortcut("l", modifiers: .command)
-                .disabled(store.selectedWorkspace?.selectedPane?.kind != .browser)
+                .disabled(selectedBrowserState == nil)
             }
         }
     }
@@ -66,6 +96,31 @@ struct PilotApp: App {
 
     private var activeTerminalView: GhosttyMetalView? {
         terminalView(for: activeTerminalPane(in: store.selectedWorkspaceID)?.id)
+    }
+
+    private var selectedTerminalView: GhosttyMetalView? {
+        guard let pane = store.selectedWorkspace?.selectedPane,
+              pane.kind == .terminal else { return nil }
+        return terminalView(for: pane.id)
+    }
+
+    private var selectedBrowserState: BrowserState? {
+        guard let pane = store.selectedWorkspace?.selectedPane,
+              pane.kind == .browser else { return nil }
+        return pane.browserState
+    }
+
+    private func pasteIntoSelectedPane() {
+        if let terminal = selectedTerminalView {
+            terminal.paste(nil)
+            return
+        }
+
+        sendStandardEditAction(#selector(NSText.paste(_:)))
+    }
+
+    private func sendStandardEditAction(_ selector: Selector) {
+        NSApp.sendAction(selector, to: nil, from: nil)
     }
 
     private func setupSync() {

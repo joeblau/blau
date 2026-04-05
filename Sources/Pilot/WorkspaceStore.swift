@@ -100,6 +100,9 @@ final class WorkspaceStore {
 
     func deleteWorkspace(_ workspace: Workspace) {
         let wasSelected = selectedWorkspaceID == workspace.id
+        for pane in workspace.panes {
+            PersistentTerminalSession.killSession(for: pane)
+        }
         modelContext.delete(workspace)
         normalizeWorkspaceSortOrder(workspaces.filter { $0.id != workspace.id })
         try? modelContext.save()

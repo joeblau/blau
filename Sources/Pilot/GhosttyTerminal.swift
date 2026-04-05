@@ -269,12 +269,16 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         let envVars: [(key: String, value: String)] = zdotdir != nil
             ? [("ZDOTDIR", zdotdir!), ("__PILOT_REAL_ZDOTDIR", NSHomeDirectory())]
             : []
+        let persistentSessionInput = PersistentTerminalSession.bootstrapCommand(
+            for: pane,
+            workingDirectory: persistedDirectory
+        )
 
         let surface = Self.makeSurface(
             app: app,
             view: self,
             workingDirectory: persistedDirectory,
-            initialInput: nil,
+            initialInput: persistentSessionInput,
             envVars: envVars
         )
 
@@ -481,6 +485,14 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         // Cmd+V, Cmd+C, etc. before the active terminal sees them.
         guard window?.firstResponder === self else { return false }
 
+        if event.modifierFlags.contains(.command),
+           !event.modifierFlags.contains(.control),
+           !event.modifierFlags.contains(.option),
+           event.charactersIgnoringModifiers?.lowercased() == "v" {
+            paste(nil)
+            return true
+        }
+
         let equivalent: String
         switch event.charactersIgnoringModifiers {
         case "\r":
@@ -546,7 +558,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     }
 
     @objc func paste(_ sender: Any?) {
-        _ = performPasteFromClipboard()
+        _ = performPasteFromClipboard() || pasteGeneralClipboardContents()
     }
 
     /// Paste text directly into the terminal surface (bypasses clipboard).
@@ -689,6 +701,13 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         return ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
     }
 
+    private func pasteGeneralClipboardContents() -> Bool {
+        guard let text = NSPasteboard.general.string(forType: .string),
+              !text.isEmpty else { return false }
+        pasteText(text)
+        return true
+    }
+
     private func mods(_ event: NSEvent) -> ghostty_input_mods_e {
         ghosttyMods(event.modifierFlags)
     }
@@ -779,10 +798,6 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         } catch {
             return nil
         }
-    }
-
-    private nonisolated static func shellEscape(_ string: String) -> String {
-        "'" + string.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
     }
 
     private nonisolated static func makeSurface(

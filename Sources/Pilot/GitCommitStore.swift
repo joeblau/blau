@@ -31,19 +31,33 @@ struct GitRun: Identifiable {
     }
 }
 
+struct FileSystemEntry: Identifiable {
+    let id: String
+    let name: String
+    let path: String
+    let relativePath: String
+    let isDirectory: Bool
+    let children: [FileSystemEntry]?
+}
+
 @MainActor
 @Observable
 final class GitCommitStore {
     var commits: [GitCommit] = []
     var actions: [GitAction] = []
     var runs: [GitRun] = []
+    var filesystem: [FileSystemEntry] = []
     var repoPath: String = ""
     var isLoading = false
+    var isLoadingFilesystem = false
     private var refreshTimer: Timer?
 
     func startWatching(directory: String) {
         if repoPath == directory {
             fetchAll()
+            if filesystem.isEmpty && !isLoadingFilesystem {
+                fetchFilesystem()
+            }
             return
         }
 
@@ -51,7 +65,9 @@ final class GitCommitStore {
         commits = []
         actions = []
         runs = []
+        filesystem = []
         fetchAll()
+        fetchFilesystem()
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
             Task { @MainActor in
@@ -67,7 +83,9 @@ final class GitCommitStore {
         commits = []
         actions = []
         runs = []
+        filesystem = []
         isLoading = false
+        isLoadingFilesystem = false
     }
 
     func fetchAll() {
@@ -105,6 +123,18 @@ final class GitCommitStore {
         Task {
             let result = await Self.fetchRunsData(directory: dir)
             self.runs = result
+        }
+    }
+
+    func fetchFilesystem() {
+        guard !repoPath.isEmpty else { return }
+        isLoadingFilesystem = true
+        let dir = repoPath
+
+        Task {
+            let result = await Self.fetchFilesystemData(directory: dir)
+            self.filesystem = result
+            self.isLoadingFilesystem = false
         }
     }
 
@@ -197,6 +227,16 @@ final class GitCommitStore {
         }
     }
 
+    private nonisolated static func fetchFilesystemData(directory: String) async -> [FileSystemEntry] {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let rootURL = URL(fileURLWithPath: directory, isDirectory: true)
+                let entries = listFilesystemEntries(at: rootURL, rootURL: rootURL)
+                continuation.resume(returning: entries)
+            }
+        }
+    }
+
     private nonisolated static func relativeTime(from iso: String) -> String {
         guard let date = parseISODate(iso) else { return iso }
         return relativeTime(from: date)
@@ -223,6 +263,60 @@ final class GitCommitStore {
     nonisolated static func findGitRoot(from directory: String) -> String? {
         let result = shellRun("git", args: ["rev-parse", "--show-toplevel"], in: directory)
         return result.isEmpty ? nil : result
+    }
+
+    nonisolated static func listFilesystemEntries(at directoryURL: URL, rootURL: URL) -> [FileSystemEntry] {
+        let fileManager = FileManager.default
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey]
+
+        guard let urls = try? fileManager.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: Array(keys),
+            options: []
+        ) else {
+            return []
+        }
+
+        let sortedEntries = urls.compactMap { url -> (url: URL, isDirectory: Bool, isSymbolicLink: Bool)? in
+            guard url.lastPathComponent != ".git" else { return nil }
+            let values = try? url.resourceValues(forKeys: keys)
+            return (
+                url: url,
+                isDirectory: values?.isDirectory ?? false,
+                isSymbolicLink: values?.isSymbolicLink ?? false
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.isDirectory != rhs.isDirectory {
+                return lhs.isDirectory && !rhs.isDirectory
+            }
+
+            return lhs.url.lastPathComponent.localizedStandardCompare(rhs.url.lastPathComponent) == .orderedAscending
+        }
+
+        return sortedEntries.map { entry in
+            let relativePath = relativePath(for: entry.url, rootURL: rootURL)
+            return FileSystemEntry(
+                id: relativePath,
+                name: entry.url.lastPathComponent,
+                path: entry.url.path,
+                relativePath: relativePath,
+                isDirectory: entry.isDirectory,
+                children: nil
+            )
+        }
+    }
+
+    private nonisolated static func relativePath(for fileURL: URL, rootURL: URL) -> String {
+        let rootPath = rootURL.standardizedFileURL.path
+        let filePath = fileURL.standardizedFileURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+
+        guard filePath.hasPrefix(prefix) else {
+            return fileURL.lastPathComponent
+        }
+
+        return String(filePath.dropFirst(prefix.count))
     }
 
     private nonisolated static func shellRun(_ command: String, args: [String], in directory: String) -> String {

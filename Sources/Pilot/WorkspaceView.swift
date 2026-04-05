@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 private let paneTabDragType = UTType.plainText
 private enum PaneLayoutMetrics {
     static let dividerLineThickness: CGFloat = 1
-    static let dividerHitThickness: CGFloat = 10
+    static let dividerHitThickness: CGFloat = 6
 }
 
 struct WorkspaceView: View {
@@ -225,7 +225,8 @@ private struct PaneResizeHandle: View {
 
     var body: some View {
         ZStack {
-            Color.clear
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor).opacity(isHovering || isDragging ? 0.18 : 0.08))
 
             Rectangle()
                 .fill(isDragging || isHovering ? Color.accentColor : Color(nsColor: .separatorColor))
@@ -238,17 +239,21 @@ private struct PaneResizeHandle: View {
             width: isVertical ? PaneLayoutMetrics.dividerHitThickness : nil,
             height: isVertical ? nil : PaneLayoutMetrics.dividerHitThickness
         )
-        .background(
-            ResizeCursorRegion(cursor: isVertical ? .resizeLeftRight : .resizeUpDown)
-        )
         .contentShape(Rectangle())
         .zIndex(1)
         .onDisappear {
             isHovering = false
+            NSCursor.arrow.set()
         }
-        .onHover { hovering in
-            guard hovering != isHovering else { return }
-            isHovering = hovering
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                isHovering = true
+                resizeCursor.set()
+            case .ended:
+                isHovering = false
+                NSCursor.arrow.set()
+            }
         }
         .onTapGesture(count: 2) {
             workspace.resetPaneSizes()
@@ -274,35 +279,9 @@ private struct PaneResizeHandle: View {
                 }
         )
     }
-}
 
-private struct ResizeCursorRegion: NSViewRepresentable {
-    let cursor: NSCursor
-
-    func makeNSView(context: Context) -> ResizeCursorNSView {
-        let view = ResizeCursorNSView()
-        view.cursor = cursor
-        return view
-    }
-
-    func updateNSView(_ nsView: ResizeCursorNSView, context: Context) {
-        nsView.cursor = cursor
-        nsView.window?.invalidateCursorRects(for: nsView)
-    }
-}
-
-private final class ResizeCursorNSView: NSView {
-    var cursor: NSCursor = .arrow
-
-    override var isOpaque: Bool { false }
-
-    override func resetCursorRects() {
-        discardCursorRects()
-        addCursorRect(bounds, cursor: cursor)
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
+    private var resizeCursor: NSCursor {
+        isVertical ? .resizeLeftRight : .resizeUpDown
     }
 }
 
