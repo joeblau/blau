@@ -112,6 +112,7 @@ final class Pane {
         guard trimmed != "/" && trimmed != NSHomeDirectory() else { return }
         guard currentDirectory != trimmed else { return }
         currentDirectory = trimmed
+        workspace?.syncDefaultRootPathIfNeeded(using: self)
         try? modelContext?.save()
     }
 }
@@ -134,6 +135,7 @@ final class Workspace {
     var inspectorTabRaw: String = InspectorTab.actions.rawValue
     var isPinned: Bool = false
     var workspaceSortOrder: Int = 0
+    var rootPath: String = ""
 
     @Relationship(deleteRule: .cascade, inverse: \Pane.workspace)
     var panes: [Pane] = []
@@ -153,6 +155,15 @@ final class Workspace {
         }
 
         return sortedPanes.first { $0.kind == .terminal }
+    }
+
+    var leftmostTerminalPane: Pane? {
+        sortedPanes.first { $0.kind == .terminal }
+    }
+
+    var effectiveRootPath: String? {
+        let trimmed = rootPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     var sortedPanes: [Pane] {
@@ -218,6 +229,7 @@ final class Workspace {
         if kind == .terminal {
             frontmostTerminalPaneID = pane.id
         }
+        syncDefaultRootPathIfNeeded()
     }
 
     func removePane(_ pane: Pane) {
@@ -228,6 +240,7 @@ final class Workspace {
         if frontmostTerminalPaneID == pane.id {
             frontmostTerminalPaneID = sortedPanes.first(where: { $0.kind == .terminal })?.id
         }
+        syncDefaultRootPathIfNeeded()
     }
 
     func setFrontmostTerminalPaneID(_ paneID: UUID?) {
@@ -304,6 +317,21 @@ final class Workspace {
         for pane in panes {
             pane.sizeFraction = equal
         }
+    }
+
+    func syncDefaultRootPathIfNeeded(using pane: Pane? = nil) {
+        guard effectiveRootPath == nil else { return }
+        guard let leftmostTerminalPane else { return }
+        if let pane, pane.id != leftmostTerminalPane.id {
+            return
+        }
+
+        let directory = leftmostTerminalPane.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !directory.isEmpty,
+              let repoRoot = GitCommitStore.findGitRoot(from: directory) else { return }
+
+        rootPath = repoRoot
+        try? modelContext?.save()
     }
 
     enum Side {

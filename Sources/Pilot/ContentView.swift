@@ -13,7 +13,7 @@ struct ContentView: View {
     @FocusState private var isBrowserURLFieldFocused: Bool
 
     var body: some View {
-        let activeInspectorRepoPath = showInspector ? selectedTerminalRepoPath : nil
+        let activeInspectorRepoPath = showInspector ? selectedWorkspaceRootPath : nil
         let _ = store.changeCount  // observation dependency for pin/unpin re-sort
         let workspaces = store.workspaces
         let workspaceShortcutIDs = workspaces.prefix(9).map(\.id)
@@ -28,6 +28,7 @@ struct ContentView: View {
                         ForEach(pinned) { workspace in
                             workspaceRow(workspace)
                         }
+                        .onMove(perform: store.movePinnedWorkspaces)
                     }
                 }
 
@@ -35,6 +36,7 @@ struct ContentView: View {
                     ForEach(unpinned) { workspace in
                         workspaceRow(workspace)
                     }
+                    .onMove(perform: store.moveUnpinnedWorkspaces)
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -94,6 +96,7 @@ struct ContentView: View {
             syncInspectorRepo(activeInspectorRepoPath)
         }
         .onChange(of: store.selectedWorkspaceID) {
+            syncSelectedWorkspaceRootPath()
             if let workspace = store.selectedWorkspace {
                 for pane in workspace.panes where pane.kind == .terminal {
                     pane.resetBellCount()
@@ -102,6 +105,7 @@ struct ContentView: View {
             focusSelectedWorkspaceTerminal()
         }
         .task {
+            syncSelectedWorkspaceRootPath()
             syncInspectorRepo(activeInspectorRepoPath)
             focusSelectedWorkspaceTerminal()
         }
@@ -183,11 +187,6 @@ struct ContentView: View {
     private func workspaceRow(_ workspace: Workspace) -> some View {
         HStack {
             TextField("Name", text: Bindable(workspace).name)
-            if workspace.isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-            }
             if workspace.badgeCount > 0 {
                 Text("\(workspace.badgeCount)")
                     .font(.system(size: 10, weight: .bold))
@@ -320,14 +319,12 @@ struct ContentView: View {
         }
     }
 
-    private var selectedTerminalRepoPath: String? {
-        guard let pane = store.selectedWorkspace?.selectedPane else { return nil }
-        guard pane.kind == .terminal else { return nil }
+    private var selectedWorkspaceRootPath: String? {
+        store.selectedWorkspace?.effectiveRootPath
+    }
 
-        let directory = pane.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !directory.isEmpty else { return nil }
-
-        return GitCommitStore.findGitRoot(from: directory)
+    private func syncSelectedWorkspaceRootPath() {
+        store.selectedWorkspace?.syncDefaultRootPathIfNeeded()
     }
 
     private func syncInspectorRepo(_ repoPath: String?) {

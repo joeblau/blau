@@ -53,6 +53,14 @@ final class WorkspaceStore {
         changeCount += 1
     }
 
+    func movePinnedWorkspaces(fromOffsets: IndexSet, toOffset: Int) {
+        moveWorkspaces(inPinnedSection: true, fromOffsets: fromOffsets, toOffset: toOffset)
+    }
+
+    func moveUnpinnedWorkspaces(fromOffsets: IndexSet, toOffset: Int) {
+        moveWorkspaces(inPinnedSection: false, fromOffsets: fromOffsets, toOffset: toOffset)
+    }
+
     var selectedWorkspace: Workspace? {
         workspaces.first { $0.id == selectedWorkspaceID }
     }
@@ -105,5 +113,20 @@ final class WorkspaceStore {
         for (index, workspace) in orderedWorkspaces.enumerated() {
             workspace.workspaceSortOrder = index
         }
+    }
+
+    private func moveWorkspaces(inPinnedSection isPinned: Bool, fromOffsets: IndexSet, toOffset: Int) {
+        var pinned = workspaces.filter(\.isPinned)
+        var unpinned = workspaces.filter { !$0.isPinned }
+
+        if isPinned {
+            pinned.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        } else {
+            unpinned.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        }
+
+        normalizeWorkspaceSortOrder(pinned + unpinned)
+        try? modelContext.save()
+        changeCount += 1
     }
 }

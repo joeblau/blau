@@ -70,7 +70,7 @@ struct CommitListView: View {
         if store.commits.isEmpty && !store.isLoading {
             ContentUnavailableView("No Commits",
                                    systemImage: "clock.arrow.circlepath",
-                                   description: Text("Select an active terminal in a git repo."))
+                                   description: Text("Select a workspace with a git repo root path."))
         } else {
             List(store.commits) { commit in
                 commitRow(commit)
@@ -126,7 +126,7 @@ struct ActionsListView: View {
         if store.actions.isEmpty && !store.isLoading {
             ContentUnavailableView("No Actions",
                                    systemImage: "gearshape.2",
-                                   description: Text("Select an active terminal in a GitHub repo."))
+                                   description: Text("Select a workspace with a GitHub repo root path."))
         } else {
             List(store.actions) { action in
                 actionRow(action)

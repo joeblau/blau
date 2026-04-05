@@ -323,6 +323,7 @@ private struct PaneTabDropDelegate: DropDelegate {
             pane.sortOrder = index
         }
 
+        workspace.syncDefaultRootPathIfNeeded()
         workspace.selectedPaneID = draggingPaneID
         return true
     }
