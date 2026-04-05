@@ -74,6 +74,7 @@ final class Pane {
     var sortOrder: Int = 0
     var currentDirectory: String = ""
     var bellCount: Int = 0
+    var sizeFraction: Double = 0
 
     @Relationship(deleteRule: .cascade)
     var browserState: BrowserState?
@@ -245,6 +246,64 @@ final class Workspace {
         guard inspectorTab != tab else { return }
         inspectorTab = tab
         try? modelContext?.save()
+    }
+
+    /// Returns normalized size fractions for sorted panes, ensuring they sum to 1.0.
+    /// Unset panes borrow the average assigned weight so new panes stay visible.
+    var normalizedSizeFractions: [UUID: Double] {
+        let sorted = sortedPanes
+        guard !sorted.isEmpty else { return [:] }
+
+        let assigned = sorted.filter { $0.sizeFraction > 0 }
+        if assigned.isEmpty {
+            let equal = 1.0 / Double(sorted.count)
+            return Dictionary(uniqueKeysWithValues: sorted.map { ($0.id, equal) })
+        }
+
+        let assignedTotal = assigned.reduce(0.0) { $0 + $1.sizeFraction }
+        let defaultWeight = assignedTotal / Double(assigned.count)
+        let weights = sorted.map { pane in
+            (pane.id, pane.sizeFraction > 0 ? pane.sizeFraction : defaultWeight)
+        }
+        let totalWeight = weights.reduce(0.0) { $0 + $1.1 }
+
+        guard totalWeight > 0 else {
+            let equal = 1.0 / Double(sorted.count)
+            return Dictionary(uniqueKeysWithValues: sorted.map { ($0.id, equal) })
+        }
+
+        return Dictionary(uniqueKeysWithValues: weights.map { ($0.0, $0.1 / totalWeight) })
+    }
+
+    /// Resize two adjacent panes by a delta (in fraction of total).
+    /// Clamps so neither pane goes below a minimum fraction.
+    func resizePanes(leadingID: UUID, trailingID: UUID, delta: Double) {
+        let fractions = normalizedSizeFractions
+        guard let leadFrac = fractions[leadingID],
+              let trailFrac = fractions[trailingID] else { return }
+
+        let minFraction = 0.1
+        let newLead = max(minFraction, min(leadFrac + delta, leadFrac + trailFrac - minFraction))
+        let newTrail = leadFrac + trailFrac - newLead
+
+        // Apply to all panes (initialize any that were 0)
+        for pane in sortedPanes {
+            if pane.id == leadingID {
+                pane.sizeFraction = newLead
+            } else if pane.id == trailingID {
+                pane.sizeFraction = newTrail
+            } else if pane.sizeFraction <= 0 {
+                pane.sizeFraction = fractions[pane.id] ?? (1.0 / Double(panes.count))
+            }
+        }
+    }
+
+    /// Reset all panes to equal size.
+    func resetPaneSizes() {
+        let equal = 1.0 / Double(max(panes.count, 1))
+        for pane in panes {
+            pane.sizeFraction = equal
+        }
     }
 
     enum Side {

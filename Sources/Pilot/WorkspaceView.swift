@@ -4,6 +4,10 @@ import UniformTypeIdentifiers
 
 // Use plainText for drag type since custom UTTypes require Info.plist registration
 private let paneTabDragType = UTType.plainText
+private enum PaneLayoutMetrics {
+    static let dividerLineThickness: CGFloat = 1
+    static let dividerHitThickness: CGFloat = 10
+}
 
 struct WorkspaceView: View {
     @Bindable var workspace: Workspace
@@ -31,15 +35,23 @@ struct WorkspaceView: View {
     // MARK: - Tab Bar
 
     private var tabBar: some View {
-        HStack(spacing: 1) {
-            ForEach(workspace.sortedPanes) { pane in
-                tabItem(pane)
-            }
+        Group {
+            if workspace.axis == .vertical {
+                resizableTabBar
+                    .padding(.vertical, 6)
+            } else {
+                HStack(spacing: 1) {
+                    ForEach(workspace.sortedPanes) { pane in
+                        tabItem(pane)
+                            .frame(maxWidth: .infinity)
+                    }
 
-            Spacer()
+                    Spacer()
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+            }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
         .background(.bar)
     }
 
@@ -93,6 +105,13 @@ struct WorkspaceView: View {
                 workspace.removePane(pane)
             }
             .disabled(workspace.sortedPanes.count <= 1)
+
+            if workspace.sortedPanes.count > 1 {
+                Divider()
+                Button("Reset Pane Sizes") {
+                    workspace.resetPaneSizes()
+                }
+            }
         }
     }
 
@@ -101,17 +120,41 @@ struct WorkspaceView: View {
     @ViewBuilder
     private var panesContent: some View {
         let isVertical = workspace.axis == .vertical
-        let layout = isVertical ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
-        layout {
-            ForEach(workspace.sortedPanes) { pane in
-                PaneView(pane: pane, isSelected: workspace.selectedPaneID == pane.id)
-                    .simultaneousGesture(
-                        TapGesture().onEnded {
-                            workspace.selectedPaneID = pane.id
-                        }
-                    )
-                if pane.id != workspace.sortedPanes.last?.id {
-                    Divider()
+        let sorted = workspace.sortedPanes
+        let fractions = workspace.normalizedSizeFractions
+
+        GeometryReader { geometry in
+            let totalSize = isVertical ? geometry.size.width : geometry.size.height
+            let dividerThickness = PaneLayoutMetrics.dividerHitThickness
+            let dividerCount = CGFloat(max(sorted.count - 1, 0))
+            let availableSize = max(0, totalSize - dividerCount * dividerThickness)
+
+            let stack = isVertical ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+            stack {
+                ForEach(Array(sorted.enumerated()), id: \.element.id) { index, pane in
+                    let fraction = fractions[pane.id] ?? (1.0 / Double(max(sorted.count, 1)))
+                    let paneSize = availableSize * CGFloat(fraction)
+
+                    PaneView(pane: pane, isSelected: workspace.selectedPaneID == pane.id)
+                        .frame(
+                            width: isVertical ? max(0, paneSize) : nil,
+                            height: isVertical ? nil : max(0, paneSize)
+                        )
+                        .simultaneousGesture(
+                            TapGesture().onEnded {
+                                workspace.selectedPaneID = pane.id
+                            }
+                        )
+
+                    if index < sorted.count - 1 {
+                        PaneResizeHandle(
+                            isVertical: isVertical,
+                            totalSize: availableSize,
+                            leadingID: pane.id,
+                            trailingID: sorted[index + 1].id,
+                            workspace: workspace
+                        )
+                    }
                 }
             }
         }
@@ -120,6 +163,37 @@ struct WorkspaceView: View {
 }
 
 private extension WorkspaceView {
+    var resizableTabBar: some View {
+        let sorted = workspace.sortedPanes
+        let fractions = workspace.normalizedSizeFractions
+
+        return GeometryReader { geometry in
+            let dividerCount = CGFloat(max(sorted.count - 1, 0))
+            let availableWidth = max(0, geometry.size.width - dividerCount * PaneLayoutMetrics.dividerHitThickness)
+
+            HStack(spacing: 0) {
+                ForEach(Array(sorted.enumerated()), id: \.element.id) { index, pane in
+                    let fraction = fractions[pane.id] ?? (1.0 / Double(max(sorted.count, 1)))
+                    let tabWidth = availableWidth * CGFloat(fraction)
+
+                    tabItem(pane)
+                        .frame(width: max(0, tabWidth))
+
+                    if index < sorted.count - 1 {
+                        PaneResizeHandle(
+                            isVertical: true,
+                            totalSize: availableWidth,
+                            leadingID: pane.id,
+                            trailingID: sorted[index + 1].id,
+                            workspace: workspace
+                        )
+                    }
+                }
+            }
+        }
+        .frame(height: 28)
+    }
+
     func focusTerminalIfNeededForWorkspaceActivation() {
         guard isActive, let pane = workspace.frontmostTerminalPane else { return }
         workspace.setFrontmostTerminalPaneID(pane.id)
@@ -136,6 +210,76 @@ private extension WorkspaceView {
         DispatchQueue.main.async {
             _ = GhosttyMetalView.focus(paneID: pane.id)
         }
+    }
+}
+
+private struct PaneResizeHandle: View {
+    let isVertical: Bool
+    let totalSize: CGFloat
+    let leadingID: UUID
+    let trailingID: UUID
+    let workspace: Workspace
+    @State private var isDragging = false
+    @State private var isHovering = false
+    @State private var lastDragLocation: CGFloat = 0
+
+    var body: some View {
+        ZStack {
+            Color.clear
+
+            Rectangle()
+                .fill(isDragging || isHovering ? Color.accentColor : Color(nsColor: .separatorColor))
+                .frame(
+                    width: isVertical ? PaneLayoutMetrics.dividerLineThickness : nil,
+                    height: isVertical ? nil : PaneLayoutMetrics.dividerLineThickness
+                )
+        }
+        .frame(
+            width: isVertical ? PaneLayoutMetrics.dividerHitThickness : nil,
+            height: isVertical ? nil : PaneLayoutMetrics.dividerHitThickness
+        )
+        .contentShape(Rectangle())
+        .zIndex(1)
+        .onDisappear {
+            guard isHovering else { return }
+            isHovering = false
+            NSCursor.pop()
+        }
+        .onHover { hovering in
+            guard hovering != isHovering else { return }
+            isHovering = hovering
+            if hovering {
+                if isVertical {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.resizeUpDown.push()
+                }
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .onTapGesture(count: 2) {
+            workspace.resetPaneSizes()
+        }
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                .onChanged { value in
+                    guard totalSize > 0 else { return }
+                    let current = isVertical ? value.location.x : value.location.y
+                    if !isDragging {
+                        isDragging = true
+                        lastDragLocation = current
+                        return
+                    }
+                    let moved = current - lastDragLocation
+                    lastDragLocation = current
+                    let delta = Double(moved / totalSize)
+                    workspace.resizePanes(leadingID: leadingID, trailingID: trailingID, delta: delta)
+                }
+                .onEnded { _ in
+                    isDragging = false
+                }
+        )
     }
 }
 
