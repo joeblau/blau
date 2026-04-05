@@ -1,7 +1,11 @@
 # blau
 
-Three-app ecosystem: Pilot (macOS), Copilot (iOS), Wingman (watchOS).
-Built with SwiftUI, XcodeGen, Swift 6.0.
+Three-app ecosystem + landing page.
+
+## Structure
+
+- `apple/` — Pilot (macOS), Copilot (iOS), Wingman (watchOS). Built with SwiftUI, XcodeGen, Swift 6.0. Run `xcodegen generate` from `apple/`.
+- `web/` — Landing page at blau.app. Built with Astro, deployed to GitHub Pages via `.github/workflows/deploy.yml`.
 
 ## Skill routing
 

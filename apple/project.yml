@@ -27,7 +27,7 @@ targets:
       - Sources/Pilot
       - Sources/Shared
     dependencies:
-      - framework: GhosttyKit.xcframework
+      - framework: Frameworks/GhosttyKit.xcframework
         embed: false
       - package: WhisperKit
         product: WhisperKit

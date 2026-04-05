@@ -1,12 +1,20 @@
 # blau
 
-Three-app ecosystem: Pilot (macOS), Copilot (iOS), Wingman (watchOS).
-Built with SwiftUI, XcodeGen, Swift 6.0.
+Three-app ecosystem + landing page.
 
-## Setup
+## Apple Apps (Pilot macOS, Copilot iOS, Wingman watchOS)
 
 ```bash
+cd apple
 brew bundle
 xcodegen generate
 open blau.xcodeproj
+```
+
+## Web (blau.app)
+
+```bash
+cd web
+bun install
+bun run dev
 ```
