@@ -135,7 +135,11 @@ struct WorkspaceView: View {
                     let fraction = fractions[pane.id] ?? (1.0 / Double(max(sorted.count, 1)))
                     let paneSize = availableSize * CGFloat(fraction)
 
-                    PaneView(pane: pane, isSelected: workspace.selectedPaneID == pane.id)
+                    PaneView(
+                        pane: pane,
+                        isSelected: workspace.selectedPaneID == pane.id,
+                        isWorkspaceActive: isActive
+                    )
                         .frame(
                             width: isVertical ? max(0, paneSize) : nil,
                             height: isVertical ? nil : max(0, paneSize)
@@ -366,14 +370,15 @@ struct TabItemContent: View {
 struct PaneView: View {
     let pane: Pane
     let isSelected: Bool
+    let isWorkspaceActive: Bool
 
     var body: some View {
         switch pane.kind {
         case .terminal:
-            TerminalViewRepresentable(pane: pane)
+            TerminalViewRepresentable(pane: pane, isActive: isWorkspaceActive)
         case .browser:
             if let state = pane.browserState {
-                BrowserPaneView(state: state)
+                BrowserPaneView(state: state, isActive: isWorkspaceActive)
             }
         }
     }
@@ -383,9 +388,10 @@ struct PaneView: View {
 
 struct TerminalViewRepresentable: View {
     let pane: Pane
+    let isActive: Bool
 
     var body: some View {
-        GhosttyTerminalView(pane: pane)
+        GhosttyTerminalView(pane: pane, isActive: isActive)
     }
 }
 
@@ -393,13 +399,15 @@ struct TerminalViewRepresentable: View {
 
 struct BrowserPaneView: View {
     let state: BrowserState
+    let isActive: Bool
 
     var body: some View {
         WebViewRepresentable(
             state: state,
             navigationRequestID: state.navigationRequestID,
             inspectorToggleRequestID: state.inspectorToggleRequestID,
-            appearanceMode: state.appearanceMode
+            appearanceMode: state.appearanceMode,
+            isActive: isActive
         )
     }
 }
@@ -409,6 +417,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     let navigationRequestID: Int
     let inspectorToggleRequestID: Int
     let appearanceMode: AppearanceMode
+    let isActive: Bool
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -416,6 +425,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.isInspectable = true
+        webView.isHidden = !isActive
         if let url = initialURL {
             webView.load(URLRequest(url: url))
         }
@@ -425,6 +435,8 @@ struct WebViewRepresentable: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) {
         _ = navigationRequestID
         _ = inspectorToggleRequestID
+
+        nsView.isHidden = !isActive
 
         // Handle navigation commands
         if let pending = state.pendingURL {

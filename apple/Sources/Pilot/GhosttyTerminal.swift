@@ -1133,16 +1133,22 @@ private extension NSEvent {
 
 struct GhosttyTerminalView: NSViewRepresentable {
     let pane: Pane
+    let isActive: Bool
 
     func makeNSView(context: Context) -> NSView {
         guard let app = GhosttyRuntime.shared.app else {
             let v = NSView()
             v.wantsLayer = true
             v.layer?.backgroundColor = GhosttyRuntime.terminalBackgroundColor.cgColor
+            v.isHidden = !isActive
             return v
         }
-        return GhosttyMetalView(app: app, pane: pane)
+        let view = GhosttyMetalView(app: app, pane: pane)
+        view.isHidden = !isActive
+        return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        nsView.isHidden = !isActive
+    }
 }
