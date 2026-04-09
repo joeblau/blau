@@ -7,6 +7,12 @@ private let paneTabDragType = UTType.plainText
 private enum PaneLayoutMetrics {
     static let dividerLineThickness: CGFloat = 1
     static let dividerHitThickness: CGFloat = 6
+    static let collapsedPaneThickness: CGFloat = 28
+}
+
+private struct PaneLayoutPlan {
+    let sizes: [UUID: CGFloat]
+    let expandedSize: CGFloat
 }
 
 struct WorkspaceView: View {
@@ -22,13 +28,13 @@ struct WorkspaceView: View {
             panesContent
         }
         .onAppear {
-            focusTerminalIfNeededForWorkspaceActivation()
+            syncFocusForSelectedPane()
         }
         .onChange(of: isActive) {
-            focusTerminalIfNeededForWorkspaceActivation()
+            syncFocusForSelectedPane()
         }
         .onChange(of: workspace.selectedPaneID) {
-            focusSelectedTerminalIfNeeded()
+            syncFocusForSelectedPane()
         }
     }
 
@@ -40,10 +46,12 @@ struct WorkspaceView: View {
                 resizableTabBar
                     .padding(.vertical, 6)
             } else {
+                let sorted = workspace.sortedPanes
                 HStack(spacing: 1) {
-                    ForEach(workspace.sortedPanes) { pane in
+                    ForEach(sorted) { pane in
                         tabItem(pane)
-                            .frame(maxWidth: .infinity)
+                            .frame(width: pane.isCollapsed ? PaneLayoutMetrics.collapsedPaneThickness : nil)
+                            .frame(maxWidth: pane.isCollapsed ? nil : .infinity)
                     }
 
                     Spacer()
@@ -56,16 +64,18 @@ struct WorkspaceView: View {
     }
 
     private func tabItem(_ pane: Pane) -> some View {
-        let isSelected = workspace.selectedPaneID == pane.id
+        let isSelected = workspace.selectedPaneID == pane.id && !pane.isCollapsed
 
         return TabItemContent(
             pane: pane,
             isSelected: isSelected,
             isHovering: hoveredPaneID == pane.id,
             canClose: workspace.sortedPanes.count > 1,
-            onClose: { workspace.removePane(pane) }
+            onClose: { workspace.removePane(pane) },
+            onHide: { workspace.collapsePane(pane) },
+            onUnhide: { workspace.expandPane(pane) }
         )
-        .padding(.horizontal, 14)
+        .padding(.horizontal, pane.isCollapsed ? 0 : 14)
         .frame(maxWidth: .infinity)
         .frame(height: 28)
         .background(isSelected ? .white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 6))
@@ -77,7 +87,13 @@ struct WorkspaceView: View {
                 hoveredPaneID = nil
             }
         }
-        .onTapGesture { workspace.selectedPaneID = pane.id }
+        .onTapGesture {
+            if pane.isCollapsed {
+                workspace.expandPane(pane)
+            } else {
+                workspace.selectedPaneID = pane.id
+            }
+        }
         .onDrag {
             draggingPaneID = pane.id
             return NSItemProvider(object: pane.id.uuidString as NSString)
@@ -101,6 +117,18 @@ struct WorkspaceView: View {
             )
         )
         .contextMenu {
+            if pane.isCollapsed {
+                Button("Unhide") {
+                    workspace.expandPane(pane)
+                }
+            } else {
+                Button("Hide") {
+                    workspace.collapsePane(pane)
+                }
+            }
+
+            Divider()
+
             Button("Close", role: .destructive) {
                 workspace.removePane(pane)
             }
@@ -121,42 +149,59 @@ struct WorkspaceView: View {
     private var panesContent: some View {
         let isVertical = workspace.axis == .vertical
         let sorted = workspace.sortedPanes
-        let fractions = workspace.normalizedSizeFractions
 
         GeometryReader { geometry in
             let totalSize = isVertical ? geometry.size.width : geometry.size.height
             let dividerThickness = PaneLayoutMetrics.dividerHitThickness
             let dividerCount = CGFloat(max(sorted.count - 1, 0))
             let availableSize = max(0, totalSize - dividerCount * dividerThickness)
+            let layout = paneLayoutPlan(totalSize: availableSize, sorted: sorted)
 
             let stack = isVertical ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
             stack {
                 ForEach(Array(sorted.enumerated()), id: \.element.id) { index, pane in
-                    let fraction = fractions[pane.id] ?? (1.0 / Double(max(sorted.count, 1)))
-                    let paneSize = availableSize * CGFloat(fraction)
+                    let paneSize = layout.sizes[pane.id] ?? 0
 
-                    PaneView(
-                        pane: pane,
-                        isSelected: workspace.selectedPaneID == pane.id,
-                        isWorkspaceActive: isActive
-                    )
+                    ZStack {
+                        PaneView(
+                            pane: pane,
+                            isSelected: workspace.selectedPaneID == pane.id && !pane.isCollapsed,
+                            isWorkspaceActive: isActive && !pane.isCollapsed
+                        )
+                        .opacity(pane.isCollapsed ? 0 : 1)
+                        .allowsHitTesting(!pane.isCollapsed)
+
+                        if pane.isCollapsed {
+                            CollapsedPaneSlit(
+                                pane: pane,
+                                isVertical: isVertical,
+                                onUnhide: { workspace.expandPane(pane) }
+                            )
+                        }
+                    }
                         .frame(
                             width: isVertical ? max(0, paneSize) : nil,
                             height: isVertical ? nil : max(0, paneSize)
                         )
                         .simultaneousGesture(
                             TapGesture().onEnded {
-                                workspace.selectedPaneID = pane.id
+                                if pane.isCollapsed {
+                                    workspace.expandPane(pane)
+                                } else {
+                                    workspace.selectedPaneID = pane.id
+                                }
                             }
                         )
 
                     if index < sorted.count - 1 {
+                        let trailingPane = sorted[index + 1]
                         PaneResizeHandle(
                             isVertical: isVertical,
-                            totalSize: availableSize,
+                            totalSize: layout.expandedSize,
                             leadingID: pane.id,
-                            trailingID: sorted[index + 1].id,
-                            workspace: workspace
+                            trailingID: trailingPane.id,
+                            workspace: workspace,
+                            isEnabled: !pane.isCollapsed && !trailingPane.isCollapsed
                         )
                     }
                 }
@@ -169,27 +214,28 @@ struct WorkspaceView: View {
 private extension WorkspaceView {
     var resizableTabBar: some View {
         let sorted = workspace.sortedPanes
-        let fractions = workspace.normalizedSizeFractions
 
         return GeometryReader { geometry in
             let dividerCount = CGFloat(max(sorted.count - 1, 0))
             let availableWidth = max(0, geometry.size.width - dividerCount * PaneLayoutMetrics.dividerHitThickness)
+            let layout = paneLayoutPlan(totalSize: availableWidth, sorted: sorted)
 
             HStack(spacing: 0) {
                 ForEach(Array(sorted.enumerated()), id: \.element.id) { index, pane in
-                    let fraction = fractions[pane.id] ?? (1.0 / Double(max(sorted.count, 1)))
-                    let tabWidth = availableWidth * CGFloat(fraction)
+                    let tabWidth = layout.sizes[pane.id] ?? 0
 
                     tabItem(pane)
                         .frame(width: max(0, tabWidth))
 
                     if index < sorted.count - 1 {
+                        let trailingPane = sorted[index + 1]
                         PaneResizeHandle(
                             isVertical: true,
-                            totalSize: availableWidth,
+                            totalSize: layout.expandedSize,
                             leadingID: pane.id,
-                            trailingID: sorted[index + 1].id,
-                            workspace: workspace
+                            trailingID: trailingPane.id,
+                            workspace: workspace,
+                            isEnabled: !pane.isCollapsed && !trailingPane.isCollapsed
                         )
                     }
                 }
@@ -198,22 +244,47 @@ private extension WorkspaceView {
         .frame(height: 28)
     }
 
-    func focusTerminalIfNeededForWorkspaceActivation() {
-        guard isActive, let pane = workspace.frontmostTerminalPane else { return }
+    func syncFocusForSelectedPane() {
+        guard isActive else { return }
+        guard workspace.selectedPane?.isCollapsed != true else { return }
+
+        if let pane = workspace.selectedPane, pane.kind == .browser {
+            DispatchQueue.main.async {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+            }
+            return
+        }
+
+        guard let pane = workspace.selectedPane ?? workspace.frontmostTerminalPane,
+              pane.kind == .terminal else { return }
         workspace.setFrontmostTerminalPaneID(pane.id)
         DispatchQueue.main.async {
             _ = GhosttyMetalView.focus(paneID: pane.id)
         }
     }
 
-    func focusSelectedTerminalIfNeeded() {
-        guard isActive,
-              let pane = workspace.selectedPane,
-              pane.kind == .terminal else { return }
-        workspace.setFrontmostTerminalPaneID(pane.id)
-        DispatchQueue.main.async {
-            _ = GhosttyMetalView.focus(paneID: pane.id)
+    func paneLayoutPlan(totalSize: CGFloat, sorted: [Pane]) -> PaneLayoutPlan {
+        guard !sorted.isEmpty else { return PaneLayoutPlan(sizes: [:], expandedSize: 0) }
+
+        let collapsedPanes = sorted.filter(\.isCollapsed)
+        let expandedPanes = sorted.filter { !$0.isCollapsed }
+        let maxCollapsedThickness = totalSize / CGFloat(max(sorted.count, 1))
+        let collapsedThickness = min(PaneLayoutMetrics.collapsedPaneThickness, max(0, maxCollapsedThickness))
+        let collapsedTotal = CGFloat(collapsedPanes.count) * collapsedThickness
+        let expandedSize = expandedPanes.isEmpty ? 0 : max(0, totalSize - collapsedTotal)
+        let fractions = workspace.normalizedExpandedSizeFractions
+
+        var sizes: [UUID: CGFloat] = [:]
+        for pane in sorted {
+            if pane.isCollapsed {
+                sizes[pane.id] = collapsedThickness
+            } else {
+                let fraction = fractions[pane.id] ?? (1.0 / Double(max(expandedPanes.count, 1)))
+                sizes[pane.id] = expandedSize * CGFloat(fraction)
+            }
         }
+
+        return PaneLayoutPlan(sizes: sizes, expandedSize: expandedSize)
     }
 }
 
@@ -223,6 +294,7 @@ private struct PaneResizeHandle: View {
     let leadingID: UUID
     let trailingID: UUID
     let workspace: Workspace
+    let isEnabled: Bool
     @State private var isDragging = false
     @State private var isHovering = false
     @State private var lastDragLocation: CGFloat = 0
@@ -250,6 +322,12 @@ private struct PaneResizeHandle: View {
             NSCursor.arrow.set()
         }
         .onContinuousHover { phase in
+            guard isEnabled else {
+                isHovering = false
+                NSCursor.arrow.set()
+                return
+            }
+
             switch phase {
             case .active:
                 isHovering = true
@@ -260,11 +338,13 @@ private struct PaneResizeHandle: View {
             }
         }
         .onTapGesture(count: 2) {
+            guard isEnabled else { return }
             workspace.resetPaneSizes()
         }
         .highPriorityGesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .global)
                 .onChanged { value in
+                    guard isEnabled else { return }
                     guard totalSize > 0 else { return }
                     let current = isVertical ? value.location.x : value.location.y
                     if !isDragging {
@@ -278,6 +358,7 @@ private struct PaneResizeHandle: View {
                     workspace.resizePanes(leadingID: leadingID, trailingID: trailingID, delta: delta)
                 }
                 .onEnded { _ in
+                    guard isEnabled else { return }
                     isDragging = false
                     workspace.persistPaneSizes()
                 }
@@ -330,7 +411,9 @@ private struct PaneTabDropDelegate: DropDelegate {
         }
 
         workspace.syncDefaultRootPathIfNeeded()
-        workspace.selectedPaneID = draggingPaneID
+        if !movedPane.isCollapsed {
+            workspace.selectedPaneID = draggingPaneID
+        }
         return true
     }
 }
@@ -341,29 +424,100 @@ struct TabItemContent: View {
     let isHovering: Bool
     let canClose: Bool
     let onClose: () -> Void
+    let onHide: () -> Void
+    let onUnhide: () -> Void
 
     var body: some View {
+        if pane.isCollapsed {
+            headerButton(systemName: "eye", help: "Unhide \(paneTitle)", action: onUnhide)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            expandedContent
+        }
+    }
+
+    private var expandedContent: some View {
         HStack(spacing: 6) {
             if isHovering && canClose {
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 16, height: 16)
-                        .background(.white.opacity(0.1), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .transition(.opacity)
+                headerButton(systemName: "xmark", help: "Close \(paneTitle)", action: onClose)
+                    .background(.white.opacity(0.1), in: Circle())
+                    .transition(.opacity)
             }
+
             Image(systemName: pane.kind == .terminal ? "terminal" : "safari")
                 .font(.system(size: 11))
                 .foregroundStyle(isSelected ? .primary : .secondary)
+
             Text(pane.kind == .terminal ? "Terminal" : "Browser")
                 .font(.system(size: 12))
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? .primary : .secondary)
+
+            Spacer(minLength: 0)
+
+            if isHovering {
+                headerButton(systemName: "eye.slash", help: "Hide \(paneTitle)", action: onHide)
+                    .transition(.opacity)
+            }
         }
         .animation(.easeInOut(duration: 0.15), value: isHovering)
+    }
+
+    private var paneTitle: String {
+        pane.kind == .terminal ? "Terminal" : "Browser"
+    }
+
+    private func headerButton(systemName: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
+private struct CollapsedPaneSlit: View {
+    let pane: Pane
+    let isVertical: Bool
+    let onUnhide: () -> Void
+
+    var body: some View {
+        Group {
+            if isVertical {
+                VStack(spacing: 0) {
+                    unhideButton
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 6)
+            } else {
+                HStack(spacing: 0) {
+                    unhideButton
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 6)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.85))
+        .overlay {
+            Rectangle()
+                .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 1)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var unhideButton: some View {
+        Button(action: onUnhide) {
+            Image(systemName: "eye")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+        }
+        .buttonStyle(.plain)
+        .help("Unhide \(pane.kind == .terminal ? "Terminal" : "Browser")")
     }
 }
 

@@ -228,25 +228,7 @@ struct ContentView: View {
             .disabled(!state.canGoForward)
         }
 
-        TextField("URL", text: Bindable(state).urlText)
-            .textFieldStyle(.plain)
-            .font(.system(size: 13, weight: .medium))
-            .focused($isBrowserURLFieldFocused)
-            .onSubmit { state.navigate() }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .frame(minWidth: 240, idealWidth: 420, maxWidth: 560)
-
-        Button {
-            if state.isLoading {
-                state.requestNavigationCommand("blau://stop")
-            } else {
-                state.requestNavigationCommand("blau://reload")
-            }
-        } label: {
-            Label(state.isLoading ? "Stop" : "Reload",
-                  systemImage: state.isLoading ? "xmark" : "arrow.clockwise")
-        }
+        browserAddressField(state: state)
 
         Menu {
             ForEach(AppearanceMode.allCases, id: \.self) { mode in
@@ -278,6 +260,55 @@ struct ContentView: View {
         } label: {
             Label("Developer Tools", systemImage: "hammer")
         }
+    }
+
+    private func browserAddressField(state: BrowserState) -> some View {
+        TextField("URL", text: Bindable(state).urlText)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13, weight: .medium))
+            .focused($isBrowserURLFieldFocused)
+            .onSubmit { state.navigate() }
+            .padding(.leading, 14)
+            .padding(.trailing, 36)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color(nsColor: .separatorColor).opacity(0.7), lineWidth: 1)
+            }
+            .overlay(alignment: .trailing) {
+                browserReloadButton(state: state)
+                    .padding(.trailing, 10)
+            }
+            .frame(minWidth: 240, idealWidth: 420, maxWidth: 560)
+    }
+
+    private func browserReloadButton(state: BrowserState) -> some View {
+        Button {
+            if state.isLoading {
+                state.requestNavigationCommand("blau://stop")
+            } else {
+                state.requestNavigationCommand("blau://reload")
+            }
+        } label: {
+            ZStack {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .medium))
+                    .opacity(state.isLoading ? 0 : 1)
+
+                if state.isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+            .frame(width: 14, height: 14)
+        }
+        .buttonStyle(.plain)
+        .help(state.isLoading ? "Stop" : "Reload")
     }
 
     private func appearanceIcon(for mode: AppearanceMode) -> String {

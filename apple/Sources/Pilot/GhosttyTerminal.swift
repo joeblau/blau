@@ -364,13 +364,13 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func becomeFirstResponder() -> Bool {
-        if let surface { ghostty_surface_set_focus(surface, true) }
+        Self.blurOtherTerminalSurfaces(in: window, excluding: self)
+        setSurfaceFocus(true)
         pane.workspace?.setFrontmostTerminalPaneID(pane.id)
         return super.becomeFirstResponder()
     }
 
     override func resignFirstResponder() -> Bool {
-        if let surface { ghostty_surface_set_focus(surface, false) }
         return super.resignFirstResponder()
     }
 
@@ -679,16 +679,29 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
-        var x = event.scrollingDeltaX
-        var y = event.scrollingDeltaY
-        if event.hasPreciseScrollingDeltas {
-            x *= 2
-            y *= 2
-        }
-        ghostty_surface_mouse_scroll(surface, x, y, scrollMods(event))
+        let preciseScrollScale = 0.175
+        let x = event.hasPreciseScrollingDeltas ? event.scrollingDeltaX * preciseScrollScale : event.scrollingDeltaX
+        let y = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY * preciseScrollScale : event.scrollingDeltaY
+        ghostty_surface_mouse_scroll(
+            surface,
+            x,
+            y,
+            scrollMods(event)
+        )
     }
 
     // MARK: - Helpers
+
+    private func setSurfaceFocus(_ isFocused: Bool) {
+        guard let surface else { return }
+        ghostty_surface_set_focus(surface, isFocused)
+    }
+
+    private static func blurOtherTerminalSurfaces(in window: NSWindow?, excluding focusedView: GhosttyMetalView) {
+        for view in registry.values where view !== focusedView && view.window === window {
+            view.setSurfaceFocus(false)
+        }
+    }
 
     private func mousePoint(_ event: NSEvent) -> (x: Double, y: Double) {
         let pt = convert(event.locationInWindow, from: nil)

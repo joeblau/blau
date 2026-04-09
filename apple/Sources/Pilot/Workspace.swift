@@ -31,6 +31,10 @@ enum PersistentTerminalSession {
         let sessionName = shellEscape(pane.persistentSessionName)
         let tmux = shellEscape(tmuxPath)
         let createCommand: String
+        let configureSessionCommand = """
+        \(tmux) set-option -t \(sessionName) status off >/dev/null 2>&1
+        \(tmux) set-option -t \(sessionName) mouse on >/dev/null 2>&1
+        """
 
         if let workingDirectory = validWorkingDirectory(workingDirectory) {
             createCommand = "\(tmux) new-session -d -s \(sessionName) -c \(shellEscape(workingDirectory))"
@@ -40,10 +44,11 @@ enum PersistentTerminalSession {
 
         return """
         if \(tmux) has-session -t \(sessionName) 2>/dev/null; then
+          \(configureSessionCommand)
           exec \(tmux) attach-session -t \(sessionName)
         else
           \(createCommand)
-          \(tmux) set-option -t \(sessionName) status off >/dev/null 2>&1
+          \(configureSessionCommand)
           exec \(tmux) attach-session -t \(sessionName)
         fi
         """ + "\n"
@@ -125,6 +130,13 @@ final class BrowserState {
     }
 
     private func issueNavigationRequest(_ request: URL?) {
+        if let request {
+            if request.absoluteString == "blau://stop" {
+                isLoading = false
+            } else {
+                isLoading = true
+            }
+        }
         pendingURL = request
         navigationRequestID += 1
     }
@@ -140,6 +152,8 @@ final class Pane {
     var currentDirectory: String = ""
     var bellCount: Int = 0
     var sizeFraction: Double = 0
+    var isCollapsed: Bool = false
+    var restoredSizeFraction: Double = 0
 
     @Relationship(deleteRule: .cascade)
     var browserState: BrowserState?
@@ -215,19 +229,23 @@ final class Workspace {
 
     var frontmostTerminalPane: Pane? {
         if let frontmostTerminalPaneID,
-           let pane = sortedPanes.first(where: { $0.id == frontmostTerminalPaneID && $0.kind == .terminal }) {
+           let pane = sortedPanes.first(where: {
+               $0.id == frontmostTerminalPaneID && $0.kind == .terminal && !$0.isCollapsed
+           }) {
             return pane
         }
 
-        if let selectedPane, selectedPane.kind == .terminal {
+        if let selectedPane, selectedPane.kind == .terminal, !selectedPane.isCollapsed {
             return selectedPane
         }
 
-        return sortedPanes.first { $0.kind == .terminal }
+        return sortedPanes.first { $0.kind == .terminal && !$0.isCollapsed }
+            ?? sortedPanes.first { $0.kind == .terminal }
     }
 
     var leftmostTerminalPane: Pane? {
-        sortedPanes.first { $0.kind == .terminal }
+        sortedPanes.first { $0.kind == .terminal && !$0.isCollapsed }
+            ?? sortedPanes.first { $0.kind == .terminal }
     }
 
     var effectiveRootPath: String? {
@@ -305,10 +323,11 @@ final class Workspace {
         PersistentTerminalSession.killSession(for: pane)
         panes.removeAll { $0.id == pane.id }
         if selectedPaneID == pane.id {
-            selectedPaneID = sortedPanes.first?.id
+            selectedPaneID = sortedPanes.first(where: { !$0.isCollapsed })?.id ?? sortedPanes.first?.id
         }
         if frontmostTerminalPaneID == pane.id {
-            frontmostTerminalPaneID = sortedPanes.first(where: { $0.kind == .terminal })?.id
+            frontmostTerminalPaneID = sortedPanes.first(where: { $0.kind == .terminal && !$0.isCollapsed })?.id
+                ?? sortedPanes.first(where: { $0.kind == .terminal })?.id
         }
         syncDefaultRootPathIfNeeded()
     }
@@ -358,10 +377,19 @@ final class Workspace {
         return Dictionary(uniqueKeysWithValues: weights.map { ($0.0, $0.1 / totalWeight) })
     }
 
+    var normalizedExpandedSizeFractions: [UUID: Double] {
+        normalizedSizeFractions(for: sortedPanes.filter { !$0.isCollapsed })
+    }
+
     /// Resize two adjacent panes by a delta (in fraction of total).
     /// Clamps so neither pane goes below a minimum fraction.
     func resizePanes(leadingID: UUID, trailingID: UUID, delta: Double) {
-        let fractions = normalizedSizeFractions
+        guard let leadingPane = sortedPanes.first(where: { $0.id == leadingID }),
+              let trailingPane = sortedPanes.first(where: { $0.id == trailingID }),
+              !leadingPane.isCollapsed,
+              !trailingPane.isCollapsed else { return }
+
+        let fractions = normalizedExpandedSizeFractions
         guard let leadFrac = fractions[leadingID],
               let trailFrac = fractions[trailingID] else { return }
 
@@ -370,7 +398,7 @@ final class Workspace {
         let newTrail = leadFrac + trailFrac - newLead
 
         // Apply to all panes (initialize any that were 0)
-        for pane in sortedPanes {
+        for pane in sortedPanes where !pane.isCollapsed {
             if pane.id == leadingID {
                 pane.sizeFraction = newLead
             } else if pane.id == trailingID {
@@ -382,8 +410,8 @@ final class Workspace {
     }
 
     func persistPaneSizes() {
-        let fractions = normalizedSizeFractions
-        for pane in sortedPanes {
+        let fractions = normalizedExpandedSizeFractions
+        for pane in sortedPanes where !pane.isCollapsed {
             pane.sizeFraction = fractions[pane.id] ?? (1.0 / Double(max(panes.count, 1)))
         }
         try? modelContext?.save()
@@ -393,8 +421,52 @@ final class Workspace {
     func resetPaneSizes() {
         let equal = 1.0 / Double(max(panes.count, 1))
         for pane in panes {
-            pane.sizeFraction = equal
+            if pane.isCollapsed {
+                pane.restoredSizeFraction = equal
+            } else {
+                pane.sizeFraction = equal
+            }
         }
+        try? modelContext?.save()
+    }
+
+    func collapsePane(_ pane: Pane) {
+        guard !pane.isCollapsed else { return }
+
+        let currentFraction = normalizedExpandedSizeFractions[pane.id] ?? pane.sizeFraction
+        pane.restoredSizeFraction = currentFraction > 0 ? currentFraction : 1.0 / Double(max(panes.count, 1))
+        pane.isCollapsed = true
+
+        if selectedPaneID == pane.id {
+            selectedPaneID = sortedPanes.first(where: { !$0.isCollapsed && $0.id != pane.id })?.id ?? pane.id
+        }
+        if frontmostTerminalPaneID == pane.id {
+            frontmostTerminalPaneID = sortedPanes.first(where: { $0.kind == .terminal && !$0.isCollapsed })?.id
+                ?? (pane.kind == .terminal ? pane.id : nil)
+        }
+
+        try? modelContext?.save()
+    }
+
+    func expandPane(_ pane: Pane) {
+        guard pane.isCollapsed else { return }
+
+        let expandedPanes = sortedPanes.filter { !$0.isCollapsed && $0.id != pane.id }
+        let currentFractions = normalizedSizeFractions(for: expandedPanes)
+        let restoredFraction = clampedRestoredFraction(for: pane, expandedSiblingCount: expandedPanes.count)
+        let remainingFraction = max(0, 1.0 - restoredFraction)
+
+        pane.isCollapsed = false
+        pane.sizeFraction = restoredFraction
+        for sibling in expandedPanes {
+            sibling.sizeFraction = (currentFractions[sibling.id] ?? 0) * remainingFraction
+        }
+
+        selectedPaneID = pane.id
+        if pane.kind == .terminal {
+            frontmostTerminalPaneID = pane.id
+        }
+
         try? modelContext?.save()
     }
 
@@ -420,7 +492,8 @@ final class Workspace {
     private func inheritedDirectoryForNewTerminal() -> String {
         if let selectedPaneID,
            let selectedPane = sortedPanes.first(where: { $0.id == selectedPaneID }),
-           selectedPane.kind == .terminal {
+           selectedPane.kind == .terminal,
+           !selectedPane.isCollapsed {
             let directory = selectedPane.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
             if !directory.isEmpty {
                 return directory
@@ -434,5 +507,36 @@ final class Workspace {
         }
 
         return ""
+    }
+
+    private func normalizedSizeFractions(for panes: [Pane]) -> [UUID: Double] {
+        guard !panes.isEmpty else { return [:] }
+
+        let assigned = panes.filter { $0.sizeFraction > 0 }
+        if assigned.isEmpty {
+            let equal = 1.0 / Double(panes.count)
+            return Dictionary(uniqueKeysWithValues: panes.map { ($0.id, equal) })
+        }
+
+        let assignedTotal = assigned.reduce(0.0) { $0 + $1.sizeFraction }
+        let defaultWeight = assignedTotal / Double(assigned.count)
+        let weights = panes.map { pane in
+            (pane.id, pane.sizeFraction > 0 ? pane.sizeFraction : defaultWeight)
+        }
+        let totalWeight = weights.reduce(0.0) { $0 + $1.1 }
+
+        guard totalWeight > 0 else {
+            let equal = 1.0 / Double(panes.count)
+            return Dictionary(uniqueKeysWithValues: panes.map { ($0.id, equal) })
+        }
+
+        return Dictionary(uniqueKeysWithValues: weights.map { ($0.0, $0.1 / totalWeight) })
+    }
+
+    private func clampedRestoredFraction(for pane: Pane, expandedSiblingCount: Int) -> Double {
+        let fallback = 1.0 / Double(max(panes.count, 1))
+        let restored = pane.restoredSizeFraction > 0 ? pane.restoredSizeFraction : fallback
+        guard expandedSiblingCount > 0 else { return 1.0 }
+        return min(max(0.1, restored), 0.85)
     }
 }

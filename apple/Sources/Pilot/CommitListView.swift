@@ -459,9 +459,7 @@ struct ActionsListView: View {
         default:
             switch status {
             case "in_progress":
-                Image(systemName: "circle.dotted")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.orange)
+                WorkflowBuildingIndicator()
             case "queued", "waiting", "pending":
                 Image(systemName: "clock.circle")
                     .font(.system(size: 12))
@@ -471,6 +469,53 @@ struct ActionsListView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.quaternary)
             }
+        }
+    }
+}
+
+private struct WorkflowBuildingIndicator: View {
+    private static let baseGold = Color(red: 0.79, green: 0.62, blue: 0.25)
+    private static let highlightGold = Color(red: 0.95, green: 0.81, blue: 0.43)
+
+    var body: some View {
+        TimelineView(.animation) { context in
+            let elapsed = context.date.timeIntervalSinceReferenceDate
+            let orbitRotation = Angle.degrees(elapsed * 170)
+            let pulse = 0.92 + (sin(elapsed * 3.0) * 0.05)
+
+            ZStack {
+                Circle()
+                    .stroke(Self.baseGold.opacity(0.14), lineWidth: 1.3)
+                    .frame(width: 13, height: 13)
+
+                Circle()
+                    .trim(from: 0.10, to: 0.48)
+                    .stroke(
+                        AngularGradient(
+                            colors: [
+                                Self.baseGold.opacity(0.08),
+                                Self.baseGold,
+                                Self.highlightGold,
+                                Self.baseGold.opacity(0.18)
+                            ],
+                            center: .center
+                        ),
+                        style: StrokeStyle(lineWidth: 1.8, lineCap: .round)
+                    )
+                    .frame(width: 13, height: 13)
+                    .rotationEffect(orbitRotation)
+                    .shadow(color: Self.baseGold.opacity(0.25), radius: 1)
+
+                Circle()
+                    .stroke(Self.baseGold.opacity(0.95), lineWidth: 2.15)
+                    .frame(width: 7.5, height: 7.5)
+                    .scaleEffect(pulse)
+
+                Circle()
+                    .fill(Self.highlightGold.opacity(0.95))
+                    .frame(width: 1.8, height: 1.8)
+            }
+            .frame(width: 14, height: 14)
         }
     }
 }
