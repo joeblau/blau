@@ -201,7 +201,10 @@ struct WorkspaceView: View {
                             leadingID: pane.id,
                             trailingID: trailingPane.id,
                             workspace: workspace,
-                            isEnabled: !pane.isCollapsed && !trailingPane.isCollapsed
+                            isEnabled: workspace.canResizePanes(
+                                leadingID: pane.id,
+                                trailingID: trailingPane.id
+                            )
                         )
                     }
                 }
@@ -235,7 +238,10 @@ private extension WorkspaceView {
                             leadingID: pane.id,
                             trailingID: trailingPane.id,
                             workspace: workspace,
-                            isEnabled: !pane.isCollapsed && !trailingPane.isCollapsed
+                            isEnabled: workspace.canResizePanes(
+                                leadingID: pane.id,
+                                trailingID: trailingPane.id
+                            )
                         )
                     }
                 }

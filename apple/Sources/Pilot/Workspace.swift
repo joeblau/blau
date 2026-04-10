@@ -381,17 +381,21 @@ final class Workspace {
         normalizedSizeFractions(for: sortedPanes.filter { !$0.isCollapsed })
     }
 
-    /// Resize two adjacent panes by a delta (in fraction of total).
-    /// Clamps so neither pane goes below a minimum fraction.
+    func canResizePanes(leadingID: UUID, trailingID: UUID) -> Bool {
+        resizePanePair(leadingID: leadingID, trailingID: trailingID) != nil
+    }
+
+    /// Resize the nearest expanded panes on either side of the divider by a delta
+    /// (in fraction of total expanded size). Collapsed panes keep their slit width.
     func resizePanes(leadingID: UUID, trailingID: UUID, delta: Double) {
-        guard let leadingPane = sortedPanes.first(where: { $0.id == leadingID }),
-              let trailingPane = sortedPanes.first(where: { $0.id == trailingID }),
-              !leadingPane.isCollapsed,
-              !trailingPane.isCollapsed else { return }
+        guard let (leadingPane, trailingPane) = resizePanePair(
+            leadingID: leadingID,
+            trailingID: trailingID
+        ) else { return }
 
         let fractions = normalizedExpandedSizeFractions
-        guard let leadFrac = fractions[leadingID],
-              let trailFrac = fractions[trailingID] else { return }
+        guard let leadFrac = fractions[leadingPane.id],
+              let trailFrac = fractions[trailingPane.id] else { return }
 
         let minFraction = 0.1
         let newLead = max(minFraction, min(leadFrac + delta, leadFrac + trailFrac - minFraction))
@@ -399,9 +403,9 @@ final class Workspace {
 
         // Apply to all panes (initialize any that were 0)
         for pane in sortedPanes where !pane.isCollapsed {
-            if pane.id == leadingID {
+            if pane.id == leadingPane.id {
                 pane.sizeFraction = newLead
-            } else if pane.id == trailingID {
+            } else if pane.id == trailingPane.id {
                 pane.sizeFraction = newTrail
             } else if pane.sizeFraction <= 0 {
                 pane.sizeFraction = fractions[pane.id] ?? (1.0 / Double(panes.count))
@@ -531,6 +535,22 @@ final class Workspace {
         }
 
         return Dictionary(uniqueKeysWithValues: weights.map { ($0.0, $0.1 / totalWeight) })
+    }
+
+    private func resizePanePair(leadingID: UUID, trailingID: UUID) -> (Pane, Pane)? {
+        let sorted = sortedPanes
+        guard let leadingIndex = sorted.firstIndex(where: { $0.id == leadingID }),
+              let trailingIndex = sorted.firstIndex(where: { $0.id == trailingID }),
+              trailingIndex == leadingIndex + 1 else { return nil }
+
+        let leadingPane = sorted[...leadingIndex].last(where: { !$0.isCollapsed })
+        let trailingPane = sorted[trailingIndex...].first(where: { !$0.isCollapsed })
+
+        guard let leadingPane,
+              let trailingPane,
+              leadingPane.id != trailingPane.id else { return nil }
+
+        return (leadingPane, trailingPane)
     }
 
     private func clampedRestoredFraction(for pane: Pane, expandedSiblingCount: Int) -> Double {
