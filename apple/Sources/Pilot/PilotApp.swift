@@ -66,6 +66,14 @@ struct PilotApp: App {
                 }
                 .keyboardShortcut("i", modifiers: .command)
                 .disabled(store.selectedWorkspace == nil)
+
+                Button("Focus Selected Pane") {
+                    guard let workspace = store.selectedWorkspace,
+                          let pane = workspace.selectedPane else { return }
+                    workspace.focusPane(pane)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+                .disabled(store.selectedWorkspace?.selectedPane == nil)
             }
             CommandMenu("Browser") {
                 Button("Reload") {

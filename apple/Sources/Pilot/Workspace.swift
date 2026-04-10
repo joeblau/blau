@@ -474,6 +474,29 @@ final class Workspace {
         try? modelContext?.save()
     }
 
+    func focusPane(_ pane: Pane) {
+        if pane.isCollapsed {
+            expandPane(pane)
+        }
+
+        for otherPane in sortedPanes where otherPane.id != pane.id && !otherPane.isCollapsed {
+            let currentFraction = normalizedExpandedSizeFractions[otherPane.id] ?? otherPane.sizeFraction
+            otherPane.restoredSizeFraction = currentFraction > 0
+                ? currentFraction
+                : 1.0 / Double(max(panes.count, 1))
+            otherPane.isCollapsed = true
+        }
+
+        pane.isCollapsed = false
+        pane.sizeFraction = 1.0
+        selectedPaneID = pane.id
+        if pane.kind == .terminal {
+            frontmostTerminalPaneID = pane.id
+        }
+
+        try? modelContext?.save()
+    }
+
     func syncDefaultRootPathIfNeeded(using pane: Pane? = nil) {
         guard effectiveRootPath == nil else { return }
         guard let leftmostTerminalPane else { return }
