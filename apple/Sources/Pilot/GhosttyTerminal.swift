@@ -488,6 +488,14 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         if event.modifierFlags.contains(.command),
            !event.modifierFlags.contains(.control),
            !event.modifierFlags.contains(.option),
+           event.charactersIgnoringModifiers?.lowercased() == "f" {
+            pane.workspace?.focusPane(pane)
+            return true
+        }
+
+        if event.modifierFlags.contains(.command),
+           !event.modifierFlags.contains(.control),
+           !event.modifierFlags.contains(.option),
            event.charactersIgnoringModifiers?.lowercased() == "v" {
             paste(nil)
             return true
