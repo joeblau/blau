@@ -154,6 +154,7 @@ final class Pane {
     var sizeFraction: Double = 0
     var isCollapsed: Bool = false
     var restoredSizeFraction: Double = 0
+    var wasCollapsedBeforeFocus: Bool = false
 
     @Relationship(deleteRule: .cascade)
     var browserState: BrowserState?
@@ -216,6 +217,7 @@ final class Workspace {
     var axisRaw: String = PaneAxis.vertical.rawValue
     var isInspectorPresented: Bool = false
     var inspectorTabRaw: String = InspectorTab.actions.rawValue
+    var focusedPaneID: UUID?
     var isPinned: Bool = false
     var workspaceSortOrder: Int = 0
     var rootPath: String = ""
@@ -475,21 +477,38 @@ final class Workspace {
     }
 
     func focusPane(_ pane: Pane) {
+        if focusedPaneID == pane.id {
+            restoreFocusedPane()
+            return
+        }
+
+        if focusedPaneID != nil {
+            restoreFocusedPane()
+        }
+
+        let expandedFractions = normalizedExpandedSizeFractions
+        for existingPane in sortedPanes {
+            existingPane.wasCollapsedBeforeFocus = existingPane.isCollapsed
+            if !existingPane.isCollapsed {
+                let currentFraction = expandedFractions[existingPane.id] ?? existingPane.sizeFraction
+                existingPane.restoredSizeFraction = currentFraction > 0
+                    ? currentFraction
+                    : 1.0 / Double(max(panes.count, 1))
+            }
+        }
+
         if pane.isCollapsed {
             expandPane(pane)
         }
 
         for otherPane in sortedPanes where otherPane.id != pane.id && !otherPane.isCollapsed {
-            let currentFraction = normalizedExpandedSizeFractions[otherPane.id] ?? otherPane.sizeFraction
-            otherPane.restoredSizeFraction = currentFraction > 0
-                ? currentFraction
-                : 1.0 / Double(max(panes.count, 1))
             otherPane.isCollapsed = true
         }
 
         pane.isCollapsed = false
         pane.sizeFraction = 1.0
         selectedPaneID = pane.id
+        focusedPaneID = pane.id
         if pane.kind == .terminal {
             frontmostTerminalPaneID = pane.id
         }
@@ -558,6 +577,39 @@ final class Workspace {
         }
 
         return Dictionary(uniqueKeysWithValues: weights.map { ($0.0, $0.1 / totalWeight) })
+    }
+
+    private func restoreFocusedPane() {
+        guard focusedPaneID != nil else { return }
+
+        let fallbackFraction = 1.0 / Double(max(panes.count, 1))
+        for pane in sortedPanes {
+            pane.isCollapsed = pane.wasCollapsedBeforeFocus
+            pane.wasCollapsedBeforeFocus = false
+
+            if !pane.isCollapsed {
+                pane.sizeFraction = pane.restoredSizeFraction > 0
+                    ? pane.restoredSizeFraction
+                    : fallbackFraction
+            }
+        }
+
+        focusedPaneID = nil
+        selectedPaneID = sortedPanes.first(where: { $0.id == selectedPaneID && !$0.isCollapsed })?.id
+            ?? sortedPanes.first(where: { !$0.isCollapsed })?.id
+            ?? sortedPanes.first?.id
+
+        if let frontmostTerminalPaneID,
+           sortedPanes.contains(where: {
+               $0.id == frontmostTerminalPaneID && $0.kind == .terminal && !$0.isCollapsed
+           }) {
+            self.frontmostTerminalPaneID = frontmostTerminalPaneID
+        } else {
+            self.frontmostTerminalPaneID = sortedPanes.first(where: { $0.kind == .terminal && !$0.isCollapsed })?.id
+                ?? sortedPanes.first(where: { $0.kind == .terminal })?.id
+        }
+
+        try? modelContext?.save()
     }
 
     private func resizePanePair(leadingID: UUID, trailingID: UUID) -> (Pane, Pane)? {
