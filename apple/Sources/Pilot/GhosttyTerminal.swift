@@ -679,7 +679,9 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
-        let preciseScrollScale = 0.175
+        // Trackpad deltas arrive as high-resolution pixel values and felt too
+        // aggressive in the terminal, so damp them before passing them through.
+        let preciseScrollScale = 0.08
         let x = event.hasPreciseScrollingDeltas ? event.scrollingDeltaX * preciseScrollScale : event.scrollingDeltaX
         let y = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY * preciseScrollScale : event.scrollingDeltaY
         ghostty_surface_mouse_scroll(
