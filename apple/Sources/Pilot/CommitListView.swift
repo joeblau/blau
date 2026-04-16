@@ -434,9 +434,18 @@ struct ActionsListView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text(String(action.headSha.prefix(7)))
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                HStack(spacing: 4) {
+                    Text(String(action.headSha.prefix(7)))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                    if !action.elapsed.isEmpty {
+                        Text("·")
+                            .foregroundStyle(.quaternary)
+                        Text(action.elapsed)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
             }
         }
     }
