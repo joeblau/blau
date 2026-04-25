@@ -7,11 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		08EE01449FE0E82881D35F22 /* SimulatorRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B3720FB4269F17670251325 /* SimulatorRuntime.swift */; };
 		1CA7F3A0C7FE6D35905BADD4 /* MouseBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA97D476477BE66A97A9D77 /* MouseBridge.swift */; };
 		1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 132CB022A0BDFF0DE96316EF /* ContentView.swift */; };
 		1F253D4F3DCD296F823A2E74 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7D00A3F70E212149A88CCD63 /* Assets.xcassets */; };
+		213C785FD2B15F38F83FE075 /* SimctlList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 421A3C82A5D2D71FA4C496C2 /* SimctlList.swift */; };
+		309AC6AA9F7AB736C78CBB3B /* SimulatorInputBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C32359F59924DF584D1E741 /* SimulatorInputBridge.swift */; };
+		39B3115A47ABD6236F7425BA /* SimulatorDeviceSet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE6DD39DB2B8D21D4BADAA69 /* SimulatorDeviceSet.swift */; };
 		48B57B6199067D9FB4CB7D93 /* SyncMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67FAA18AA33DB039B0026206 /* SyncMessages.swift */; };
 		4BF7276892BD5F1F7E405130 /* VolumeScrollListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C985F86115A698849ED108 /* VolumeScrollListView.swift */; };
+		4C1D28CAB47CF8DF6495D1B5 /* SimulatorDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4D0DB45DC6CDD860A26E2FC /* SimulatorDevice.swift */; };
 		5A01C1F25324B7BD662C6A6F /* WingmanApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A70CFB55F5EB044D3ED5C3F /* WingmanApp.swift */; };
 		61F220E0506458F5A49CEDE8 /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */; };
 		6215B9C6DFBF73DB93072BD2 /* InspectorHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B068834105F375479ADF423 /* InspectorHelper.swift */; };
@@ -24,18 +29,29 @@
 		870295EC4EDA044F54CE9E6D /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0057932203C8B246C76D50DC /* GhosttyKit.xcframework */; };
 		8FCC40CAAA5C7B8D29E12115 /* TranscriptionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD34E1A30F1D389095CB7641 /* TranscriptionOverlay.swift */; };
 		91698151B8722ED0E14C60E9 /* SyncMessagesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A71DC4B75C15342693E47C /* SyncMessagesTests.swift */; };
+		95E2B7C4FF19426F09664031 /* SimulatorStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4661682CF1FD9CCAF06F12D4 /* SimulatorStateTests.swift */; };
+		97CCEC7CB74BCC87DC23E339 /* PaneInitRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7297FC9076A3EEE92FA359FD /* PaneInitRegressionTests.swift */; };
+		9CA12C70E844D16EADE8F86F /* SimulatorFramebufferClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E61CBEDF8420E25E22776C /* SimulatorFramebufferClient.swift */; };
 		9CCB3AE0ECFF1D2D7C809867 /* HeadphoneDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEF294C6D54F08AFA7316B33 /* HeadphoneDetector.swift */; };
 		A15C1598E563DC750ECC3CA3 /* TranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88E3C34C14CD81F745E874DF /* TranscriptionService.swift */; };
 		A755A8C5DCFF1165E408136A /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3448A85CDA9475511475C2 /* Workspace.swift */; };
+		B3C0B9C8DD6902B04B7BBF5C /* SimulatorLogStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEF36CB4A62E7BAD153F60B2 /* SimulatorLogStream.swift */; };
 		B4AA393A5A3C60C033BA0A02 /* PeerSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */; };
+		B4E96CEA7BF0CCD5D84C0B86 /* WorkspaceRootTrackingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADB726FAD149101B9A70CC0D /* WorkspaceRootTrackingTests.swift */; };
 		B50B053F283AA448A9ACDB56 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26E21596BD1590738CF89498 /* ContentView.swift */; };
+		B5D08146551FAC7C0FDD2ECF /* SimulatorPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A0D1D65DFDBC752D63A8FB5 /* SimulatorPaneView.swift */; };
 		C0B083B9A7F2E253F890ABC0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32D547158D65899195FA3359 /* Assets.xcassets */; };
 		C9B227630199C8E1705AE8DC /* CopilotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */; };
 		CB797869A7D03477CAC989A2 /* CommitListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B028DA279E32AB30A1A75942 /* CommitListView.swift */; };
+		CCDD1561F8CC855D3E332AA4 /* SimulatorErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BBD255E630E98E6C69F4669 /* SimulatorErrorTests.swift */; };
 		CF0427ED034B7A71489D82F9 /* PeerSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */; };
 		CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F684D74A8F12B03954CC49B3 /* PilotApp.swift */; };
+		D012B653247266B6A31F847C /* SimulatorDevicePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA4C2F11E0BB60A267218C8 /* SimulatorDevicePicker.swift */; };
 		D0614091089D4F0F461285ED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1D8AC628F3F55D563872C7 /* ContentView.swift */; };
+		EB4C3AB2AF1FE991F75C6DCD /* SimulatorState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4884F0D91F609626DCF1DB39 /* SimulatorState.swift */; };
+		F25A9F03B5DE2F9719467276 /* SimctlCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88C399D65295212A77AC313B /* SimctlCommands.swift */; };
 		F2F8EB46FFF76269E37F2F2D /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = DF157FDA8E91476C9F0EB657 /* WhisperKit */; };
+		F6C71D0DEE3DA084AD399139 /* SimulatorErrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C2114DFABB8CD5CB1858FED /* SimulatorErrors.swift */; };
 		F797C21E5A72C28BD91D6073 /* GitCommitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */; };
 /* End PBXBuildFile section */
 
@@ -53,6 +69,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 1FB5B4A55B06C22A02EB122A;
 			remoteInfo = Copilot;
+		};
+		FA29AA030FC6C19055EF989E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 82D0EC6B4C927437585C0414 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 474C5A4305C5C5138E36D5C1;
+			remoteInfo = Pilot;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -73,6 +96,7 @@
 /* Begin PBXFileReference section */
 		0057932203C8B246C76D50DC /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GhosttyKit.xcframework; path = Frameworks/GhosttyKit.xcframework; sourceTree = "<group>"; };
 		0146AB6C59B6957CE9B7E874 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		0A0D1D65DFDBC752D63A8FB5 /* SimulatorPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorPaneView.swift; sourceTree = "<group>"; };
 		132CB022A0BDFF0DE96316EF /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		158C2018D7407AF1E5F146CB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1B3448A85CDA9475511475C2 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
@@ -81,26 +105,42 @@
 		26E21596BD1590738CF89498 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		32D547158D65899195FA3359 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3BA97D476477BE66A97A9D77 /* MouseBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MouseBridge.swift; sourceTree = "<group>"; };
+		421A3C82A5D2D71FA4C496C2 /* SimctlList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimctlList.swift; sourceTree = "<group>"; };
+		4661682CF1FD9CCAF06F12D4 /* SimulatorStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorStateTests.swift; sourceTree = "<group>"; };
+		4884F0D91F609626DCF1DB39 /* SimulatorState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorState.swift; sourceTree = "<group>"; };
 		52A71DC4B75C15342693E47C /* SyncMessagesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMessagesTests.swift; sourceTree = "<group>"; };
+		52D5914A6EBA1115A33AE425 /* PilotTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PilotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5B068834105F375479ADF423 /* InspectorHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorHelper.swift; sourceTree = "<group>"; };
+		5BA4C2F11E0BB60A267218C8 /* SimulatorDevicePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorDevicePicker.swift; sourceTree = "<group>"; };
+		5BBD255E630E98E6C69F4669 /* SimulatorErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorErrorTests.swift; sourceTree = "<group>"; };
+		5C32359F59924DF584D1E741 /* SimulatorInputBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorInputBridge.swift; sourceTree = "<group>"; };
 		67FAA18AA33DB039B0026206 /* SyncMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMessages.swift; sourceTree = "<group>"; };
+		6C2114DFABB8CD5CB1858FED /* SimulatorErrors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorErrors.swift; sourceTree = "<group>"; };
 		6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotApp.swift; sourceTree = "<group>"; };
 		71A7E1AE9E717B53A369709B /* GhosttyTerminal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminal.swift; sourceTree = "<group>"; };
+		7297FC9076A3EEE92FA359FD /* PaneInitRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneInitRegressionTests.swift; sourceTree = "<group>"; };
 		7A70CFB55F5EB044D3ED5C3F /* WingmanApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WingmanApp.swift; sourceTree = "<group>"; };
 		7D00A3F70E212149A88CCD63 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStore.swift; sourceTree = "<group>"; };
+		88C399D65295212A77AC313B /* SimctlCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimctlCommands.swift; sourceTree = "<group>"; };
 		88E3C34C14CD81F745E874DF /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
 		89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Wingman Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B4486B0848D4DDEE5E23D18 /* Pilot.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Pilot.entitlements; sourceTree = "<group>"; };
 		97052041CFD5C5F3CAFA379C /* SharedTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SharedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9B3720FB4269F17670251325 /* SimulatorRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorRuntime.swift; sourceTree = "<group>"; };
 		A0144CE36B7342F7D171F350 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A1C985F86115A698849ED108 /* VolumeScrollListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeScrollListView.swift; sourceTree = "<group>"; };
 		AA1D8AC628F3F55D563872C7 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		ADB726FAD149101B9A70CC0D /* WorkspaceRootTrackingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceRootTrackingTests.swift; sourceTree = "<group>"; };
 		AEF294C6D54F08AFA7316B33 /* HeadphoneDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeadphoneDetector.swift; sourceTree = "<group>"; };
 		B028DA279E32AB30A1A75942 /* CommitListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitListView.swift; sourceTree = "<group>"; };
+		B7E61CBEDF8420E25E22776C /* SimulatorFramebufferClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorFramebufferClient.swift; sourceTree = "<group>"; };
 		BD34E1A30F1D389095CB7641 /* TranscriptionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionOverlay.swift; sourceTree = "<group>"; };
 		CDB98CD0F5BCD145C5B14904 /* TrackpadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadView.swift; sourceTree = "<group>"; };
 		DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitCommitStore.swift; sourceTree = "<group>"; };
+		DE6DD39DB2B8D21D4BADAA69 /* SimulatorDeviceSet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorDeviceSet.swift; sourceTree = "<group>"; };
+		DEF36CB4A62E7BAD153F60B2 /* SimulatorLogStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorLogStream.swift; sourceTree = "<group>"; };
+		E4D0DB45DC6CDD860A26E2FC /* SimulatorDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorDevice.swift; sourceTree = "<group>"; };
 		F430B621891B5DED12E1CF39 /* Copilot.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Copilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F684D74A8F12B03954CC49B3 /* PilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PilotApp.swift; sourceTree = "<group>"; };
 		F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerSyncService.swift; sourceTree = "<group>"; };
@@ -138,6 +178,18 @@
 			path = "Sources/Wingman/Wingman Watch App";
 			sourceTree = "<group>";
 		};
+		552E741828639BF19E6BC0CA /* PilotTests */ = {
+			isa = PBXGroup;
+			children = (
+				7297FC9076A3EEE92FA359FD /* PaneInitRegressionTests.swift */,
+				5BBD255E630E98E6C69F4669 /* SimulatorErrorTests.swift */,
+				4661682CF1FD9CCAF06F12D4 /* SimulatorStateTests.swift */,
+				ADB726FAD149101B9A70CC0D /* WorkspaceRootTrackingTests.swift */,
+			);
+			name = PilotTests;
+			path = Tests/PilotTests;
+			sourceTree = "<group>";
+		};
 		63DF1FFF0A3F9443839E1557 /* SharedTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -171,6 +223,25 @@
 			path = Sources/Shared;
 			sourceTree = "<group>";
 		};
+		D71BDCD79878345F2DBFB4BE /* Simulator */ = {
+			isa = PBXGroup;
+			children = (
+				88C399D65295212A77AC313B /* SimctlCommands.swift */,
+				421A3C82A5D2D71FA4C496C2 /* SimctlList.swift */,
+				E4D0DB45DC6CDD860A26E2FC /* SimulatorDevice.swift */,
+				5BA4C2F11E0BB60A267218C8 /* SimulatorDevicePicker.swift */,
+				DE6DD39DB2B8D21D4BADAA69 /* SimulatorDeviceSet.swift */,
+				6C2114DFABB8CD5CB1858FED /* SimulatorErrors.swift */,
+				B7E61CBEDF8420E25E22776C /* SimulatorFramebufferClient.swift */,
+				5C32359F59924DF584D1E741 /* SimulatorInputBridge.swift */,
+				DEF36CB4A62E7BAD153F60B2 /* SimulatorLogStream.swift */,
+				0A0D1D65DFDBC752D63A8FB5 /* SimulatorPaneView.swift */,
+				9B3720FB4269F17670251325 /* SimulatorRuntime.swift */,
+				4884F0D91F609626DCF1DB39 /* SimulatorState.swift */,
+			);
+			path = Simulator;
+			sourceTree = "<group>";
+		};
 		DE30D289D5BAF3D3994A8791 /* Pilot */ = {
 			isa = PBXGroup;
 			children = (
@@ -190,6 +261,7 @@
 				1B3448A85CDA9475511475C2 /* Workspace.swift */,
 				84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */,
 				24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */,
+				D71BDCD79878345F2DBFB4BE /* Simulator */,
 			);
 			name = Pilot;
 			path = Sources/Pilot;
@@ -200,6 +272,7 @@
 			children = (
 				68A6AFD0CF88B5D0D03A00E1 /* Copilot */,
 				DE30D289D5BAF3D3994A8791 /* Pilot */,
+				552E741828639BF19E6BC0CA /* PilotTests */,
 				86DDEDCE771126217BE93BF1 /* Shared */,
 				63DF1FFF0A3F9443839E1557 /* SharedTests */,
 				488AE8285CB6D6627B1BCABE /* Wingman Watch App */,
@@ -213,6 +286,7 @@
 			children = (
 				F430B621891B5DED12E1CF39 /* Copilot.app */,
 				1C98BD914066A308C6C6C1C9 /* Pilot.app */,
+				52D5914A6EBA1115A33AE425 /* PilotTests.xctest */,
 				97052041CFD5C5F3CAFA379C /* SharedTests.xctest */,
 				89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */,
 			);
@@ -259,6 +333,22 @@
 			productName = Pilot;
 			productReference = 1C98BD914066A308C6C6C1C9 /* Pilot.app */;
 			productType = "com.apple.product-type.application";
+		};
+		478609A031F3B4AB51EDD75F /* PilotTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 647B62FB212BF7BB19171C91 /* Build configuration list for PBXNativeTarget "PilotTests" */;
+			buildPhases = (
+				C2CD0F7FE549B2DF1D736307 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				848A01304996CA69D930D069 /* PBXTargetDependency */,
+			);
+			name = PilotTests;
+			productName = PilotTests;
+			productReference = 52D5914A6EBA1115A33AE425 /* PilotTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		79C8ECE1F0D9D02EDE7D57AC /* Wingman Watch App */ = {
 			isa = PBXNativeTarget;
@@ -307,6 +397,9 @@
 					474C5A4305C5C5138E36D5C1 = {
 						DevelopmentTeam = K78G42H4U2;
 					};
+					478609A031F3B4AB51EDD75F = {
+						DevelopmentTeam = K78G42H4U2;
+					};
 					79C8ECE1F0D9D02EDE7D57AC = {
 						DevelopmentTeam = K78G42H4U2;
 					};
@@ -332,6 +425,7 @@
 			targets = (
 				1FB5B4A55B06C22A02EB122A /* Copilot */,
 				474C5A4305C5C5138E36D5C1 /* Pilot */,
+				478609A031F3B4AB51EDD75F /* PilotTests */,
 				E2B7E3418BCFFEC2F64892C1 /* SharedTests */,
 				79C8ECE1F0D9D02EDE7D57AC /* Wingman Watch App */,
 			);
@@ -409,6 +503,18 @@
 				1CA7F3A0C7FE6D35905BADD4 /* MouseBridge.swift in Sources */,
 				CF0427ED034B7A71489D82F9 /* PeerSyncService.swift in Sources */,
 				CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */,
+				F25A9F03B5DE2F9719467276 /* SimctlCommands.swift in Sources */,
+				213C785FD2B15F38F83FE075 /* SimctlList.swift in Sources */,
+				4C1D28CAB47CF8DF6495D1B5 /* SimulatorDevice.swift in Sources */,
+				D012B653247266B6A31F847C /* SimulatorDevicePicker.swift in Sources */,
+				39B3115A47ABD6236F7425BA /* SimulatorDeviceSet.swift in Sources */,
+				F6C71D0DEE3DA084AD399139 /* SimulatorErrors.swift in Sources */,
+				9CA12C70E844D16EADE8F86F /* SimulatorFramebufferClient.swift in Sources */,
+				309AC6AA9F7AB736C78CBB3B /* SimulatorInputBridge.swift in Sources */,
+				B3C0B9C8DD6902B04B7BBF5C /* SimulatorLogStream.swift in Sources */,
+				B5D08146551FAC7C0FDD2ECF /* SimulatorPaneView.swift in Sources */,
+				08EE01449FE0E82881D35F22 /* SimulatorRuntime.swift in Sources */,
+				EB4C3AB2AF1FE991F75C6DCD /* SimulatorState.swift in Sources */,
 				83D64D93C19B54470E4E1C2C /* SyncMessages.swift in Sources */,
 				8FCC40CAAA5C7B8D29E12115 /* TranscriptionOverlay.swift in Sources */,
 				A15C1598E563DC750ECC3CA3 /* TranscriptionService.swift in Sources */,
@@ -418,9 +524,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C2CD0F7FE549B2DF1D736307 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				97CCEC7CB74BCC87DC23E339 /* PaneInitRegressionTests.swift in Sources */,
+				CCDD1561F8CC855D3E332AA4 /* SimulatorErrorTests.swift in Sources */,
+				95E2B7C4FF19426F09664031 /* SimulatorStateTests.swift in Sources */,
+				B4E96CEA7BF0CCD5D84C0B86 /* WorkspaceRootTrackingTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		848A01304996CA69D930D069 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 474C5A4305C5C5138E36D5C1 /* Pilot */;
+			targetProxy = FA29AA030FC6C19055EF989E /* PBXContainerItemProxy */;
+		};
 		9E22AEE7C35FB537E6F4FF17 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 1FB5B4A55B06C22A02EB122A /* Copilot */;
@@ -443,6 +565,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
+					"$(DEVELOPER_DIR)/Library/PrivateFrameworks",
 					"\"Frameworks\"",
 				);
 				GENERATE_INFOPLIST_FILE = NO;
@@ -457,11 +580,15 @@
 					"-framework",
 					Metal,
 					"-framework",
+					MetalKit,
+					"-framework",
 					QuartzCore,
 					"-framework",
 					CoreText,
 					"-framework",
 					IOKit,
+					"-framework",
+					IOSurface,
 					"-framework",
 					CoreGraphics,
 					"-framework",
@@ -480,6 +607,23 @@
 				SDKROOT = macosx;
 			};
 			name = Release;
+		};
+		190C4C4ECE3809DAD4674BD5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pilot.app/Contents/MacOS/Pilot";
+			};
+			name = Debug;
 		};
 		25BEF14C0763464E0897051F /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -616,6 +760,23 @@
 			};
 			name = Debug;
 		};
+		B99D185EA8698454BCBC2335 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pilot.app/Contents/MacOS/Pilot";
+			};
+			name = Release;
+		};
 		D8353E11C02043EF1281F3ED /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -625,6 +786,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
+					"$(DEVELOPER_DIR)/Library/PrivateFrameworks",
 					"\"Frameworks\"",
 				);
 				GENERATE_INFOPLIST_FILE = NO;
@@ -639,11 +801,15 @@
 					"-framework",
 					Metal,
 					"-framework",
+					MetalKit,
+					"-framework",
 					QuartzCore,
 					"-framework",
 					CoreText,
 					"-framework",
 					IOKit,
+					"-framework",
+					IOSurface,
 					"-framework",
 					CoreGraphics,
 					"-framework",
@@ -767,6 +933,15 @@
 			buildConfigurations = (
 				D8353E11C02043EF1281F3ED /* Debug */,
 				0A50B1118B7355379BCE036A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		647B62FB212BF7BB19171C91 /* Build configuration list for PBXNativeTarget "PilotTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				190C4C4ECE3809DAD4674BD5 /* Debug */,
+				B99D185EA8698454BCBC2335 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

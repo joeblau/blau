@@ -14,9 +14,12 @@ final class GhosttyRuntime: @unchecked Sendable {
         alpha: 1.0
     )
     static let terminalBackgroundHex = "#1c1c1c"
+    private static let defaultTerminalFontSizePoints: CGFloat = 13.0
+    private static let nativeDisplayModeFlag: UInt32 = 0x02000000
 
     private(set) var app: ghostty_app_t?
     private(set) var config: ghostty_config_t?
+    private(set) var baseFontSizePoints: CGFloat = 13.0
 
     private init() {
         // Initialize the Ghostty library
@@ -36,6 +39,7 @@ final class GhosttyRuntime: @unchecked Sendable {
 
         ghostty_config_finalize(cfg)
         self.config = cfg
+        self.baseFontSizePoints = Self.resolvedBaseFontSize(from: cfg)
 
         // Clean up temp file
         if let bgConfigPath {
@@ -101,6 +105,33 @@ final class GhosttyRuntime: @unchecked Sendable {
     func tick() {
         guard let app else { return }
         ghostty_app_tick(app)
+    }
+
+    func terminalFontSize(for screen: NSScreen?) -> CGFloat {
+        baseFontSizePoints * Self.displayModeFontScale(for: screen)
+    }
+
+    func updatedConfig(overridingFontSize fontSize: CGFloat) -> ghostty_config_t? {
+        guard let config, let updatedConfig = ghostty_config_clone(config) else { return nil }
+
+        let overridePath = Self.writeOverrideConfig(
+            named: "ghostty-font-\(ProcessInfo.processInfo.processIdentifier)-\(UUID().uuidString)",
+            content: "font-size = \(String(format: "%.2f", fontSize))\n"
+        )
+
+        if let overridePath {
+            overridePath.withCString { path in
+                ghostty_config_load_file(updatedConfig, path)
+            }
+        }
+
+        ghostty_config_finalize(updatedConfig)
+
+        if let overridePath {
+            try? FileManager.default.removeItem(atPath: overridePath)
+        }
+
+        return updatedConfig
     }
 
     private static func pasteboard(for location: ghostty_clipboard_e) -> NSPasteboard {
@@ -203,17 +234,87 @@ final class GhosttyRuntime: @unchecked Sendable {
     /// Writes a temporary Ghostty config file that forces a consistent dark
     /// terminal background to avoid light empty regions in terminal panes.
     private static func writeBackgroundConfig() -> String? {
-        let path = NSTemporaryDirectory() + "ghostty-bg-\(ProcessInfo.processInfo.processIdentifier).conf"
         let content = """
         background = \(terminalBackgroundHex)
         macos-option-as-alt = true
         """
+        return writeOverrideConfig(
+            named: "ghostty-bg-\(ProcessInfo.processInfo.processIdentifier)",
+            content: content
+        )
+    }
+
+    private static func writeOverrideConfig(named name: String, content: String) -> String? {
+        let path = NSTemporaryDirectory() + "\(name).conf"
         do {
             try content.write(toFile: path, atomically: true, encoding: .utf8)
             return path
         } catch {
             return nil
         }
+    }
+
+    private static func resolvedBaseFontSize(from config: ghostty_config_t) -> CGFloat {
+        let key = "font-size"
+        var value = Float(defaultTerminalFontSizePoints)
+        guard ghostty_config_get(config, &value, key, UInt(key.count)), value > 0 else {
+            return defaultTerminalFontSizePoints
+        }
+        return CGFloat(value)
+    }
+
+    private static func displayModeFontScale(for screen: NSScreen?) -> CGFloat {
+        guard let screen, let nativeLogicalSize = nativeLogicalDisplaySize(for: screen) else {
+            return 1.0
+        }
+        guard nativeLogicalSize.width > 0, nativeLogicalSize.height > 0 else {
+            return 1.0
+        }
+
+        let widthScale = screen.frame.width / nativeLogicalSize.width
+        let heightScale = screen.frame.height / nativeLogicalSize.height
+        return max(1.0, min(max(widthScale, heightScale), 1.8))
+    }
+
+    private static func nativeLogicalDisplaySize(for screen: NSScreen) -> CGSize? {
+        guard let displayID = displayID(for: screen) else { return nil }
+
+        let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(displayID, options) as? [CGDisplayMode],
+              !modes.isEmpty else {
+            return nil
+        }
+
+        let nativeModes = modes.filter { ($0.ioFlags & nativeDisplayModeFlag) != 0 }
+        if let smallestNativeMode = nativeModes.min(by: { pointArea(of: $0) < pointArea(of: $1) }) {
+            return pointSize(for: smallestNativeMode)
+        }
+
+        let oneXModes = modes.filter { $0.pixelWidth == $0.width && $0.pixelHeight == $0.height }
+        if let largestOneXMode = oneXModes.max(by: { pointArea(of: $0) < pointArea(of: $1) }) {
+            let backingScale = max(screen.backingScaleFactor, 1.0)
+            return CGSize(
+                width: CGFloat(largestOneXMode.width) / backingScale,
+                height: CGFloat(largestOneXMode.height) / backingScale
+            )
+        }
+
+        return nil
+    }
+
+    private static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
+        guard let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+            return nil
+        }
+        return CGDirectDisplayID(screenNumber.uint32Value)
+    }
+
+    private static func pointSize(for mode: CGDisplayMode) -> CGSize {
+        CGSize(width: CGFloat(mode.width), height: CGFloat(mode.height))
+    }
+
+    private static func pointArea(of mode: CGDisplayMode) -> CGFloat {
+        CGFloat(mode.width) * CGFloat(mode.height)
     }
 
     deinit {
@@ -228,6 +329,12 @@ final class GhosttyRuntime: @unchecked Sendable {
 /// The surface creates its own Metal renderer using the NSView's layer.
 @MainActor
 class GhosttyMetalView: NSView, CALayerDelegate {
+    private static let resizeDebounceInterval: TimeInterval = 0.15
+    private static let abruptShrinkRatio: CGFloat = 0.5
+    private static let transientShrinkPixelWidth: CGFloat = 500
+    private static let transientShrinkPixelHeight: CGFloat = 300
+    private static let defaultContentScale: CGFloat = 2.0
+
     /// Registry of live terminal views keyed by Pane ID.
     /// Used to target the active terminal for remote input (voice paste, watch Enter).
     private static var registry: [UUID: GhosttyMetalView] = [:]
@@ -248,8 +355,12 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     var surface: ghostty_surface_t?
     nonisolated(unsafe) fileprivate var callbackSurface: ghostty_surface_t?
     private var renderObserver: NSObjectProtocol?
+    private var windowObservers: [NSObjectProtocol] = []
     private var trackingArea: NSTrackingArea?
     private let pane: Pane
+    private var lastAppliedFontSizePoints: CGFloat = 0
+    private var lastAppliedSurfacePixelSize: CGSize = .zero
+    private var pendingSurfaceResize: DispatchWorkItem?
 
     init(app: ghostty_app_t, pane: Pane) {
         self.pane = pane
@@ -259,15 +370,23 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
         // Create the surface - Ghostty will set up Metal on the layer itself
         let rawDirectory = pane.currentDirectory
-        let persistedDirectory = Self.validWorkingDirectory(from: rawDirectory)
-        print("[Ghostty] Pane \(pane.id): rawDirectory='\(rawDirectory)' persistedDirectory='\(persistedDirectory ?? "nil")'")
+        // Fall back to the user's home so new panes never inherit Pilot's own
+        // cwd (which could be whatever directory Pilot was launched from).
+        let persistedDirectory = Self.validWorkingDirectory(from: rawDirectory) ?? NSHomeDirectory()
+        print("[Ghostty] Pane \(pane.id): rawDirectory='\(rawDirectory)' persistedDirectory='\(persistedDirectory)'")
 
         // Install OSC 7 hook silently via ZDOTDIR override.
         // We create a temp .zshenv that installs the precmd hook, then restores
         // the real ZDOTDIR so the user's normal config loads.
         let zdotdir = Self.setupOSC7ZdotDir()
+        let pidsDir = Self.shellPidsDirectory()
         let envVars: [(key: String, value: String)] = zdotdir != nil
-            ? [("ZDOTDIR", zdotdir!), ("__PILOT_REAL_ZDOTDIR", NSHomeDirectory())]
+            ? [
+                ("ZDOTDIR", zdotdir!),
+                ("__PILOT_REAL_ZDOTDIR", NSHomeDirectory()),
+                ("PILOT_PANE_ID", pane.id.uuidString.lowercased()),
+                ("PILOT_PIDS_DIR", pidsDir),
+              ]
             : []
         let persistentSessionInput = PersistentTerminalSession.bootstrapCommand(
             for: pane,
@@ -325,6 +444,9 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
     override func removeFromSuperview() {
         Self.registry.removeValue(forKey: pane.id)
+        pendingSurfaceResize?.cancel()
+        pendingSurfaceResize = nil
+        tearDownWindowObservers()
         if let renderObserver {
             NotificationCenter.default.removeObserver(renderObserver)
             self.renderObserver = nil
@@ -352,12 +474,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
     override func layout() {
         super.layout()
-        guard let surface else { return }
-        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
-        let w = UInt32(bounds.width * scale)
-        let h = UInt32(bounds.height * scale)
-        ghostty_surface_set_size(surface, w, h)
-        ghostty_surface_set_content_scale(surface, Double(scale), Double(scale))
+        refreshSurfaceGeometry()
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -376,17 +493,205 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        configureWindowObservers()
         DispatchQueue.main.async { [weak self] in
-            guard let self, let window = self.window else { return }
+            guard let self else { return }
             // Don't grab focus here — all workspaces are rendered in a ZStack
             // and the last terminal to fire would steal focus from the active
             // workspace's terminal.  Workspace-level focus management
             // (focusTerminalIfNeededForWorkspaceActivation, etc.) handles this.
-            if let surface = self.surface {
-                let scale = window.backingScaleFactor
-                ghostty_surface_set_content_scale(surface, Double(scale), Double(scale))
-            }
+            self.refreshSurfaceGeometry()
         }
+    }
+
+    private func refreshSurfaceGeometry() {
+        guard let surface else { return }
+        applyFontSizeIfNeeded(surface: surface)
+        let geometry = currentSurfaceGeometry()
+        applySurfaceGeometryIfNeeded(
+            surface: surface,
+            pixelSize: geometry.pixelSize,
+            contentScaleX: geometry.contentScaleX,
+            contentScaleY: geometry.contentScaleY
+        )
+    }
+
+    private func applyFontSizeIfNeeded(surface: ghostty_surface_t) {
+        let fontSize = GhosttyRuntime.shared.terminalFontSize(for: window?.screen ?? NSScreen.main)
+        guard abs(fontSize - lastAppliedFontSizePoints) > 0.05 else { return }
+        guard let updatedConfig = GhosttyRuntime.shared.updatedConfig(overridingFontSize: fontSize) else { return }
+
+        ghostty_surface_update_config(surface, updatedConfig)
+        ghostty_config_free(updatedConfig)
+        lastAppliedFontSizePoints = fontSize
+    }
+
+    private func currentSurfaceGeometry() -> (
+        pixelSize: CGSize,
+        contentScaleX: CGFloat,
+        contentScaleY: CGFloat
+    ) {
+        let fallbackScale = resolvedContentScaleFallback()
+        let backingBounds = convertToBacking(bounds)
+
+        let pixelWidth = max(1, backingBounds.width.rounded(.down))
+        let pixelHeight = max(1, backingBounds.height.rounded(.down))
+
+        let contentScaleX = window != nil && bounds.width > 0
+            ? max(backingBounds.width / bounds.width, 0.0)
+            : fallbackScale
+        let contentScaleY = window != nil && bounds.height > 0
+            ? max(backingBounds.height / bounds.height, 0.0)
+            : fallbackScale
+
+        return (
+            pixelSize: CGSize(width: pixelWidth, height: pixelHeight),
+            contentScaleX: contentScaleX,
+            contentScaleY: contentScaleY
+        )
+    }
+
+    private func resolvedContentScaleFallback() -> CGFloat {
+        window?.screen?.backingScaleFactor
+            ?? window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? Self.defaultContentScale
+    }
+
+    private func configureWindowObservers() {
+        tearDownWindowObservers()
+
+        guard let window else { return }
+        let center = NotificationCenter.default
+        windowObservers = [
+            center.addObserver(
+                forName: NSWindow.didChangeBackingPropertiesNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshSurfaceGeometry()
+                }
+            },
+            center.addObserver(
+                forName: NSWindow.didChangeScreenNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshSurfaceGeometry()
+                }
+            },
+            center.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshSurfaceGeometry()
+                }
+            },
+        ]
+    }
+
+    private func tearDownWindowObservers() {
+        guard !windowObservers.isEmpty else { return }
+        let center = NotificationCenter.default
+        for observer in windowObservers {
+            center.removeObserver(observer)
+        }
+        windowObservers.removeAll()
+    }
+
+    private func applySurfaceGeometryIfNeeded(
+        surface: ghostty_surface_t,
+        pixelSize: CGSize,
+        contentScaleX: CGFloat,
+        contentScaleY: CGFloat
+    ) {
+        ghostty_surface_set_content_scale(
+            surface,
+            Double(contentScaleX),
+            Double(contentScaleY)
+        )
+
+        guard pixelSize.width >= 1, pixelSize.height >= 1 else { return }
+
+        if shouldDebounceAbruptShrink(to: pixelSize) {
+            scheduleSurfaceResize(
+                surface: surface,
+                pixelSize: pixelSize,
+                contentScaleX: contentScaleX,
+                contentScaleY: contentScaleY
+            )
+            return
+        }
+
+        pendingSurfaceResize?.cancel()
+        pendingSurfaceResize = nil
+        applySurfaceSize(
+            surface: surface,
+            pixelSize: pixelSize,
+            contentScaleX: contentScaleX,
+            contentScaleY: contentScaleY
+        )
+    }
+
+    private func shouldDebounceAbruptShrink(to pixelSize: CGSize) -> Bool {
+        guard let window, !window.inLiveResize else { return false }
+        guard lastAppliedSurfacePixelSize.width >= 1, lastAppliedSurfacePixelSize.height >= 1 else { return false }
+
+        let shrankAbruptly =
+            pixelSize.width < lastAppliedSurfacePixelSize.width * Self.abruptShrinkRatio ||
+            pixelSize.height < lastAppliedSurfacePixelSize.height * Self.abruptShrinkRatio
+        let isTransientlyTiny =
+            pixelSize.width < Self.transientShrinkPixelWidth ||
+            pixelSize.height < Self.transientShrinkPixelHeight
+
+        return shrankAbruptly && isTransientlyTiny
+    }
+
+    private func scheduleSurfaceResize(
+        surface: ghostty_surface_t,
+        pixelSize: CGSize,
+        contentScaleX: CGFloat,
+        contentScaleY: CGFloat
+    ) {
+        pendingSurfaceResize?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let liveSurface = self.surface, liveSurface == surface else { return }
+            self.pendingSurfaceResize = nil
+            self.applySurfaceSize(
+                surface: liveSurface,
+                pixelSize: pixelSize,
+                contentScaleX: contentScaleX,
+                contentScaleY: contentScaleY
+            )
+        }
+
+        pendingSurfaceResize = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.resizeDebounceInterval,
+            execute: workItem
+        )
+    }
+
+    private func applySurfaceSize(
+        surface: ghostty_surface_t,
+        pixelSize: CGSize,
+        contentScaleX: CGFloat,
+        contentScaleY: CGFloat
+    ) {
+        let width = max(1, UInt32(pixelSize.width.rounded(.down)))
+        let height = max(1, UInt32(pixelSize.height.rounded(.down)))
+        ghostty_surface_set_size(surface, width, height)
+        ghostty_surface_set_content_scale(
+            surface,
+            Double(contentScaleX),
+            Double(contentScaleY)
+        )
+        lastAppliedSurfacePixelSize = CGSize(width: CGFloat(width), height: CGFloat(height))
     }
 
     // Text accumulated during keyDown via insertText
@@ -687,11 +992,14 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
-        // Trackpad deltas arrive as high-resolution pixel values and felt too
-        // aggressive in the terminal, so damp them before passing them through.
-        let preciseScrollScale = 0.08
-        let x = event.hasPreciseScrollingDeltas ? event.scrollingDeltaX * preciseScrollScale : event.scrollingDeltaX
-        let y = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY * preciseScrollScale : event.scrollingDeltaY
+        // Damp raw scroll deltas — trackpad precise pixel deltas feel too
+        // aggressive, and mouse-wheel line deltas also scroll faster than
+        // we want in the terminal.
+        let preciseScrollScale = 0.004
+        let lineScrollScale = 0.05
+        let scale = event.hasPreciseScrollingDeltas ? preciseScrollScale : lineScrollScale
+        let x = event.scrollingDeltaX * scale
+        let y = event.scrollingDeltaY * scale
         ghostty_surface_mouse_scroll(
             surface,
             x,
@@ -806,8 +1114,13 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 
         let zshenv = """
-        # Pilot: install OSC 7 working directory reporting
-        __pilot_osc7_precmd() { printf '\\e]7;file://%s%s\\a' "$(hostname)" "$(pwd)"; }
+        # Pilot: install OSC 7 working directory reporting and shell pid tracking
+        __pilot_osc7_precmd() {
+            printf '\\e]7;file://%s%s\\a' "$(hostname)" "$(pwd)"
+            if [[ -n "$PILOT_PANE_ID" && -n "$PILOT_PIDS_DIR" ]]; then
+                print -n -- "$$" > "$PILOT_PIDS_DIR/$PILOT_PANE_ID.pid" 2>/dev/null
+            fi
+        }
         precmd_functions+=(__pilot_osc7_precmd)
         # Restore real ZDOTDIR and source the user's .zshenv if it exists
         export ZDOTDIR="$__PILOT_REAL_ZDOTDIR"
@@ -821,6 +1134,12 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         } catch {
             return nil
         }
+    }
+
+    static func shellPidsDirectory() -> String {
+        let dir = NSTemporaryDirectory() + "pilot-panes-\(ProcessInfo.processInfo.processIdentifier)"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        return dir
     }
 
     private nonisolated static func makeSurface(
@@ -845,6 +1164,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
                 )
             )
             surfaceCfg.scale_factor = Double(NSScreen.main?.backingScaleFactor ?? 2.0)
+            surfaceCfg.font_size = Float(GhosttyRuntime.shared.terminalFontSize(for: NSScreen.main))
             surfaceCfg.working_directory = directory
             surfaceCfg.initial_input = input
             surfaceCfg.env_vars = envPtrs

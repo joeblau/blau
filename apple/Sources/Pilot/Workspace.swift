@@ -4,6 +4,7 @@ import SwiftData
 enum PaneKind: String, Codable, CaseIterable {
     case terminal
     case browser
+    case simulator
 }
 
 enum AppearanceMode: String, Codable, CaseIterable {
@@ -164,6 +165,9 @@ final class Pane {
     @Relationship(deleteRule: .cascade)
     var browserState: BrowserState?
 
+    @Relationship(deleteRule: .cascade)
+    var simulatorState: SimulatorState?
+
     var workspace: Workspace?
 
     var kind: PaneKind {
@@ -176,8 +180,13 @@ final class Pane {
         self.kindRaw = kind.rawValue
         self.sortOrder = sortOrder
         self.currentDirectory = currentDirectory
-        if kind == .browser {
+        switch kind {
+        case .terminal:
+            break
+        case .browser:
             self.browserState = BrowserState()
+        case .simulator:
+            self.simulatorState = SimulatorState()
         }
     }
 

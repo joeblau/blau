@@ -152,6 +152,13 @@ struct ContentView: View {
                         Label("New Browser", systemImage: "safari")
                     }
                     .keyboardShortcut("b", modifiers: .command)
+
+                    Button {
+                        store.selectedWorkspace?.addPane(kind: .simulator, side: .right)
+                    } label: {
+                        Label("New Simulator", systemImage: "iphone")
+                    }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
                 }
                 .disabled(store.selectedWorkspace == nil)
                 Button {

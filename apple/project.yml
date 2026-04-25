@@ -40,7 +40,13 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Sources/Pilot/Pilot.entitlements
         GENERATE_INFOPLIST_FILE: false
         INFOPLIST_FILE: Sources/Pilot/Info.plist
-        OTHER_LDFLAGS: ["-lc++", "-framework", "Metal", "-framework", "QuartzCore", "-framework", "CoreText", "-framework", "IOKit", "-framework", "CoreGraphics", "-framework", "Foundation", "-framework", "Carbon", "-framework", "CoreFoundation", "-framework", "AppKit", "-framework", "CoreServices"]
+        # FRAMEWORK_SEARCH_PATHS exposes Xcode's private frameworks
+        # (CoreSimulator, SimulatorKit) for dlopen at runtime by the
+        # Simulator module. The frameworks are NOT link-time required.
+        FRAMEWORK_SEARCH_PATHS:
+          - $(inherited)
+          - $(DEVELOPER_DIR)/Library/PrivateFrameworks
+        OTHER_LDFLAGS: ["-lc++", "-framework", "Metal", "-framework", "MetalKit", "-framework", "QuartzCore", "-framework", "CoreText", "-framework", "IOKit", "-framework", "IOSurface", "-framework", "CoreGraphics", "-framework", "Foundation", "-framework", "Carbon", "-framework", "CoreFoundation", "-framework", "AppKit", "-framework", "CoreServices"]
 
   Copilot:
     type: application
@@ -87,4 +93,18 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.copilot.tests
         GENERATE_INFOPLIST_FILE: true
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Copilot.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Copilot"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+  PilotTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests/PilotTests
+    dependencies:
+      - target: Pilot
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.blau.pilot.tests
+        GENERATE_INFOPLIST_FILE: true
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Pilot.app/Contents/MacOS/Pilot"
         BUNDLE_LOADER: "$(TEST_HOST)"

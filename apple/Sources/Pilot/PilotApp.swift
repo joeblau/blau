@@ -18,7 +18,7 @@ struct PilotApp: App {
     @State private var didSetupSync = false
 
     init() {
-        let schema = Schema([Workspace.self, Pane.self, BrowserState.self])
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, SimulatorState.self])
         let container = try! ModelContainer(for: schema)
         self.modelContainer = container
         self._store = State(initialValue: WorkspaceStore(modelContext: container.mainContext))
@@ -29,6 +29,8 @@ struct PilotApp: App {
             ContentView(store: store, syncService: syncService, peerDeviceStatus: peerDeviceStatus, localAudioOutput: headphoneDetector.audioOutput, remoteTranscription: remoteTranscription)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                 .task {
+                    // Skip services that prompt for permissions when XCTest is host-running us.
+                    guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
                     _ = MouseBridge.shared.ensurePermissions()
                     headphoneDetector.start()
                     setupSync()
