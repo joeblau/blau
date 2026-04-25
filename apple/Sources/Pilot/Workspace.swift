@@ -18,6 +18,11 @@ enum InspectorTab: String, Codable, CaseIterable {
     case filesystem = "Files"
 }
 
+enum RootPathSource: String, Codable {
+    case automatic
+    case manual
+}
+
 enum PersistentTerminalSession {
     private static let tmuxCandidates = [
         "/opt/homebrew/bin/tmux",
@@ -199,6 +204,28 @@ final class Pane {
     var persistentSessionName: String {
         "pilot-\(id.uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
     }
+
+    /// Reads the live cwd of the pane's shell process from the kernel.
+    /// Unlike `currentDirectory` (updated only when the shell emits OSC 7 on
+    /// each prompt), this works even while a foreground process like Claude
+    /// Code owns the pty — the shell is paused but its cwd is still current.
+    func liveShellCurrentDirectory() -> String? {
+        let dir = "\(NSTemporaryDirectory())pilot-panes-\(ProcessInfo.processInfo.processIdentifier)"
+        let pidFile = "\(dir)/\(id.uuidString.lowercased()).pid"
+        guard let raw = try? String(contentsOfFile: pidFile, encoding: .utf8) else { return nil }
+        guard let pid = pid_t(raw.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 0 else { return nil }
+
+        var info = proc_vnodepathinfo()
+        let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
+        let result = proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size)
+        guard result == size else { return nil }
+
+        return withUnsafePointer(to: &info.pvi_cdir.vip_path) {
+            $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) {
+                String(cString: $0)
+            }
+        }
+    }
 }
 
 enum PaneAxis: String, Codable {
@@ -221,6 +248,7 @@ final class Workspace {
     var isPinned: Bool = false
     var workspaceSortOrder: Int = 0
     var rootPath: String = ""
+    var rootPathSourceRaw: String? = RootPathSource.automatic.rawValue
 
     @Relationship(deleteRule: .cascade, inverse: \Pane.workspace)
     var panes: [Pane] = []
@@ -250,6 +278,14 @@ final class Workspace {
             ?? sortedPanes.first { $0.kind == .terminal }
     }
 
+    var rootTrackingTerminalPane: Pane? {
+        if let selectedPane, selectedPane.kind == .terminal, !selectedPane.isCollapsed {
+            return selectedPane
+        }
+
+        return frontmostTerminalPane ?? leftmostTerminalPane
+    }
+
     var effectiveRootPath: String? {
         let trimmed = rootPath.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
@@ -271,6 +307,11 @@ final class Workspace {
     var inspectorTab: InspectorTab {
         get { InspectorTab(rawValue: inspectorTabRaw) ?? .actions }
         set { inspectorTabRaw = newValue.rawValue }
+    }
+
+    var rootPathSource: RootPathSource {
+        get { RootPathSource(rawValue: rootPathSourceRaw ?? "") ?? .automatic }
+        set { rootPathSourceRaw = newValue.rawValue }
     }
 
     init(name: String) {
@@ -517,17 +558,43 @@ final class Workspace {
     }
 
     func syncDefaultRootPathIfNeeded(using pane: Pane? = nil) {
-        guard effectiveRootPath == nil else { return }
-        guard let leftmostTerminalPane else { return }
-        if let pane, pane.id != leftmostTerminalPane.id {
+        guard rootPathSource == .automatic else { return }
+
+        guard let rootTrackingTerminalPane else {
+            if !rootPath.isEmpty {
+                rootPath = ""
+                try? modelContext?.save()
+            }
             return
         }
 
-        let directory = leftmostTerminalPane.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !directory.isEmpty,
-              let repoRoot = GitCommitStore.findGitRoot(from: directory) else { return }
+        if let pane, pane.id != rootTrackingTerminalPane.id {
+            return
+        }
 
-        rootPath = repoRoot
+        let liveDirectory = rootTrackingTerminalPane.liveShellCurrentDirectory()?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let cachedDirectory = rootTrackingTerminalPane.currentDirectory
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let directory = (liveDirectory?.isEmpty == false ? liveDirectory! : cachedDirectory)
+        let repoRoot = directory.isEmpty ? nil : GitCommitStore.findGitRoot(from: directory)
+        let nextRootPath = repoRoot ?? ""
+
+        guard rootPath != nextRootPath else { return }
+        rootPath = nextRootPath
+        try? modelContext?.save()
+    }
+
+    func setRootPath(_ path: String) {
+        let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextRootPath = trimmedPath.isEmpty
+            ? ""
+            : (trimmedPath as NSString).expandingTildeInPath
+
+        let nextSource: RootPathSource = nextRootPath.isEmpty ? .automatic : .manual
+        guard rootPath != nextRootPath || rootPathSource != nextSource else { return }
+        rootPath = nextRootPath
+        rootPathSource = nextSource
         try? modelContext?.save()
     }
 
@@ -536,6 +603,10 @@ final class Workspace {
     }
 
     private func inheritedDirectoryForNewTerminal() -> String {
+        if let effectiveRootPath {
+            return effectiveRootPath
+        }
+
         if let selectedPaneID,
            let selectedPane = sortedPanes.first(where: { $0.id == selectedPaneID }),
            selectedPane.kind == .terminal,

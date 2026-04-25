@@ -9,6 +9,8 @@ struct ContentView: View {
     var localAudioOutput: AudioOutputDevice?
     var remoteTranscription: TranscriptionService
     @State private var gitStore = GitCommitStore()
+    @State private var rootPathEditorWorkspaceID: UUID?
+    @State private var rootPathEditorText = ""
     @FocusState private var isBrowserURLFieldFocused: Bool
 
     var body: some View {
@@ -111,6 +113,17 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .pilotFocusBrowserAddressBar)) { _ in
             focusBrowserAddressBar()
         }
+        .alert("Update Root Path", isPresented: rootPathEditorPresentedBinding) {
+            TextField("Root path", text: $rootPathEditorText)
+
+            Button("Cancel", role: .cancel) {
+                dismissRootPathEditor()
+            }
+
+            Button("Sync") {
+                syncEditedRootPath()
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button(action: store.addWorkspace) {
@@ -199,6 +212,14 @@ struct ContentView: View {
         }
         .tag(workspace.id)
         .contextMenu {
+            Button {
+                showRootPathEditor(for: workspace)
+            } label: {
+                Label("Update Root Path", systemImage: "arrow.triangle.2.circlepath")
+            }
+
+            Divider()
+
             Button {
                 store.togglePin(workspace)
             } label: {
@@ -368,8 +389,44 @@ struct ContentView: View {
         store.selectedWorkspace?.effectiveRootPath
     }
 
+    private var rootPathEditorPresentedBinding: Binding<Bool> {
+        Binding(
+            get: { rootPathEditorWorkspaceID != nil },
+            set: { isPresented in
+                if !isPresented {
+                    dismissRootPathEditor()
+                }
+            }
+        )
+    }
+
     private func syncSelectedWorkspaceRootPath() {
         store.selectedWorkspace?.syncDefaultRootPathIfNeeded()
+    }
+
+    private func showRootPathEditor(for workspace: Workspace) {
+        rootPathEditorWorkspaceID = workspace.id
+        rootPathEditorText = workspace.rootPath
+    }
+
+    private func dismissRootPathEditor() {
+        rootPathEditorWorkspaceID = nil
+        rootPathEditorText = ""
+    }
+
+    private func syncEditedRootPath() {
+        guard let workspace = workspaceForRootPathEditor else {
+            dismissRootPathEditor()
+            return
+        }
+
+        workspace.setRootPath(rootPathEditorText)
+        dismissRootPathEditor()
+    }
+
+    private var workspaceForRootPathEditor: Workspace? {
+        guard let rootPathEditorWorkspaceID else { return nil }
+        return store.workspaces.first { $0.id == rootPathEditorWorkspaceID }
     }
 
     private func syncInspectorRepo(_ repoPath: String?) {
