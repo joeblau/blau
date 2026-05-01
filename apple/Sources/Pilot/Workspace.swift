@@ -4,7 +4,23 @@ import SwiftData
 enum PaneKind: String, Codable, CaseIterable {
     case terminal
     case browser
-    case simulator
+    case device
+
+    var displayName: String {
+        switch self {
+        case .terminal: "Terminal"
+        case .browser: "Browser"
+        case .device: "Device"
+        }
+    }
+
+    var systemImageName: String {
+        switch self {
+        case .terminal: "terminal"
+        case .browser: "safari"
+        case .device: "iphone.gen3"
+        }
+    }
 }
 
 enum AppearanceMode: String, Codable, CaseIterable {
@@ -165,9 +181,6 @@ final class Pane {
     @Relationship(deleteRule: .cascade)
     var browserState: BrowserState?
 
-    @Relationship(deleteRule: .cascade)
-    var simulatorState: SimulatorState?
-
     var workspace: Workspace?
 
     var kind: PaneKind {
@@ -185,8 +198,8 @@ final class Pane {
             break
         case .browser:
             self.browserState = BrowserState()
-        case .simulator:
-            self.simulatorState = SimulatorState()
+        case .device:
+            break
         }
     }
 
@@ -373,6 +386,15 @@ final class Workspace {
 
     func removePane(_ pane: Pane) {
         PersistentTerminalSession.killSession(for: pane)
+        if pane.kind == .device {
+            let paneID = pane.id
+            // `removePane` is invoked from SwiftUI on the main thread, but
+            // isn't `@MainActor`-annotated; assume the isolation rather than
+            // jump asynchronously so teardown happens before the row drops.
+            MainActor.assumeIsolated {
+                DeviceCaptureRegistry.shared.remove(paneID: paneID)
+            }
+        }
         panes.removeAll { $0.id == pane.id }
         if selectedPaneID == pane.id {
             selectedPaneID = sortedPanes.first(where: { !$0.isCollapsed })?.id ?? sortedPanes.first?.id
@@ -387,6 +409,47 @@ final class Workspace {
     func setFrontmostTerminalPaneID(_ paneID: UUID?) {
         guard frontmostTerminalPaneID != paneID else { return }
         frontmostTerminalPaneID = paneID
+        try? modelContext?.save()
+    }
+
+    /// Move the selection to the next pane, wrapping around. In focus mode
+    /// (one pane full-screen, others collapsed) this re-focuses the next
+    /// pane instead — i.e. ⌘→ acts like ⌘} between browser tabs.
+    func selectNextPane() { cyclePane(by: 1) }
+
+    /// Move the selection to the previous pane, wrapping around. Same focus
+    /// behavior as `selectNextPane`.
+    func selectPreviousPane() { cyclePane(by: -1) }
+
+    private func cyclePane(by delta: Int) {
+        let allPanes = sortedPanes
+        guard allPanes.count > 1 else { return }
+
+        // Focus mode: cycle through every pane and switch the full-screened
+        // one. The user explicitly opted into single-pane viewing, so the
+        // arrow keys should rotate that pane like tabs.
+        if focusedPaneID != nil {
+            let currentIndex = allPanes.firstIndex(where: { $0.id == focusedPaneID }) ?? 0
+            let count = allPanes.count
+            let nextIndex = ((currentIndex + delta) % count + count) % count
+            focusPane(allPanes[nextIndex])
+            return
+        }
+
+        // Normal split mode: skip collapsed panes since selecting an invisible
+        // slit isn't useful.
+        let visible = allPanes.filter { !$0.isCollapsed }
+        guard visible.count > 1 else { return }
+
+        let currentIndex = visible.firstIndex(where: { $0.id == selectedPaneID }) ?? 0
+        let count = visible.count
+        let nextIndex = ((currentIndex + delta) % count + count) % count
+        let next = visible[nextIndex]
+
+        selectedPaneID = next.id
+        if next.kind == .terminal {
+            frontmostTerminalPaneID = next.id
+        }
         try? modelContext?.save()
     }
 

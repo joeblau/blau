@@ -100,9 +100,9 @@ struct WorkspaceView: View {
             return NSItemProvider(object: pane.id.uuidString as NSString)
         } preview: {
             HStack(spacing: 6) {
-                Image(systemName: pane.kind == .terminal ? "terminal" : "safari")
+                Image(systemName: pane.kind.systemImageName)
                     .font(.system(size: 11))
-                Text(pane.kind == .terminal ? "Terminal" : "Browser")
+                Text(pane.kind.displayName)
                     .font(.system(size: 12))
             }
             .padding(.horizontal, 14)
@@ -460,11 +460,11 @@ struct TabItemContent: View {
                     .transition(.opacity)
             }
 
-            Image(systemName: pane.kind == .terminal ? "terminal" : "safari")
+            Image(systemName: pane.kind.systemImageName)
                 .font(.system(size: 11))
                 .foregroundStyle(isSelected ? .primary : .secondary)
 
-            Text(pane.kind == .terminal ? "Terminal" : "Browser")
+            Text(pane.kind.displayName)
                 .font(.system(size: 12))
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? .primary : .secondary)
@@ -480,7 +480,7 @@ struct TabItemContent: View {
     }
 
     private var paneTitle: String {
-        pane.kind == .terminal ? "Terminal" : "Browser"
+        pane.kind.displayName
     }
 
     private func headerButton(systemName: String, help: String, action: @escaping () -> Void) -> some View {
@@ -540,7 +540,7 @@ private struct CollapsedPaneSlit: View {
         .help(
             pane.kind == .terminal
                 ? "Show Terminal. Hidden terminals keep running."
-                : "Unhide Browser"
+                : "Unhide \(pane.kind.displayName)"
         )
     }
 }
@@ -583,10 +583,8 @@ struct PaneView: View {
             if let state = pane.browserState {
                 BrowserPaneView(state: state, isActive: isWorkspaceActive, isSelected: isSelected)
             }
-        case .simulator:
-            if let state = pane.simulatorState {
-                SimulatorPaneView(state: state, isActive: isWorkspaceActive, isSelected: isSelected)
-            }
+        case .device:
+            DevicePaneView(paneID: pane.id, isActive: isWorkspaceActive, isSelected: isSelected)
         }
     }
 }

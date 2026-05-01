@@ -4,12 +4,11 @@ import Testing
 @Suite("Pane init per-kind state (R1-R5 regressions)")
 struct PaneInitRegressionTests {
 
-    // R1: New — .simulator init creates a SimulatorState
+    // R1: Device init has no persistent per-kind state; runtime state is owned by the view.
     @Test
-    func simulatorKindInitCreatesSimulatorState() {
-        let pane = Pane(kind: .simulator)
-        #expect(pane.kind == .simulator)
-        #expect(pane.simulatorState != nil)
+    func deviceKindInitHasNoPerKindState() {
+        let pane = Pane(kind: .device)
+        #expect(pane.kind == .device)
         #expect(pane.browserState == nil)
     }
 
@@ -19,7 +18,6 @@ struct PaneInitRegressionTests {
         let pane = Pane(kind: .browser)
         #expect(pane.kind == .browser)
         #expect(pane.browserState != nil)
-        #expect(pane.simulatorState == nil)
     }
 
     // R3: Existing — .terminal init still has no per-kind state
@@ -28,7 +26,6 @@ struct PaneInitRegressionTests {
         let pane = Pane(kind: .terminal)
         #expect(pane.kind == .terminal)
         #expect(pane.browserState == nil)
-        #expect(pane.simulatorState == nil)
     }
 
     // R4: Pane default kind is still .terminal
@@ -38,11 +35,11 @@ struct PaneInitRegressionTests {
         #expect(pane.kind == .terminal)
     }
 
-    // R5: PaneKind cases remain stable (schema stability)
+    // R5: PaneKind cases remain stable
     @Test
     func paneKindCaseCount() {
         #expect(PaneKind.allCases.count == 3)
-        #expect(Set(PaneKind.allCases) == Set([.terminal, .browser, .simulator]))
+        #expect(Set(PaneKind.allCases) == Set([.terminal, .browser, .device]))
     }
 
     // R6: PaneKind raw values are stable (SwiftData persistence compat)
@@ -50,6 +47,6 @@ struct PaneInitRegressionTests {
     func paneKindRawValuesAreStable() {
         #expect(PaneKind.terminal.rawValue == "terminal")
         #expect(PaneKind.browser.rawValue == "browser")
-        #expect(PaneKind.simulator.rawValue == "simulator")
+        #expect(PaneKind.device.rawValue == "device")
     }
 }

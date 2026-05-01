@@ -18,7 +18,7 @@ struct PilotApp: App {
     @State private var didSetupSync = false
 
     init() {
-        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, SimulatorState.self])
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self])
         let container = try! ModelContainer(for: schema)
         self.modelContainer = container
         self._store = State(initialValue: WorkspaceStore(modelContext: container.mainContext))

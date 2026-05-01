@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var gitStore = GitCommitStore()
     @State private var rootPathEditorWorkspaceID: UUID?
     @State private var rootPathEditorText = ""
+    @AppStorage("sidebar.pinnedExpanded") private var pinnedSectionExpanded = true
+    @AppStorage("sidebar.workspacesExpanded") private var workspacesSectionExpanded = true
     @FocusState private var isBrowserURLFieldFocused: Bool
 
     var body: some View {
@@ -25,19 +27,23 @@ struct ContentView: View {
                 let unpinned = workspaces.filter { !$0.isPinned }
 
                 if !pinned.isEmpty {
-                    Section("Pinned") {
+                    Section(isExpanded: $pinnedSectionExpanded) {
                         ForEach(pinned) { workspace in
                             workspaceRow(workspace)
                         }
                         .onMove(perform: store.movePinnedWorkspaces)
+                    } header: {
+                        Text("Pinned")
                     }
                 }
 
-                Section("Workspaces") {
+                Section(isExpanded: $workspacesSectionExpanded) {
                     ForEach(unpinned) { workspace in
                         workspaceRow(workspace)
                     }
                     .onMove(perform: store.moveUnpinnedWorkspaces)
+                } header: {
+                    Text("Workspaces")
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -135,6 +141,9 @@ struct ContentView: View {
                    pane.kind == .browser,
                    let browserState = pane.browserState {
                     browserToolbar(state: browserState)
+                } else if let pane = store.selectedWorkspace?.selectedPane,
+                          pane.kind == .device {
+                    deviceToolbar(paneID: pane.id)
                 }
             }
             ToolbarItemGroup(placement: .primaryAction) {
@@ -154,9 +163,9 @@ struct ContentView: View {
                     .keyboardShortcut("b", modifiers: .command)
 
                     Button {
-                        store.selectedWorkspace?.addPane(kind: .simulator, side: .right)
+                        store.selectedWorkspace?.addPane(kind: .device, side: .right)
                     } label: {
-                        Label("New Simulator", systemImage: "iphone")
+                        Label("New Device", systemImage: "iphone.gen3")
                     }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
                 }
@@ -189,6 +198,26 @@ struct ContentView: View {
             }
             .keyboardShortcut("w", modifiers: .command)
             .hidden()
+            Button("") {
+                store.selectedWorkspace?.selectNextPane()
+                focusSelectedPaneIfTerminal()
+            }
+            .keyboardShortcut(.tab, modifiers: .control)
+            .hidden()
+            Button("") {
+                store.selectedWorkspace?.selectPreviousPane()
+                focusSelectedPaneIfTerminal()
+            }
+            .keyboardShortcut(.tab, modifiers: [.control, .shift])
+            .hidden()
+        }
+    }
+
+    private func focusSelectedPaneIfTerminal() {
+        guard let pane = store.selectedWorkspace?.selectedPane,
+              pane.kind == .terminal else { return }
+        DispatchQueue.main.async {
+            _ = GhosttyMetalView.focus(paneID: pane.id)
         }
     }
 
@@ -240,6 +269,32 @@ struct ContentView: View {
                 store.deleteWorkspace(workspace)
             }
         }
+    }
+
+    @ViewBuilder
+    private func deviceToolbar(paneID: UUID) -> some View {
+        let session = DeviceCaptureRegistry.shared.session(for: paneID)
+        let isStreaming = session.status == .streaming
+
+        Button {
+            session.toggleRecording()
+        } label: {
+            Label(
+                session.isRecording ? "Stop Recording" : "Record Screen",
+                systemImage: session.isRecording ? "stop.circle.fill" : "record.circle"
+            )
+            .foregroundStyle(session.isRecording ? .red : .primary)
+        }
+        .disabled(!isStreaming)
+        .help(session.isRecording ? "Stop recording" : "Record the iPhone screen")
+
+        Button {
+            session.takeScreenshot()
+        } label: {
+            Label("Take Screenshot", systemImage: "camera")
+        }
+        .disabled(!isStreaming)
+        .help("Save a screenshot of the iPhone screen to the Desktop")
     }
 
     @ViewBuilder
