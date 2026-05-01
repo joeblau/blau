@@ -351,18 +351,9 @@ struct ContentView: View {
             .font(.system(size: 13, weight: .medium))
             .focused($isBrowserURLFieldFocused)
             .onSubmit { state.navigate() }
-            .padding(.leading, 14)
-            .padding(.trailing, 36)
-            .padding(.vertical, 7)
+            .padding(.leading, 12)
+            .padding(.trailing, 32)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.7), lineWidth: 1)
-            }
             .overlay(alignment: .trailing) {
                 browserReloadButton(state: state)
                     .padding(.trailing, 10)
