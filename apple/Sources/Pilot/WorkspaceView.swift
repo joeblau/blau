@@ -581,7 +581,12 @@ struct PaneView: View {
             TerminalViewRepresentable(pane: pane, isActive: isWorkspaceActive)
         case .browser:
             if let state = pane.browserState {
-                BrowserPaneView(state: state, isActive: isWorkspaceActive, isSelected: isSelected)
+                BrowserPaneView(
+                    state: state,
+                    rootPath: pane.workspace?.effectiveRootPath,
+                    isActive: isWorkspaceActive,
+                    isSelected: isSelected
+                )
             }
         case .device:
             DevicePaneView(paneID: pane.id, isActive: isWorkspaceActive, isSelected: isSelected)
@@ -604,18 +609,39 @@ struct TerminalViewRepresentable: View {
 
 struct BrowserPaneView: View {
     let state: BrowserState
+    let rootPath: String?
     let isActive: Bool
     let isSelected: Bool
 
+    @State private var hasLoadedAnyURL: Bool = false
+
     var body: some View {
-        WebViewRepresentable(
-            state: state,
-            navigationRequestID: state.navigationRequestID,
-            inspectorToggleRequestID: state.inspectorToggleRequestID,
-            appearanceMode: state.appearanceMode,
-            isActive: isActive,
-            isSelected: isSelected
-        )
+        if shouldShowStartPage {
+            BrowserStartPageView(rootPath: rootPath) { server in
+                state.urlText = server.url.absoluteString
+                state.navigate()
+                hasLoadedAnyURL = true
+            }
+            .background(Color(nsColor: .windowBackgroundColor))
+        } else {
+            WebViewRepresentable(
+                state: state,
+                navigationRequestID: state.navigationRequestID,
+                inspectorToggleRequestID: state.inspectorToggleRequestID,
+                appearanceMode: state.appearanceMode,
+                isActive: isActive,
+                isSelected: isSelected
+            )
+            .onAppear { hasLoadedAnyURL = true }
+        }
+    }
+
+    private var shouldShowStartPage: Bool {
+        // Sticky: once a URL is loaded, never flip back even if the user
+        // clears the address bar to type a new one. Persisted panes that
+        // already have a `urlText` skip the start page entirely on launch.
+        if hasLoadedAnyURL { return false }
+        return state.urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
