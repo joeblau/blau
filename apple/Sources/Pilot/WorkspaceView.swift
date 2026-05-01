@@ -585,7 +585,8 @@ struct PaneView: View {
                     state: state,
                     rootPath: pane.workspace?.effectiveRootPath,
                     isActive: isWorkspaceActive,
-                    isSelected: isSelected
+                    isSelected: isSelected,
+                    onSelect: { pane.workspace?.selectedPaneID = pane.id }
                 )
             }
         case .device:
@@ -612,12 +613,14 @@ struct BrowserPaneView: View {
     let rootPath: String?
     let isActive: Bool
     let isSelected: Bool
+    let onSelect: () -> Void
 
     @State private var hasLoadedAnyURL: Bool = false
 
     var body: some View {
         if shouldShowStartPage {
             BrowserStartPageView(rootPath: rootPath) { server in
+                onSelect()
                 state.urlText = server.url.absoluteString
                 state.navigate()
                 hasLoadedAnyURL = true
@@ -630,7 +633,8 @@ struct BrowserPaneView: View {
                 inspectorToggleRequestID: state.inspectorToggleRequestID,
                 appearanceMode: state.appearanceMode,
                 isActive: isActive,
-                isSelected: isSelected
+                isSelected: isSelected,
+                onSelect: onSelect
             )
             .onAppear { hasLoadedAnyURL = true }
         }
@@ -652,6 +656,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     let appearanceMode: AppearanceMode
     let isActive: Bool
     let isSelected: Bool
+    let onSelect: () -> Void
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -662,6 +667,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         webView.isHidden = !isActive
         webView.isPaneSelected = isSelected
         webView.onReload = { state.requestNavigationCommand("blau://reload") }
+        webView.onSelect = onSelect
         if let url = initialURL {
             webView.load(URLRequest(url: url))
         }
@@ -675,6 +681,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         if let browserView = nsView as? BrowserWebView {
             browserView.isPaneSelected = isSelected
             browserView.onReload = { state.requestNavigationCommand("blau://reload") }
+            browserView.onSelect = onSelect
         }
 
         nsView.isHidden = !isActive
@@ -781,7 +788,16 @@ struct WebViewRepresentable: NSViewRepresentable {
 
 final class BrowserWebView: WKWebView {
     var onReload: (() -> Void)?
+    var onSelect: (() -> Void)?
     var isPaneSelected = false
+
+    override func mouseDown(with event: NSEvent) {
+        // The WebView swallows clicks before SwiftUI's pane-level
+        // `.onTapGesture` sees them, so the pane never becomes selected.
+        // Notify out before the WebView consumes the event.
+        onSelect?()
+        super.mouseDown(with: event)
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if isPaneSelected,

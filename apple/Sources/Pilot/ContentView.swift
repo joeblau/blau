@@ -432,10 +432,38 @@ struct ContentView: View {
 
     private func focusBrowserAddressBar() {
         guard selectedBrowserState != nil else { return }
+
+        // SwiftUI's `@FocusState` is flaky when the target TextField lives
+        // inside a `ToolbarItem`, and `NSApp.sendAction(selectAll:)` only
+        // works once the field editor is already first responder. Drop to
+        // AppKit: walk the key window for our URL field (matched by
+        // placeholder) and call `selectText(_:)`, which both takes first
+        // responder and selects the existing text — exactly what Safari's
+        // "Open Location" command does.
         isBrowserURLFieldFocused = true
         DispatchQueue.main.async {
-            NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+            for window in NSApp.windows {
+                if let field = Self.findAddressTextField(in: window.contentView)
+                    ?? Self.findAddressTextField(in: window.contentView?.superview) {
+                    field.selectText(nil)
+                    return
+                }
+            }
         }
+    }
+
+    private static func findAddressTextField(in view: NSView?) -> NSTextField? {
+        guard let view else { return nil }
+        if let field = view as? NSTextField,
+           field.placeholderString == "URL" {
+            return field
+        }
+        for sub in view.subviews {
+            if let found = findAddressTextField(in: sub) {
+                return found
+            }
+        }
+        return nil
     }
 
     private func focusSelectedWorkspaceTerminal() {
