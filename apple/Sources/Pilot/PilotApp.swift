@@ -29,6 +29,8 @@ struct PilotApp: App {
             ContentView(store: store, syncService: syncService, peerDeviceStatus: peerDeviceStatus, localAudioOutput: headphoneDetector.audioOutput, remoteTranscription: remoteTranscription)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                 .task {
+                    // Skip services that prompt for permissions when XCTest is host-running us.
+                    guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
                     _ = MouseBridge.shared.ensurePermissions()
                     headphoneDetector.start()
                     setupSync()

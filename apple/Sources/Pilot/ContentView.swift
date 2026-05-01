@@ -9,6 +9,10 @@ struct ContentView: View {
     var localAudioOutput: AudioOutputDevice?
     var remoteTranscription: TranscriptionService
     @State private var gitStore = GitCommitStore()
+    @State private var rootPathEditorWorkspaceID: UUID?
+    @State private var rootPathEditorText = ""
+    @AppStorage("sidebar.pinnedExpanded") private var pinnedSectionExpanded = true
+    @AppStorage("sidebar.workspacesExpanded") private var workspacesSectionExpanded = true
     @FocusState private var isBrowserURLFieldFocused: Bool
 
     var body: some View {
@@ -23,19 +27,23 @@ struct ContentView: View {
                 let unpinned = workspaces.filter { !$0.isPinned }
 
                 if !pinned.isEmpty {
-                    Section("Pinned") {
+                    Section(isExpanded: $pinnedSectionExpanded) {
                         ForEach(pinned) { workspace in
                             workspaceRow(workspace)
                         }
                         .onMove(perform: store.movePinnedWorkspaces)
+                    } header: {
+                        Text("Pinned")
                     }
                 }
 
-                Section("Workspaces") {
+                Section(isExpanded: $workspacesSectionExpanded) {
                     ForEach(unpinned) { workspace in
                         workspaceRow(workspace)
                     }
                     .onMove(perform: store.moveUnpinnedWorkspaces)
+                } header: {
+                    Text("Workspaces")
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -111,6 +119,17 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .pilotFocusBrowserAddressBar)) { _ in
             focusBrowserAddressBar()
         }
+        .alert("Update Root Path", isPresented: rootPathEditorPresentedBinding) {
+            TextField("Root path", text: $rootPathEditorText)
+
+            Button("Cancel", role: .cancel) {
+                dismissRootPathEditor()
+            }
+
+            Button("Sync") {
+                syncEditedRootPath()
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button(action: store.addWorkspace) {
@@ -122,6 +141,9 @@ struct ContentView: View {
                    pane.kind == .browser,
                    let browserState = pane.browserState {
                     browserToolbar(state: browserState)
+                } else if let pane = store.selectedWorkspace?.selectedPane,
+                          pane.kind == .device {
+                    deviceToolbar(paneID: pane.id)
                 }
             }
             ToolbarItemGroup(placement: .primaryAction) {
@@ -139,6 +161,13 @@ struct ContentView: View {
                         Label("New Browser", systemImage: "safari")
                     }
                     .keyboardShortcut("b", modifiers: .command)
+
+                    Button {
+                        store.selectedWorkspace?.addPane(kind: .device, side: .right)
+                    } label: {
+                        Label("New Device", systemImage: "iphone.gen3")
+                    }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
                 }
                 .disabled(store.selectedWorkspace == nil)
                 Button {
@@ -169,6 +198,26 @@ struct ContentView: View {
             }
             .keyboardShortcut("w", modifiers: .command)
             .hidden()
+            Button("") {
+                store.selectedWorkspace?.selectNextPane()
+                focusSelectedPaneIfTerminal()
+            }
+            .keyboardShortcut(.tab, modifiers: .control)
+            .hidden()
+            Button("") {
+                store.selectedWorkspace?.selectPreviousPane()
+                focusSelectedPaneIfTerminal()
+            }
+            .keyboardShortcut(.tab, modifiers: [.control, .shift])
+            .hidden()
+        }
+    }
+
+    private func focusSelectedPaneIfTerminal() {
+        guard let pane = store.selectedWorkspace?.selectedPane,
+              pane.kind == .terminal else { return }
+        DispatchQueue.main.async {
+            _ = GhosttyMetalView.focus(paneID: pane.id)
         }
     }
 
@@ -200,6 +249,14 @@ struct ContentView: View {
         .tag(workspace.id)
         .contextMenu {
             Button {
+                showRootPathEditor(for: workspace)
+            } label: {
+                Label("Update Root Path", systemImage: "arrow.triangle.2.circlepath")
+            }
+
+            Divider()
+
+            Button {
                 store.togglePin(workspace)
             } label: {
                 Label(
@@ -212,6 +269,32 @@ struct ContentView: View {
                 store.deleteWorkspace(workspace)
             }
         }
+    }
+
+    @ViewBuilder
+    private func deviceToolbar(paneID: UUID) -> some View {
+        let session = DeviceCaptureRegistry.shared.session(for: paneID)
+        let isStreaming = session.status == .streaming
+
+        Button {
+            session.toggleRecording()
+        } label: {
+            Label(
+                session.isRecording ? "Stop Recording" : "Record Screen",
+                systemImage: session.isRecording ? "stop.circle.fill" : "record.circle"
+            )
+            .foregroundStyle(session.isRecording ? .red : .primary)
+        }
+        .disabled(!isStreaming)
+        .help(session.isRecording ? "Stop recording" : "Record the iPhone screen")
+
+        Button {
+            session.takeScreenshot()
+        } label: {
+            Label("Take Screenshot", systemImage: "camera")
+        }
+        .disabled(!isStreaming)
+        .help("Save a screenshot of the iPhone screen to the Desktop")
     }
 
     @ViewBuilder
@@ -368,8 +451,44 @@ struct ContentView: View {
         store.selectedWorkspace?.effectiveRootPath
     }
 
+    private var rootPathEditorPresentedBinding: Binding<Bool> {
+        Binding(
+            get: { rootPathEditorWorkspaceID != nil },
+            set: { isPresented in
+                if !isPresented {
+                    dismissRootPathEditor()
+                }
+            }
+        )
+    }
+
     private func syncSelectedWorkspaceRootPath() {
         store.selectedWorkspace?.syncDefaultRootPathIfNeeded()
+    }
+
+    private func showRootPathEditor(for workspace: Workspace) {
+        rootPathEditorWorkspaceID = workspace.id
+        rootPathEditorText = workspace.rootPath
+    }
+
+    private func dismissRootPathEditor() {
+        rootPathEditorWorkspaceID = nil
+        rootPathEditorText = ""
+    }
+
+    private func syncEditedRootPath() {
+        guard let workspace = workspaceForRootPathEditor else {
+            dismissRootPathEditor()
+            return
+        }
+
+        workspace.setRootPath(rootPathEditorText)
+        dismissRootPathEditor()
+    }
+
+    private var workspaceForRootPathEditor: Workspace? {
+        guard let rootPathEditorWorkspaceID else { return nil }
+        return store.workspaces.first { $0.id == rootPathEditorWorkspaceID }
     }
 
     private func syncInspectorRepo(_ repoPath: String?) {

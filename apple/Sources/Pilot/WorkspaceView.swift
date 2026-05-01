@@ -34,6 +34,7 @@ struct WorkspaceView: View {
             syncFocusForSelectedPane()
         }
         .onChange(of: workspace.selectedPaneID) {
+            workspace.syncDefaultRootPathIfNeeded()
             syncFocusForSelectedPane()
         }
     }
@@ -99,9 +100,9 @@ struct WorkspaceView: View {
             return NSItemProvider(object: pane.id.uuidString as NSString)
         } preview: {
             HStack(spacing: 6) {
-                Image(systemName: pane.kind == .terminal ? "terminal" : "safari")
+                Image(systemName: pane.kind.systemImageName)
                     .font(.system(size: 11))
-                Text(pane.kind == .terminal ? "Terminal" : "Browser")
+                Text(pane.kind.displayName)
                     .font(.system(size: 12))
             }
             .padding(.horizontal, 14)
@@ -166,7 +167,7 @@ struct WorkspaceView: View {
                         PaneView(
                             pane: pane,
                             isSelected: workspace.selectedPaneID == pane.id && !pane.isCollapsed,
-                            isWorkspaceActive: isActive && !pane.isCollapsed
+                            isWorkspaceActive: isActive
                         )
                         .opacity(pane.isCollapsed ? 0 : 1)
                         .allowsHitTesting(!pane.isCollapsed)
@@ -435,10 +436,19 @@ struct TabItemContent: View {
 
     var body: some View {
         if pane.isCollapsed {
-            headerButton(systemName: "eye", help: "Unhide \(paneTitle)", action: onUnhide)
+            collapsedContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             expandedContent
+        }
+    }
+
+    @ViewBuilder
+    private var collapsedContent: some View {
+        if pane.kind == .terminal {
+            headerButton(systemName: "eye", help: "Show Terminal. Hidden terminals keep running.", action: onUnhide)
+        } else {
+            headerButton(systemName: "eye", help: "Unhide \(paneTitle)", action: onUnhide)
         }
     }
 
@@ -450,11 +460,11 @@ struct TabItemContent: View {
                     .transition(.opacity)
             }
 
-            Image(systemName: pane.kind == .terminal ? "terminal" : "safari")
+            Image(systemName: pane.kind.systemImageName)
                 .font(.system(size: 11))
                 .foregroundStyle(isSelected ? .primary : .secondary)
 
-            Text(pane.kind == .terminal ? "Terminal" : "Browser")
+            Text(pane.kind.displayName)
                 .font(.system(size: 12))
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? .primary : .secondary)
@@ -470,7 +480,7 @@ struct TabItemContent: View {
     }
 
     private var paneTitle: String {
-        pane.kind == .terminal ? "Terminal" : "Browser"
+        pane.kind.displayName
     }
 
     private func headerButton(systemName: String, help: String, action: @escaping () -> Void) -> some View {
@@ -517,13 +527,46 @@ private struct CollapsedPaneSlit: View {
 
     private var unhideButton: some View {
         Button(action: onUnhide) {
-            Image(systemName: "eye")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 18, height: 18)
+            if pane.kind == .terminal {
+                HiddenTerminalIndicator(compact: false)
+            } else {
+                Image(systemName: "eye")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18, height: 18)
+            }
         }
         .buttonStyle(.plain)
-        .help("Unhide \(pane.kind == .terminal ? "Terminal" : "Browser")")
+        .help(
+            pane.kind == .terminal
+                ? "Show Terminal. Hidden terminals keep running."
+                : "Unhide \(pane.kind.displayName)"
+        )
+    }
+}
+
+private struct HiddenTerminalIndicator: View {
+    let compact: Bool
+    @State private var isPulsing = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.accentColor.opacity(compact ? 0.12 : 0.16))
+                .frame(width: compact ? 18 : 20, height: compact ? 18 : 20)
+
+            Circle()
+                .fill(Color.accentColor.opacity(isPulsing ? 0.95 : 0.45))
+                .frame(width: compact ? 5 : 6, height: compact ? 5 : 6)
+                .scaleEffect(isPulsing ? 1.0 : 0.72)
+        }
+        .frame(width: compact ? 18 : 20, height: compact ? 18 : 20)
+        .accessibilityLabel("Hidden terminal is still running")
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
+                isPulsing = true
+            }
+        }
     }
 }
 
@@ -538,8 +581,10 @@ struct PaneView: View {
             TerminalViewRepresentable(pane: pane, isActive: isWorkspaceActive)
         case .browser:
             if let state = pane.browserState {
-                BrowserPaneView(state: state, isActive: isWorkspaceActive)
+                BrowserPaneView(state: state, isActive: isWorkspaceActive, isSelected: isSelected)
             }
+        case .device:
+            DevicePaneView(paneID: pane.id, isActive: isWorkspaceActive, isSelected: isSelected)
         }
     }
 }
@@ -560,6 +605,7 @@ struct TerminalViewRepresentable: View {
 struct BrowserPaneView: View {
     let state: BrowserState
     let isActive: Bool
+    let isSelected: Bool
 
     var body: some View {
         WebViewRepresentable(
@@ -567,7 +613,8 @@ struct BrowserPaneView: View {
             navigationRequestID: state.navigationRequestID,
             inspectorToggleRequestID: state.inspectorToggleRequestID,
             appearanceMode: state.appearanceMode,
-            isActive: isActive
+            isActive: isActive,
+            isSelected: isSelected
         )
     }
 }
@@ -578,14 +625,17 @@ struct WebViewRepresentable: NSViewRepresentable {
     let inspectorToggleRequestID: Int
     let appearanceMode: AppearanceMode
     let isActive: Bool
+    let isSelected: Bool
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = BrowserWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.isInspectable = true
         webView.isHidden = !isActive
+        webView.isPaneSelected = isSelected
+        webView.onReload = { state.requestNavigationCommand("blau://reload") }
         if let url = initialURL {
             webView.load(URLRequest(url: url))
         }
@@ -595,6 +645,11 @@ struct WebViewRepresentable: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) {
         _ = navigationRequestID
         _ = inspectorToggleRequestID
+
+        if let browserView = nsView as? BrowserWebView {
+            browserView.isPaneSelected = isSelected
+            browserView.onReload = { state.requestNavigationCommand("blau://reload") }
+        }
 
         nsView.isHidden = !isActive
 
@@ -695,5 +750,24 @@ struct WebViewRepresentable: NSViewRepresentable {
             state.canGoBack = webView.canGoBack
             state.canGoForward = webView.canGoForward
         }
+    }
+}
+
+final class BrowserWebView: WKWebView {
+    var onReload: (() -> Void)?
+    var isPaneSelected = false
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if isPaneSelected,
+           event.type == .keyDown,
+           event.modifierFlags.contains(.command),
+           !event.modifierFlags.contains(.control),
+           !event.modifierFlags.contains(.option),
+           event.charactersIgnoringModifiers?.lowercased() == "r" {
+            onReload?()
+            return true
+        }
+
+        return super.performKeyEquivalent(with: event)
     }
 }

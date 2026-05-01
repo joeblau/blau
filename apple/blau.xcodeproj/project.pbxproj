@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		18FED2F1C7DFB765BE7F8A53 /* DevicePaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7B90338AE3A8F5EE0CA12C6 /* DevicePaneView.swift */; };
 		1CA7F3A0C7FE6D35905BADD4 /* MouseBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA97D476477BE66A97A9D77 /* MouseBridge.swift */; };
 		1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 132CB022A0BDFF0DE96316EF /* ContentView.swift */; };
 		1F253D4F3DCD296F823A2E74 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7D00A3F70E212149A88CCD63 /* Assets.xcassets */; };
@@ -21,16 +22,21 @@
 		77E0A9658F4C1F734114431E /* TrackpadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDB98CD0F5BCD145C5B14904 /* TrackpadView.swift */; };
 		7C8C2A101382F27189DA38D6 /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */; };
 		83D64D93C19B54470E4E1C2C /* SyncMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67FAA18AA33DB039B0026206 /* SyncMessages.swift */; };
+		84FC1A823C720C809A576D45 /* DeviceCaptureSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC9833035A28E24597A8997 /* DeviceCaptureSession.swift */; };
 		870295EC4EDA044F54CE9E6D /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0057932203C8B246C76D50DC /* GhosttyKit.xcframework */; };
 		8FCC40CAAA5C7B8D29E12115 /* TranscriptionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD34E1A30F1D389095CB7641 /* TranscriptionOverlay.swift */; };
 		91698151B8722ED0E14C60E9 /* SyncMessagesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A71DC4B75C15342693E47C /* SyncMessagesTests.swift */; };
+		97CCEC7CB74BCC87DC23E339 /* PaneInitRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7297FC9076A3EEE92FA359FD /* PaneInitRegressionTests.swift */; };
 		9CCB3AE0ECFF1D2D7C809867 /* HeadphoneDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEF294C6D54F08AFA7316B33 /* HeadphoneDetector.swift */; };
+		9E43FEF6FB23D25B023ED32A /* DeviceCaptureRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40448E5B9EBBD91D642FC080 /* DeviceCaptureRegistry.swift */; };
 		A15C1598E563DC750ECC3CA3 /* TranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88E3C34C14CD81F745E874DF /* TranscriptionService.swift */; };
 		A755A8C5DCFF1165E408136A /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3448A85CDA9475511475C2 /* Workspace.swift */; };
 		B4AA393A5A3C60C033BA0A02 /* PeerSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */; };
+		B4E96CEA7BF0CCD5D84C0B86 /* WorkspaceRootTrackingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADB726FAD149101B9A70CC0D /* WorkspaceRootTrackingTests.swift */; };
 		B50B053F283AA448A9ACDB56 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26E21596BD1590738CF89498 /* ContentView.swift */; };
 		C0B083B9A7F2E253F890ABC0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32D547158D65899195FA3359 /* Assets.xcassets */; };
 		C9B227630199C8E1705AE8DC /* CopilotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */; };
+		CAD4FA3FEF71B408F5A1C332 /* PaneCyclingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C68475BF8E1475FC00ABFE0 /* PaneCyclingTests.swift */; };
 		CB797869A7D03477CAC989A2 /* CommitListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B028DA279E32AB30A1A75942 /* CommitListView.swift */; };
 		CF0427ED034B7A71489D82F9 /* PeerSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */; };
 		CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F684D74A8F12B03954CC49B3 /* PilotApp.swift */; };
@@ -53,6 +59,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 1FB5B4A55B06C22A02EB122A;
 			remoteInfo = Copilot;
+		};
+		FA29AA030FC6C19055EF989E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 82D0EC6B4C927437585C0414 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 474C5A4305C5C5138E36D5C1;
+			remoteInfo = Pilot;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -81,11 +94,15 @@
 		26E21596BD1590738CF89498 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		32D547158D65899195FA3359 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3BA97D476477BE66A97A9D77 /* MouseBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MouseBridge.swift; sourceTree = "<group>"; };
+		3C68475BF8E1475FC00ABFE0 /* PaneCyclingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneCyclingTests.swift; sourceTree = "<group>"; };
+		40448E5B9EBBD91D642FC080 /* DeviceCaptureRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCaptureRegistry.swift; sourceTree = "<group>"; };
 		52A71DC4B75C15342693E47C /* SyncMessagesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMessagesTests.swift; sourceTree = "<group>"; };
+		52D5914A6EBA1115A33AE425 /* PilotTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PilotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5B068834105F375479ADF423 /* InspectorHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorHelper.swift; sourceTree = "<group>"; };
 		67FAA18AA33DB039B0026206 /* SyncMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMessages.swift; sourceTree = "<group>"; };
 		6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotApp.swift; sourceTree = "<group>"; };
 		71A7E1AE9E717B53A369709B /* GhosttyTerminal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminal.swift; sourceTree = "<group>"; };
+		7297FC9076A3EEE92FA359FD /* PaneInitRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneInitRegressionTests.swift; sourceTree = "<group>"; };
 		7A70CFB55F5EB044D3ED5C3F /* WingmanApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WingmanApp.swift; sourceTree = "<group>"; };
 		7D00A3F70E212149A88CCD63 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStore.swift; sourceTree = "<group>"; };
@@ -96,11 +113,14 @@
 		A0144CE36B7342F7D171F350 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A1C985F86115A698849ED108 /* VolumeScrollListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeScrollListView.swift; sourceTree = "<group>"; };
 		AA1D8AC628F3F55D563872C7 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		ADB726FAD149101B9A70CC0D /* WorkspaceRootTrackingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceRootTrackingTests.swift; sourceTree = "<group>"; };
 		AEF294C6D54F08AFA7316B33 /* HeadphoneDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeadphoneDetector.swift; sourceTree = "<group>"; };
 		B028DA279E32AB30A1A75942 /* CommitListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitListView.swift; sourceTree = "<group>"; };
 		BD34E1A30F1D389095CB7641 /* TranscriptionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionOverlay.swift; sourceTree = "<group>"; };
 		CDB98CD0F5BCD145C5B14904 /* TrackpadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadView.swift; sourceTree = "<group>"; };
 		DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitCommitStore.swift; sourceTree = "<group>"; };
+		E7B90338AE3A8F5EE0CA12C6 /* DevicePaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePaneView.swift; sourceTree = "<group>"; };
+		EFC9833035A28E24597A8997 /* DeviceCaptureSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCaptureSession.swift; sourceTree = "<group>"; };
 		F430B621891B5DED12E1CF39 /* Copilot.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Copilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F684D74A8F12B03954CC49B3 /* PilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PilotApp.swift; sourceTree = "<group>"; };
 		F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerSyncService.swift; sourceTree = "<group>"; };
@@ -136,6 +156,17 @@
 			);
 			name = "Wingman Watch App";
 			path = "Sources/Wingman/Wingman Watch App";
+			sourceTree = "<group>";
+		};
+		552E741828639BF19E6BC0CA /* PilotTests */ = {
+			isa = PBXGroup;
+			children = (
+				3C68475BF8E1475FC00ABFE0 /* PaneCyclingTests.swift */,
+				7297FC9076A3EEE92FA359FD /* PaneInitRegressionTests.swift */,
+				ADB726FAD149101B9A70CC0D /* WorkspaceRootTrackingTests.swift */,
+			);
+			name = PilotTests;
+			path = Tests/PilotTests;
 			sourceTree = "<group>";
 		};
 		63DF1FFF0A3F9443839E1557 /* SharedTests */ = {
@@ -190,6 +221,7 @@
 				1B3448A85CDA9475511475C2 /* Workspace.swift */,
 				84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */,
 				24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */,
+				FA0BF361ED308DA2898615EE /* Device */,
 			);
 			name = Pilot;
 			path = Sources/Pilot;
@@ -200,6 +232,7 @@
 			children = (
 				68A6AFD0CF88B5D0D03A00E1 /* Copilot */,
 				DE30D289D5BAF3D3994A8791 /* Pilot */,
+				552E741828639BF19E6BC0CA /* PilotTests */,
 				86DDEDCE771126217BE93BF1 /* Shared */,
 				63DF1FFF0A3F9443839E1557 /* SharedTests */,
 				488AE8285CB6D6627B1BCABE /* Wingman Watch App */,
@@ -213,10 +246,21 @@
 			children = (
 				F430B621891B5DED12E1CF39 /* Copilot.app */,
 				1C98BD914066A308C6C6C1C9 /* Pilot.app */,
+				52D5914A6EBA1115A33AE425 /* PilotTests.xctest */,
 				97052041CFD5C5F3CAFA379C /* SharedTests.xctest */,
 				89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		FA0BF361ED308DA2898615EE /* Device */ = {
+			isa = PBXGroup;
+			children = (
+				40448E5B9EBBD91D642FC080 /* DeviceCaptureRegistry.swift */,
+				EFC9833035A28E24597A8997 /* DeviceCaptureSession.swift */,
+				E7B90338AE3A8F5EE0CA12C6 /* DevicePaneView.swift */,
+			);
+			path = Device;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -259,6 +303,22 @@
 			productName = Pilot;
 			productReference = 1C98BD914066A308C6C6C1C9 /* Pilot.app */;
 			productType = "com.apple.product-type.application";
+		};
+		478609A031F3B4AB51EDD75F /* PilotTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 647B62FB212BF7BB19171C91 /* Build configuration list for PBXNativeTarget "PilotTests" */;
+			buildPhases = (
+				C2CD0F7FE549B2DF1D736307 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				848A01304996CA69D930D069 /* PBXTargetDependency */,
+			);
+			name = PilotTests;
+			productName = PilotTests;
+			productReference = 52D5914A6EBA1115A33AE425 /* PilotTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		79C8ECE1F0D9D02EDE7D57AC /* Wingman Watch App */ = {
 			isa = PBXNativeTarget;
@@ -307,6 +367,9 @@
 					474C5A4305C5C5138E36D5C1 = {
 						DevelopmentTeam = K78G42H4U2;
 					};
+					478609A031F3B4AB51EDD75F = {
+						DevelopmentTeam = K78G42H4U2;
+					};
 					79C8ECE1F0D9D02EDE7D57AC = {
 						DevelopmentTeam = K78G42H4U2;
 					};
@@ -332,6 +395,7 @@
 			targets = (
 				1FB5B4A55B06C22A02EB122A /* Copilot */,
 				474C5A4305C5C5138E36D5C1 /* Pilot */,
+				478609A031F3B4AB51EDD75F /* PilotTests */,
 				E2B7E3418BCFFEC2F64892C1 /* SharedTests */,
 				79C8ECE1F0D9D02EDE7D57AC /* Wingman Watch App */,
 			);
@@ -402,6 +466,9 @@
 			files = (
 				CB797869A7D03477CAC989A2 /* CommitListView.swift in Sources */,
 				1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */,
+				9E43FEF6FB23D25B023ED32A /* DeviceCaptureRegistry.swift in Sources */,
+				84FC1A823C720C809A576D45 /* DeviceCaptureSession.swift in Sources */,
+				18FED2F1C7DFB765BE7F8A53 /* DevicePaneView.swift in Sources */,
 				72A25CCED00C4DA32999DC63 /* GhosttyTerminal.swift in Sources */,
 				F797C21E5A72C28BD91D6073 /* GitCommitStore.swift in Sources */,
 				9CCB3AE0ECFF1D2D7C809867 /* HeadphoneDetector.swift in Sources */,
@@ -418,9 +485,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C2CD0F7FE549B2DF1D736307 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CAD4FA3FEF71B408F5A1C332 /* PaneCyclingTests.swift in Sources */,
+				97CCEC7CB74BCC87DC23E339 /* PaneInitRegressionTests.swift in Sources */,
+				B4E96CEA7BF0CCD5D84C0B86 /* WorkspaceRootTrackingTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		848A01304996CA69D930D069 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 474C5A4305C5C5138E36D5C1 /* Pilot */;
+			targetProxy = FA29AA030FC6C19055EF989E /* PBXContainerItemProxy */;
+		};
 		9E22AEE7C35FB537E6F4FF17 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 1FB5B4A55B06C22A02EB122A /* Copilot */;
@@ -457,11 +539,15 @@
 					"-framework",
 					Metal,
 					"-framework",
+					MetalKit,
+					"-framework",
 					QuartzCore,
 					"-framework",
 					CoreText,
 					"-framework",
 					IOKit,
+					"-framework",
+					IOSurface,
 					"-framework",
 					CoreGraphics,
 					"-framework",
@@ -474,12 +560,35 @@
 					AppKit,
 					"-framework",
 					CoreServices,
+					"-framework",
+					AVFoundation,
+					"-framework",
+					CoreMedia,
+					"-framework",
+					CoreMediaIO,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot;
 				PRODUCT_NAME = Pilot;
 				SDKROOT = macosx;
 			};
 			name = Release;
+		};
+		190C4C4ECE3809DAD4674BD5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pilot.app/Contents/MacOS/Pilot";
+			};
+			name = Debug;
 		};
 		25BEF14C0763464E0897051F /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -616,6 +725,23 @@
 			};
 			name = Debug;
 		};
+		B99D185EA8698454BCBC2335 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pilot.app/Contents/MacOS/Pilot";
+			};
+			name = Release;
+		};
 		D8353E11C02043EF1281F3ED /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -639,11 +765,15 @@
 					"-framework",
 					Metal,
 					"-framework",
+					MetalKit,
+					"-framework",
 					QuartzCore,
 					"-framework",
 					CoreText,
 					"-framework",
 					IOKit,
+					"-framework",
+					IOSurface,
 					"-framework",
 					CoreGraphics,
 					"-framework",
@@ -656,6 +786,12 @@
 					AppKit,
 					"-framework",
 					CoreServices,
+					"-framework",
+					AVFoundation,
+					"-framework",
+					CoreMedia,
+					"-framework",
+					CoreMediaIO,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot;
 				PRODUCT_NAME = Pilot;
@@ -767,6 +903,15 @@
 			buildConfigurations = (
 				D8353E11C02043EF1281F3ED /* Debug */,
 				0A50B1118B7355379BCE036A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		647B62FB212BF7BB19171C91 /* Build configuration list for PBXNativeTarget "PilotTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				190C4C4ECE3809DAD4674BD5 /* Debug */,
+				B99D185EA8698454BCBC2335 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
