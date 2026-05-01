@@ -111,7 +111,7 @@ enum PersistentTerminalSession {
 
 @Model
 final class BrowserState {
-    var urlText: String = "https://apple.com"
+    var urlText: String = ""
     var appearanceModeRaw: String = AppearanceMode.system.rawValue
     var navigationRequestID: Int = 0
     var inspectorToggleRequestID: Int = 0
@@ -129,7 +129,8 @@ final class BrowserState {
     }
 
     init() {
-        self.pendingURL = URL(string: urlText)
+        // Empty by default — the pane shows the local-server start page
+        // until the user navigates somewhere or picks a card.
     }
 
     func navigate() {
