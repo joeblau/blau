@@ -85,10 +85,11 @@ struct PilotApp: App {
                 .disabled(selectedBrowserState == nil)
 
                 Button("Focus Address Bar") {
+                    selectFirstBrowserPaneIfNeeded()
                     NotificationCenter.default.post(name: .pilotFocusBrowserAddressBar, object: nil)
                 }
                 .keyboardShortcut("l", modifiers: .command)
-                .disabled(selectedBrowserState == nil)
+                .disabled(!hasBrowserPaneInActiveWorkspace)
             }
         }
     }
@@ -118,6 +119,22 @@ struct PilotApp: App {
         guard let pane = store.selectedWorkspace?.selectedPane,
               pane.kind == .browser else { return nil }
         return pane.browserState
+    }
+
+    private var hasBrowserPaneInActiveWorkspace: Bool {
+        store.selectedWorkspace?.panes.contains { $0.kind == .browser } ?? false
+    }
+
+    /// If the currently selected pane isn't a browser, hand selection to the
+    /// first browser pane in the workspace so ⌘L (and the rest of the
+    /// browser toolbar) has something to operate on. This makes ⌘L work
+    /// even when the user just clicked into another pane.
+    private func selectFirstBrowserPaneIfNeeded() {
+        guard let workspace = store.selectedWorkspace else { return }
+        if let selected = workspace.selectedPane, selected.kind == .browser { return }
+        if let firstBrowser = workspace.sortedPanes.first(where: { $0.kind == .browser }) {
+            workspace.selectedPaneID = firstBrowser.id
+        }
     }
 
     private func pasteIntoSelectedPane() {
