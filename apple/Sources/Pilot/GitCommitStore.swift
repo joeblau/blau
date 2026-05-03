@@ -17,6 +17,7 @@ struct GitAction: Identifiable {
     let status: String
     let conclusion: String
     let elapsed: String
+    let url: String
 }
 
 struct GitRun: Identifiable {
@@ -164,7 +165,7 @@ final class GitCommitStore {
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = shellRun("gh", args: [
                     "run", "list", "--limit", "10",
-                    "--json", "status,conclusion,displayTitle,headBranch,headSha,name,createdAt"
+                    "--json", "status,conclusion,displayTitle,headBranch,headSha,name,createdAt,url"
                 ], in: directory)
 
                 var actions: [GitAction] = []
@@ -179,7 +180,8 @@ final class GitCommitStore {
                             headSha: item["headSha"] as? String ?? "",
                             status: item["status"] as? String ?? "",
                             conclusion: item["conclusion"] as? String ?? "",
-                            elapsed: createdAt.isEmpty ? "" : Self.relativeTime(from: createdAt)
+                            elapsed: createdAt.isEmpty ? "" : Self.relativeTime(from: createdAt),
+                            url: item["url"] as? String ?? ""
                         ))
                     }
                 }
