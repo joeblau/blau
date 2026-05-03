@@ -413,41 +413,56 @@ struct ActionsListView: View {
     }
 
     private func actionRow(_ action: GitAction) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            actionStatusIcon(action.conclusion, status: action.status)
-                .frame(width: 14)
-                .padding(.top, 2)
+        Button {
+            openActionInBrowser(action)
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                actionStatusIcon(action.conclusion, status: action.status)
+                    .frame(width: 14)
+                    .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(action.displayTitle)
-                    .font(.system(size: 11))
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(action.displayTitle)
+                        .font(.system(size: 11))
+                        .lineLimit(2)
 
-                HStack(spacing: 4) {
-                    Text(action.name)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    Text("·")
-                        .foregroundStyle(.quaternary)
-                    Text(action.headBranch)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
-
-                HStack(spacing: 4) {
-                    Text(String(action.headSha.prefix(7)))
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                    if !action.elapsed.isEmpty {
+                    HStack(spacing: 4) {
+                        Text(action.name)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
                         Text("·")
                             .foregroundStyle(.quaternary)
-                        Text(action.elapsed)
-                            .font(.system(size: 10))
+                        Text(action.headBranch)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack(spacing: 4) {
+                        Text(String(action.headSha.prefix(7)))
+                            .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.tertiary)
+                        if !action.elapsed.isEmpty {
+                            Text("·")
+                                .foregroundStyle(.quaternary)
+                            Text(action.elapsed)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                 }
+
+                Spacer(minLength: 0)
             }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .disabled(action.url.isEmpty)
+        .help(action.url.isEmpty ? "" : "Open on GitHub")
+    }
+
+    private func openActionInBrowser(_ action: GitAction) {
+        guard let url = URL(string: action.url) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @ViewBuilder

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct BrowserStartPageView: View {
@@ -7,6 +8,7 @@ struct BrowserStartPageView: View {
     @State private var servers: [LocalServer] = []
     @State private var liveness: [Int: Bool] = [:]
     @State private var hasScanned = false
+    @State private var keyHandler = StartPageKeyHandler()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -22,6 +24,18 @@ struct BrowserStartPageView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .padding(20)
         .task(id: rootPath ?? "") { await refresh() }
+        .onAppear { syncKeyHandler() }
+        .onChange(of: servers) { syncKeyHandler() }
+        .onDisappear { keyHandler.remove() }
+    }
+
+    private func syncKeyHandler() {
+        let snapshot = servers
+        keyHandler.onDigit = { digit in
+            guard digit >= 1, digit <= snapshot.count else { return }
+            onSelect(snapshot[digit - 1])
+        }
+        keyHandler.install()
     }
 
     private var emptyState: some View {
@@ -41,8 +55,9 @@ struct BrowserStartPageView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             VStack(spacing: 10) {
-                ForEach(servers) { server in
+                ForEach(Array(servers.enumerated()), id: \.element.id) { index, server in
                     LocalServerCard(
+                        hotkey: index < 9 ? index + 1 : nil,
                         server: server,
                         isLive: liveness[server.port] ?? false,
                         onTap: { onSelect(server) }
@@ -76,6 +91,7 @@ struct BrowserStartPageView: View {
 }
 
 private struct LocalServerCard: View {
+    let hotkey: Int?
     let server: LocalServer
     let isLive: Bool
     let onTap: () -> Void
@@ -96,6 +112,21 @@ private struct LocalServerCard: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
+                if let hotkey {
+                    Text("\(hotkey)")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 18, minHeight: 18)
+                        .padding(.horizontal, 4)
+                        .background {
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(Color(nsColor: .quaternaryLabelColor).opacity(0.6))
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 1)
+                        }
+                }
                 Circle()
                     .fill(isLive ? .green : Color(nsColor: .tertiaryLabelColor))
                     .frame(width: 8, height: 8)
@@ -156,5 +187,64 @@ private struct BrowserPreviewThumbnail: View {
                 .stroke(Color.black.opacity(0.15), lineWidth: 0.5)
         }
         .foregroundStyle(.black)
+    }
+}
+
+// StartPageKeyHandler — installs an `NSEvent` local key-down monitor while
+// the start page is on screen and forwards 1-9 keypresses to the matching
+// server card. Skipped while a text editor (address bar, terminal field
+// editor) is the first responder so typing isn't hijacked.
+//
+// AppKit's `addLocalMonitorForEvents` always invokes the handler on the
+// main thread, so the `@unchecked Sendable` annotation is safe — we just
+// avoid wrapping the class in `@MainActor` so the closure doesn't try to
+// cross isolation with a non-Sendable `NSEvent`.
+final class StartPageKeyHandler: @unchecked Sendable {
+    var onDigit: ((Int) -> Void)?
+    private var monitor: Any?
+
+    func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            return self.handle(event)
+        }
+    }
+
+    func remove() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        monitor = nil
+    }
+
+    deinit {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
+    private func handle(_ event: NSEvent) -> NSEvent? {
+        if let responder = NSApp.keyWindow?.firstResponder, Self.isTextEditor(responder) {
+            return event
+        }
+        let blockedModifiers: NSEvent.ModifierFlags = [.command, .control, .option]
+        guard event.modifierFlags.intersection(blockedModifiers).isEmpty,
+              let chars = event.charactersIgnoringModifiers,
+              chars.count == 1,
+              let digit = chars.first?.wholeNumberValue,
+              (1...9).contains(digit) else { return event }
+
+        onDigit?(digit)
+        return nil
+    }
+
+    private static func isTextEditor(_ responder: NSResponder) -> Bool {
+        if responder is NSText { return true }
+        if responder is NSTextView { return true }
+        // Catch SwiftUI's TextField field editors and Ghostty's terminal
+        // view (which implements its own NSTextInputClient).
+        let className = String(describing: type(of: responder))
+        return className.contains("Text") || className.contains("Ghostty")
     }
 }
