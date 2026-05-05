@@ -101,9 +101,9 @@ struct WorkspaceView: View {
         } preview: {
             HStack(spacing: 6) {
                 Image(systemName: pane.kind.systemImageName)
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                 Text(pane.kind.displayName)
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
@@ -461,11 +461,11 @@ struct TabItemContent: View {
             }
 
             Image(systemName: pane.kind.systemImageName)
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
                 .foregroundStyle(isSelected ? .primary : .secondary)
 
             Text(pane.kind.displayName)
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? .primary : .secondary)
 
@@ -486,7 +486,7 @@ struct TabItemContent: View {
     private func headerButton(systemName: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 9, weight: .bold))
+                .scaledFont(size: 9, weight: .bold)
                 .foregroundStyle(.secondary)
                 .frame(width: 18, height: 18)
         }
@@ -531,7 +531,7 @@ private struct CollapsedPaneSlit: View {
                 HiddenTerminalIndicator(compact: false)
             } else {
                 Image(systemName: "eye")
-                    .font(.system(size: 10, weight: .semibold))
+                    .scaledFont(size: 10, weight: .semibold)
                     .foregroundStyle(.secondary)
                     .frame(width: 18, height: 18)
             }
@@ -578,7 +578,11 @@ struct PaneView: View {
     var body: some View {
         switch pane.kind {
         case .terminal:
-            TerminalViewRepresentable(pane: pane, isActive: isWorkspaceActive)
+            TerminalViewRepresentable(
+                pane: pane,
+                isActive: isWorkspaceActive,
+                isCollapsed: pane.isCollapsed
+            )
         case .browser:
             if let state = pane.browserState {
                 BrowserPaneView(
@@ -600,9 +604,10 @@ struct PaneView: View {
 struct TerminalViewRepresentable: View {
     let pane: Pane
     let isActive: Bool
+    let isCollapsed: Bool
 
     var body: some View {
-        GhosttyTerminalView(pane: pane, isActive: isActive)
+        GhosttyTerminalView(pane: pane, isActive: isActive, isCollapsed: isCollapsed)
     }
 }
 
@@ -650,6 +655,8 @@ struct BrowserPaneView: View {
 }
 
 struct WebViewRepresentable: NSViewRepresentable {
+    @Environment(\.uiZoom) private var uiZoom
+
     let state: BrowserState
     let navigationRequestID: Int
     let inspectorToggleRequestID: Int
@@ -668,6 +675,8 @@ struct WebViewRepresentable: NSViewRepresentable {
         webView.isPaneSelected = isSelected
         webView.onReload = { state.requestNavigationCommand("blau://reload") }
         webView.onSelect = onSelect
+        webView.pageZoom = uiZoom
+        context.coordinator.observeURL(of: webView)
         if let url = initialURL {
             webView.load(URLRequest(url: url))
         }
@@ -677,6 +686,10 @@ struct WebViewRepresentable: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) {
         _ = navigationRequestID
         _ = inspectorToggleRequestID
+
+        if abs(nsView.pageZoom - uiZoom) > 0.001 {
+            nsView.pageZoom = uiZoom
+        }
 
         if let browserView = nsView as? BrowserWebView {
             browserView.isPaneSelected = isSelected
@@ -750,13 +763,43 @@ struct WebViewRepresentable: NSViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         let state: BrowserState
+        private var urlObservation: NSKeyValueObservation?
 
         init(state: BrowserState) {
             self.state = state
         }
 
+        deinit {
+            urlObservation?.invalidate()
+        }
+
+        /// KVO on `WKWebView.url` so the address bar reflects every URL
+        /// change — link clicks, server redirects, hash changes, and
+        /// `history.pushState` from SPAs — not just `didFinish` loads.
+        func observeURL(of webView: WKWebView) {
+            urlObservation?.invalidate()
+            urlObservation = webView.observe(\.url, options: [.new, .initial]) { [weak self] webView, _ in
+                guard let self, let url = webView.url else { return }
+                let absolute = url.absoluteString
+                Task { @MainActor in
+                    if self.state.urlText != absolute {
+                        self.state.urlText = absolute
+                    }
+                }
+            }
+        }
+
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             state.isLoading = true
+            updateNavState(webView)
+        }
+
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            // Earliest reliable point — URL is now the real destination
+            // (after any provisional redirects).
+            if let url = webView.url {
+                state.urlText = url.absoluteString
+            }
             updateNavState(webView)
         }
 

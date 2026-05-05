@@ -104,17 +104,17 @@ private struct LocalServerCard: View {
                 BrowserPreviewThumbnail(name: server.name, displayURL: server.displayURL)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(server.name)
-                        .font(.system(size: 15, weight: .semibold))
+                        .scaledFont(size: 15, weight: .semibold)
                         .lineLimit(1)
                     Text(server.displayURL)
-                        .font(.system(size: 13))
+                        .scaledFont(size: 13)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
                 if let hotkey {
                     Text("\(hotkey)")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .scaledFont(size: 12, weight: .semibold, design: .monospaced)
                         .foregroundStyle(.secondary)
                         .frame(minWidth: 18, minHeight: 18)
                         .padding(.horizontal, 4)
@@ -168,10 +168,10 @@ private struct BrowserPreviewThumbnail: View {
             Spacer(minLength: 0)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
-                    .font(.system(size: 8, weight: .semibold))
+                    .scaledFont(size: 8, weight: .semibold)
                     .lineLimit(1)
                 Text(displayURL)
-                    .font(.system(size: 6.5))
+                    .scaledFont(size: 6.5)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

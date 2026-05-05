@@ -87,10 +87,10 @@ struct FilesystemListView: View {
     private var rootHeader: some View {
         VStack(alignment: .leading, spacing: 2) {
             Label(rootName, systemImage: "folder.fill")
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: 11, weight: .semibold)
 
             Text(store.repoPath)
-                .font(.system(size: 10, design: .monospaced))
+                .scaledFont(size: 10, design: .monospaced)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -364,22 +364,22 @@ struct CommitListView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(commit.message)
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                     .lineLimit(2)
 
                 HStack(spacing: 4) {
                     Text(commit.id)
-                        .font(.system(size: 10, design: .monospaced))
+                        .scaledFont(size: 10, design: .monospaced)
                         .foregroundStyle(.secondary)
                     Text("·")
                         .foregroundStyle(.quaternary)
                     Text(commit.author)
-                        .font(.system(size: 10))
+                        .scaledFont(size: 10)
                         .foregroundStyle(.secondary)
                     Text("·")
                         .foregroundStyle(.quaternary)
                     Text(commit.date)
-                        .font(.system(size: 10))
+                        .scaledFont(size: 10)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -388,7 +388,7 @@ struct CommitListView: View {
 
     private var commitIcon: some View {
         Image(systemName: "circle")
-            .font(.system(size: 12))
+            .scaledFont(size: 12)
             .foregroundStyle(.blue)
     }
 }
@@ -423,29 +423,29 @@ struct ActionsListView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(action.displayTitle)
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .lineLimit(2)
 
                     HStack(spacing: 4) {
                         Text(action.name)
-                            .font(.system(size: 10, weight: .medium))
+                            .scaledFont(size: 10, weight: .medium)
                             .foregroundStyle(.secondary)
                         Text("·")
                             .foregroundStyle(.quaternary)
                         Text(action.headBranch)
-                            .font(.system(size: 10, design: .monospaced))
+                            .scaledFont(size: 10, design: .monospaced)
                             .foregroundStyle(.secondary)
                     }
 
                     HStack(spacing: 4) {
                         Text(String(action.headSha.prefix(7)))
-                            .font(.system(size: 10, design: .monospaced))
+                            .scaledFont(size: 10, design: .monospaced)
                             .foregroundStyle(.tertiary)
                         if !action.elapsed.isEmpty {
                             Text("·")
                                 .foregroundStyle(.quaternary)
                             Text(action.elapsed)
-                                .font(.system(size: 10))
+                                .scaledFont(size: 10)
                                 .foregroundStyle(.tertiary)
                         }
                     }
@@ -470,15 +470,15 @@ struct ActionsListView: View {
         switch conclusion {
         case "success":
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .foregroundStyle(.green)
         case "failure":
             Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .foregroundStyle(.red)
         case "cancelled":
             Image(systemName: "slash.circle.fill")
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .foregroundStyle(.secondary)
         default:
             switch status {
@@ -486,11 +486,11 @@ struct ActionsListView: View {
                 WorkflowBuildingIndicator()
             case "queued", "waiting", "pending":
                 Image(systemName: "clock.circle")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(.yellow)
             default:
                 Image(systemName: "circle")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(.quaternary)
             }
         }

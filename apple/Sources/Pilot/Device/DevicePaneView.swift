@@ -53,7 +53,7 @@ private struct DeviceStatusOverlay: View {
     private func statusBlock(icon: String, title: String, detail: String?) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 36))
+                .scaledFont(size: 36)
                 .foregroundStyle(.secondary)
             Text(title)
                 .font(.headline)
