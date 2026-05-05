@@ -17,6 +17,8 @@ struct PilotApp: App {
     @State private var recordingTargetPaneID: UUID?
     @State private var didSetupSync = false
 
+    @AppStorage("ui.zoom") private var uiZoom: Double = UIZoomLadder.default
+
     init() {
         let schema = Schema([Workspace.self, Pane.self, BrowserState.self])
         let container = try! ModelContainer(for: schema)
@@ -27,8 +29,13 @@ struct PilotApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(store: store, syncService: syncService, peerDeviceStatus: peerDeviceStatus, localAudioOutput: headphoneDetector.audioOutput, remoteTranscription: remoteTranscription)
+                .environment(\.uiZoom, uiZoom)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+                .onChange(of: uiZoom) { _, newValue in
+                    GhosttyRuntime.shared.userZoomFactor = newValue
+                }
                 .task {
+                    GhosttyRuntime.shared.userZoomFactor = uiZoom
                     // Skip services that prompt for permissions when XCTest is host-running us.
                     guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
                     _ = MouseBridge.shared.ensurePermissions()
@@ -76,6 +83,22 @@ struct PilotApp: App {
                 }
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(store.selectedWorkspace?.selectedPane == nil)
+            }
+            CommandGroup(after: .toolbar) {
+                Button("Increase Text Size") {
+                    uiZoom = UIZoomLadder.next(after: uiZoom)
+                }
+                .keyboardShortcut("=", modifiers: .command)
+
+                Button("Decrease Text Size") {
+                    uiZoom = UIZoomLadder.previous(before: uiZoom)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button("Actual Size") {
+                    uiZoom = UIZoomLadder.default
+                }
+                .keyboardShortcut("0", modifiers: .command)
             }
             CommandMenu("Browser") {
                 Button("Reload") {

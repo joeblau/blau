@@ -22,7 +22,7 @@ struct TranscriptionOverlay: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .scaledFont(size: 13, weight: .medium, design: .rounded)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                 }
@@ -40,7 +40,7 @@ struct TranscriptionOverlay: View {
 
     private func label(_ text: String, style: some ShapeStyle) -> some View {
         Text(text)
-            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .scaledFont(size: 13, weight: .medium, design: .rounded)
             .foregroundStyle(style)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)

@@ -21,6 +21,17 @@ final class GhosttyRuntime: @unchecked Sendable {
     private(set) var config: ghostty_config_t?
     private(set) var baseFontSizePoints: CGFloat = 13.0
 
+    /// IDE-wide zoom factor (driven by ⌘+/⌘-/⌘0). Multiplied into
+    /// `terminalFontSize` on top of the screen-density scale. Setting
+    /// it broadcasts a notification so live `GhosttyMetalView`s
+    /// re-apply their font size without restart.
+    var userZoomFactor: Double = 1.0 {
+        didSet {
+            guard userZoomFactor != oldValue else { return }
+            NotificationCenter.default.post(name: .ghosttyUserZoomDidChange, object: nil)
+        }
+    }
+
     private init() {
         // Initialize the Ghostty library
         ghostty_init(0, nil)
@@ -108,7 +119,7 @@ final class GhosttyRuntime: @unchecked Sendable {
     }
 
     func terminalFontSize(for screen: NSScreen?) -> CGFloat {
-        baseFontSizePoints * Self.displayModeFontScale(for: screen)
+        baseFontSizePoints * Self.displayModeFontScale(for: screen) * userZoomFactor
     }
 
     func updatedConfig(overridingFontSize fontSize: CGFloat) -> ghostty_config_t? {
@@ -361,6 +372,8 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     private var lastAppliedFontSizePoints: CGFloat = 0
     private var lastAppliedSurfacePixelSize: CGSize = .zero
     private var pendingSurfaceResize: DispatchWorkItem?
+    private var pendingGeometryRefresh = false
+    private var isPresentationActive = true
 
     init(app: ghostty_app_t, pane: Pane) {
         self.pane = pane
@@ -432,8 +445,21 @@ class GhosttyMetalView: NSView, CALayerDelegate {
             object: nil
         )
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleUserZoomDidChange),
+            name: .ghosttyUserZoomDidChange,
+            object: nil
+        )
+
         // OSC 7 precmd hook (installed via ZDOTDIR) handles per-surface cwd tracking.
         // No polling needed. Each shell reports its own directory via Ghostty's PWD action.
+    }
+
+    @objc private func handleUserZoomDidChange() {
+        guard let surface else { return }
+        applyFontSizeIfNeeded(surface: surface)
+        needsDisplay = true
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -453,6 +479,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         }
         NotificationCenter.default.removeObserver(self, name: .ghosttyWorkingDirectoryDidChange, object: nil)
         NotificationCenter.default.removeObserver(self, name: .ghosttyBellDidRing, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .ghosttyUserZoomDidChange, object: nil)
         if let surface {
             ghostty_surface_free(surface)
             self.surface = nil
@@ -474,7 +501,17 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
     override func layout() {
         super.layout()
-        refreshSurfaceGeometry()
+        requestSurfaceGeometryRefresh()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        requestSurfaceGeometryRefresh()
+    }
+
+    override func setBoundsSize(_ newSize: NSSize) {
+        super.setBoundsSize(newSize)
+        requestSurfaceGeometryRefresh()
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -500,6 +537,30 @@ class GhosttyMetalView: NSView, CALayerDelegate {
             // and the last terminal to fire would steal focus from the active
             // workspace's terminal.  Workspace-level focus management
             // (focusTerminalIfNeededForWorkspaceActivation, etc.) handles this.
+            self.requestSurfaceGeometryRefresh()
+        }
+    }
+
+    func setPresentationActive(_ isActive: Bool) {
+        isPresentationActive = isActive
+        isHidden = !isActive
+
+        if isActive {
+            requestSurfaceGeometryRefresh()
+        } else {
+            pendingGeometryRefresh = false
+            pendingSurfaceResize?.cancel()
+            pendingSurfaceResize = nil
+        }
+    }
+
+    private func requestSurfaceGeometryRefresh() {
+        guard !pendingGeometryRefresh else { return }
+        pendingGeometryRefresh = true
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingGeometryRefresh = false
             self.refreshSurfaceGeometry()
         }
     }
@@ -507,6 +568,9 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     private func refreshSurfaceGeometry() {
         guard let surface else { return }
         applyFontSizeIfNeeded(surface: surface)
+        guard isPresentationActive, !isHidden, window != nil else { return }
+        guard bounds.width >= 1, bounds.height >= 1 else { return }
+
         let geometry = currentSurfaceGeometry()
         applySurfaceGeometryIfNeeded(
             surface: surface,
@@ -565,12 +629,30 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         let center = NotificationCenter.default
         windowObservers = [
             center.addObserver(
+                forName: NSWindow.didResizeNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.requestSurfaceGeometryRefresh()
+                }
+            },
+            center.addObserver(
+                forName: NSWindow.didEndLiveResizeNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.requestSurfaceGeometryRefresh()
+                }
+            },
+            center.addObserver(
                 forName: NSWindow.didChangeBackingPropertiesNotification,
                 object: window,
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.refreshSurfaceGeometry()
+                    self?.requestSurfaceGeometryRefresh()
                 }
             },
             center.addObserver(
@@ -579,7 +661,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.refreshSurfaceGeometry()
+                    self?.requestSurfaceGeometryRefresh()
                 }
             },
             center.addObserver(
@@ -588,7 +670,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.refreshSurfaceGeometry()
+                    self?.requestSurfaceGeometryRefresh()
                 }
             },
         ]
@@ -661,6 +743,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self, let liveSurface = self.surface, liveSurface == surface else { return }
+            guard self.isPresentationActive, !self.isHidden else { return }
             self.pendingSurfaceResize = nil
             self.applySurfaceSize(
                 surface: liveSurface,
@@ -1392,6 +1475,7 @@ extension Notification.Name {
     static let ghosttyNeedsDisplay = Notification.Name("ghosttyNeedsDisplay")
     static let ghosttyWorkingDirectoryDidChange = Notification.Name("ghosttyWorkingDirectoryDidChange")
     static let ghosttyBellDidRing = Notification.Name("ghosttyBellDidRing")
+    static let ghosttyUserZoomDidChange = Notification.Name("ghosttyUserZoomDidChange")
 }
 
 private func eventModifierFlags(mods: ghostty_input_mods_e) -> NSEvent.ModifierFlags {
@@ -1477,21 +1561,29 @@ private extension NSEvent {
 struct GhosttyTerminalView: NSViewRepresentable {
     let pane: Pane
     let isActive: Bool
+    let isCollapsed: Bool
 
     func makeNSView(context: Context) -> NSView {
+        let isPresentationActive = isActive && !isCollapsed
+
         guard let app = GhosttyRuntime.shared.app else {
             let v = NSView()
             v.wantsLayer = true
             v.layer?.backgroundColor = GhosttyRuntime.terminalBackgroundColor.cgColor
-            v.isHidden = !isActive
+            v.isHidden = !isPresentationActive
             return v
         }
         let view = GhosttyMetalView(app: app, pane: pane)
-        view.isHidden = !isActive
+        view.setPresentationActive(isPresentationActive)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        nsView.isHidden = !isActive
+        let isPresentationActive = isActive && !isCollapsed
+        if let terminalView = nsView as? GhosttyMetalView {
+            terminalView.setPresentationActive(isPresentationActive)
+        } else {
+            nsView.isHidden = !isPresentationActive
+        }
     }
 }

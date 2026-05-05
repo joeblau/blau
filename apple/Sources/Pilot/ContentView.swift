@@ -239,7 +239,7 @@ struct ContentView: View {
             TextField("Name", text: Bindable(workspace).name)
             if workspace.badgeCount > 0 {
                 Text("\(workspace.badgeCount)")
-                    .font(.system(size: 10, weight: .bold))
+                    .scaledFont(size: 10, weight: .bold)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
@@ -348,7 +348,7 @@ struct ContentView: View {
     private func browserAddressField(state: BrowserState) -> some View {
         TextField("URL", text: Bindable(state).urlText)
             .textFieldStyle(.plain)
-            .font(.system(size: 13, weight: .medium))
+            .scaledFont(size: 13, weight: .medium)
             .focused($isBrowserURLFieldFocused)
             .onSubmit { state.navigate() }
             .padding(.leading, 12)
@@ -371,7 +371,7 @@ struct ContentView: View {
         } label: {
             ZStack {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
+                    .scaledFont(size: 12, weight: .medium)
                     .opacity(state.isLoading ? 0 : 1)
 
                 if state.isLoading {
