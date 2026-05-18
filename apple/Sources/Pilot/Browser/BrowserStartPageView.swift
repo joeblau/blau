@@ -32,8 +32,9 @@ struct BrowserStartPageView: View {
     private func syncKeyHandler() {
         let snapshot = servers
         keyHandler.onDigit = { digit in
-            guard digit >= 1, digit <= snapshot.count else { return }
+            guard digit >= 1, digit <= snapshot.count else { return false }
             onSelect(snapshot[digit - 1])
+            return true
         }
         keyHandler.install()
     }
@@ -200,7 +201,10 @@ private struct BrowserPreviewThumbnail: View {
 // avoid wrapping the class in `@MainActor` so the closure doesn't try to
 // cross isolation with a non-Sendable `NSEvent`.
 final class StartPageKeyHandler: @unchecked Sendable {
-    var onDigit: ((Int) -> Void)?
+    /// Returns `true` if the digit was consumed (start page navigated). When
+    /// `false`, the event is passed through so default handling fires (e.g.
+    /// system beep for an unbound key).
+    var onDigit: ((Int) -> Bool)?
     private var monitor: Any?
 
     func install() {
@@ -230,21 +234,46 @@ final class StartPageKeyHandler: @unchecked Sendable {
         }
         let blockedModifiers: NSEvent.ModifierFlags = [.command, .control, .option]
         guard event.modifierFlags.intersection(blockedModifiers).isEmpty,
-              let chars = event.charactersIgnoringModifiers,
-              chars.count == 1,
-              let digit = chars.first?.wholeNumberValue,
-              (1...9).contains(digit) else { return event }
+              let digit = Self.digit(for: event) else { return event }
 
-        onDigit?(digit)
+        let handled = onDigit?(digit) ?? false
+        return handled ? nil : event
+    }
+
+    /// Maps a `keyDown` event to a 1...9 digit. Uses hardware `keyCode`
+    /// first so layout/IME quirks (AZERTY top row, Dvorak, etc.) don't
+    /// break the shortcut, then falls back to the character value to
+    /// cover the numeric keypad.
+    private static func digit(for event: NSEvent) -> Int? {
+        // kVK_ANSI_1...9 keycodes in digit order. 5 and 6 are swapped
+        // on the hardware (kVK_ANSI_5 = 23, kVK_ANSI_6 = 22).
+        let digitRowKeyCodes: [UInt16] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
+        if let index = digitRowKeyCodes.firstIndex(of: event.keyCode) {
+            return index + 1
+        }
+        if let chars = event.charactersIgnoringModifiers,
+           chars.count == 1,
+           let digit = chars.first?.wholeNumberValue,
+           (1...9).contains(digit) {
+            return digit
+        }
         return nil
     }
 
+    /// Only treats *actual* text-input responders as "editors". The earlier
+    /// `className.contains("Text")` heuristic was too eager — SwiftUI and
+    /// AppKit ship plenty of internal responder classes with "Text" in the
+    /// name (text input contexts, toolbar item hosts, layout managers) that
+    /// can land as `firstResponder` even when nothing is actually being
+    /// typed into, which made every digit key fall through to default
+    /// handling.
     private static func isTextEditor(_ responder: NSResponder) -> Bool {
+        // NSText is the abstract base of NSTextView; an NSTextField's field
+        // editor is an NSTextView, so this covers SwiftUI TextField focus.
         if responder is NSText { return true }
-        if responder is NSTextView { return true }
-        // Catch SwiftUI's TextField field editors and Ghostty's terminal
-        // view (which implements its own NSTextInputClient).
-        let className = String(describing: type(of: responder))
-        return className.contains("Text") || className.contains("Ghostty")
+        // Ghostty's terminal view implements NSTextInputClient — keys typed
+        // into it should reach the terminal, not the start page.
+        if String(describing: type(of: responder)).contains("Ghostty") { return true }
+        return false
     }
 }
