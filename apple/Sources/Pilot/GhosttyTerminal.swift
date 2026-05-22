@@ -15,7 +15,6 @@ final class GhosttyRuntime: @unchecked Sendable {
     )
     static let terminalBackgroundHex = "#1c1c1c"
     private static let defaultTerminalFontSizePoints: CGFloat = 13.0
-    private static let nativeDisplayModeFlag: UInt32 = 0x02000000
 
     private(set) var app: ghostty_app_t?
     private(set) var config: ghostty_config_t?
@@ -119,7 +118,20 @@ final class GhosttyRuntime: @unchecked Sendable {
     }
 
     func terminalFontSize(for screen: NSScreen?) -> CGFloat {
-        baseFontSizePoints * Self.displayModeFontScale(for: screen) * userZoomFactor
+        // Earlier versions multiplied by a `displayModeFontScale(for:)`
+        // heuristic that tried to bump font size on "More Space" Retina
+        // configurations. It relied on the *smallest* native-flagged
+        // `CGDisplayMode` as the baseline, which misbehaves on non-Retina
+        // ultrawides: an LG 34UM95 reports a native-flagged 1720×720 mode
+        // alongside its real 3440×1440 mode, so the heuristic decided the
+        // screen was 2× over-driven and clamped to the 1.8× cap — bumping
+        // 13pt → 23.4pt. Text overflowed every pane.
+        //
+        // Drop the heuristic entirely. The user already has ⌘+/⌘-/⌘0 zoom
+        // (`userZoomFactor`), which is a more reliable and predictable
+        // control than guessing intent from display modes.
+        _ = screen
+        return baseFontSizePoints * userZoomFactor
     }
 
     func updatedConfig(overridingFontSize fontSize: CGFloat) -> ghostty_config_t? {
@@ -272,60 +284,6 @@ final class GhosttyRuntime: @unchecked Sendable {
             return defaultTerminalFontSizePoints
         }
         return CGFloat(value)
-    }
-
-    private static func displayModeFontScale(for screen: NSScreen?) -> CGFloat {
-        guard let screen, let nativeLogicalSize = nativeLogicalDisplaySize(for: screen) else {
-            return 1.0
-        }
-        guard nativeLogicalSize.width > 0, nativeLogicalSize.height > 0 else {
-            return 1.0
-        }
-
-        let widthScale = screen.frame.width / nativeLogicalSize.width
-        let heightScale = screen.frame.height / nativeLogicalSize.height
-        return max(1.0, min(max(widthScale, heightScale), 1.8))
-    }
-
-    private static func nativeLogicalDisplaySize(for screen: NSScreen) -> CGSize? {
-        guard let displayID = displayID(for: screen) else { return nil }
-
-        let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
-        guard let modes = CGDisplayCopyAllDisplayModes(displayID, options) as? [CGDisplayMode],
-              !modes.isEmpty else {
-            return nil
-        }
-
-        let nativeModes = modes.filter { ($0.ioFlags & nativeDisplayModeFlag) != 0 }
-        if let smallestNativeMode = nativeModes.min(by: { pointArea(of: $0) < pointArea(of: $1) }) {
-            return pointSize(for: smallestNativeMode)
-        }
-
-        let oneXModes = modes.filter { $0.pixelWidth == $0.width && $0.pixelHeight == $0.height }
-        if let largestOneXMode = oneXModes.max(by: { pointArea(of: $0) < pointArea(of: $1) }) {
-            let backingScale = max(screen.backingScaleFactor, 1.0)
-            return CGSize(
-                width: CGFloat(largestOneXMode.width) / backingScale,
-                height: CGFloat(largestOneXMode.height) / backingScale
-            )
-        }
-
-        return nil
-    }
-
-    private static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
-        guard let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
-            return nil
-        }
-        return CGDirectDisplayID(screenNumber.uint32Value)
-    }
-
-    private static func pointSize(for mode: CGDisplayMode) -> CGSize {
-        CGSize(width: CGFloat(mode.width), height: CGFloat(mode.height))
-    }
-
-    private static func pointArea(of mode: CGDisplayMode) -> CGFloat {
-        CGFloat(mode.width) * CGFloat(mode.height)
     }
 
     deinit {
@@ -531,14 +489,28 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         configureWindowObservers()
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            // Don't grab focus here — all workspaces are rendered in a ZStack
-            // and the last terminal to fire would steal focus from the active
-            // workspace's terminal.  Workspace-level focus management
-            // (focusTerminalIfNeededForWorkspaceActivation, etc.) handles this.
-            self.requestSurfaceGeometryRefresh()
-        }
+        // Don't grab focus here — all workspaces are rendered in a ZStack
+        // and the last terminal to fire would steal focus from the active
+        // workspace's terminal.  Workspace-level focus management
+        // (focusTerminalIfNeededForWorkspaceActivation, etc.) handles this.
+        //
+        // Call `requestSurfaceGeometryRefresh` directly (no outer
+        // `main.async`): the refresh itself already debounces onto the next
+        // run-loop tick. Adding a second async hop just delayed the moment
+        // Ghostty learned the view's actual screen, so the renderer could
+        // fire one or more frames using the surfaceCfg-derived
+        // (NSScreen.main) scale instead of the LG external's real scale.
+        requestSurfaceGeometryRefresh()
+    }
+
+    /// Backing properties change when the view's window moves to a screen
+    /// with a different `backingScaleFactor` (e.g. dragging a window from
+    /// a Retina built-in panel onto a 1x external LG). Without this hook
+    /// we'd only react via the `NSWindow.didChangeBackingProperties`
+    /// notification, which can lag the view's own callback.
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        requestSurfaceGeometryRefresh()
     }
 
     func setPresentationActive(_ isActive: Bool) {
@@ -627,52 +599,41 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
         guard let window else { return }
         let center = NotificationCenter.default
+        // Notifications are delivered on `.main` already; just call the
+        // refresh directly via `MainActor.assumeIsolated` instead of a
+        // `Task { @MainActor }` hop, which previously delayed every
+        // screen-change response by an extra run-loop tick.
+        let refresh: () -> Void = { [weak self] in
+            MainActor.assumeIsolated {
+                self?.requestSurfaceGeometryRefresh()
+            }
+        }
         windowObservers = [
             center.addObserver(
                 forName: NSWindow.didResizeNotification,
                 object: window,
                 queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.requestSurfaceGeometryRefresh()
-                }
-            },
+            ) { _ in refresh() },
             center.addObserver(
                 forName: NSWindow.didEndLiveResizeNotification,
                 object: window,
                 queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.requestSurfaceGeometryRefresh()
-                }
-            },
+            ) { _ in refresh() },
             center.addObserver(
                 forName: NSWindow.didChangeBackingPropertiesNotification,
                 object: window,
                 queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.requestSurfaceGeometryRefresh()
-                }
-            },
+            ) { _ in refresh() },
             center.addObserver(
                 forName: NSWindow.didChangeScreenNotification,
                 object: window,
                 queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.requestSurfaceGeometryRefresh()
-                }
-            },
+            ) { _ in refresh() },
             center.addObserver(
                 forName: NSApplication.didChangeScreenParametersNotification,
                 object: nil,
                 queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.requestSurfaceGeometryRefresh()
-                }
-            },
+            ) { _ in refresh() },
         ]
     }
 
@@ -1225,6 +1186,21 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         return dir
     }
 
+    /// Best guess at which screen a brand-new terminal view will end up
+    /// living on. The view isn't in a window yet at surface-creation time,
+    /// so we walk the app's windows — a `keyWindow` or `mainWindow` is the
+    /// most likely host. Falls back to the global `NSScreen.main` only if
+    /// nothing else is available.
+    @MainActor
+    private static func likelyTargetScreen() -> NSScreen? {
+        if let screen = NSApp.keyWindow?.screen { return screen }
+        if let screen = NSApp.mainWindow?.screen { return screen }
+        for window in NSApp.windows where window.isVisible {
+            if let screen = window.screen { return screen }
+        }
+        return NSScreen.main
+    }
+
     private nonisolated static func makeSurface(
         app: ghostty_app_t,
         view: GhosttyMetalView,
@@ -1246,8 +1222,25 @@ class GhosttyMetalView: NSView, CALayerDelegate {
                     nsview: Unmanaged.passUnretained(view).toOpaque()
                 )
             )
-            surfaceCfg.scale_factor = Double(NSScreen.main?.backingScaleFactor ?? 2.0)
-            surfaceCfg.font_size = Float(GhosttyRuntime.shared.terminalFontSize(for: NSScreen.main))
+            // The view is not yet in a window when this runs (we're inside
+            // GhosttyMetalView.init), so view.window is nil. NSScreen.main
+            // is wrong on multi-monitor setups where the app's window lives
+            // on a different screen (e.g. an external LG attached to a
+            // Retina-internal Mac) — Ghostty would bootstrap its renderer
+            // with the wrong scale_factor + font_size, allocate Metal
+            // resources for the wrong DPI, and then have to fix everything
+            // up after the post-window-attach refresh. Prefer the screen
+            // hosting the current key window — that's overwhelmingly likely
+            // to be where this new view ends up too.
+            let (initialScale, initialFontSize): (Double, Float) = MainActor.assumeIsolated {
+                let screen = Self.likelyTargetScreen()
+                return (
+                    Double(screen?.backingScaleFactor ?? 2.0),
+                    Float(GhosttyRuntime.shared.terminalFontSize(for: screen))
+                )
+            }
+            surfaceCfg.scale_factor = initialScale
+            surfaceCfg.font_size = initialFontSize
             surfaceCfg.working_directory = directory
             surfaceCfg.initial_input = input
             surfaceCfg.env_vars = envPtrs
