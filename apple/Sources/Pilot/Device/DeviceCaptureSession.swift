@@ -123,6 +123,41 @@ final class DeviceCaptureSession: NSObject {
         }
     }
 
+    /// Copies a single frame of the live device feed to the general
+    /// pasteboard as a PNG-backed `NSImage`, so it pastes into Messages,
+    /// Notes, Preview, design tools, etc. Mirrors `takeScreenshot()`
+    /// without touching disk.
+    func copyScreenshotToClipboard() {
+        guard status == .streaming else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            guard let cgImage = await self.frameDelegate.nextFrame() else {
+                self.lastError = "Couldn't grab a frame to copy."
+                return
+            }
+            let image = NSImage(
+                cgImage: cgImage,
+                size: NSSize(width: cgImage.width, height: cgImage.height)
+            )
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            // Write `NSImage` so paste targets that prefer image data get
+            // it, and add an explicit PNG representation for clients that
+            // ask for raw bytes (Slack, browsers, etc.).
+            var wroteAny = pasteboard.writeObjects([image])
+            let bitmap = NSBitmapImageRep(cgImage: cgImage)
+            if let pngData = bitmap.representation(using: .png, properties: [:]) {
+                pasteboard.setData(pngData, forType: .png)
+                wroteAny = true
+            }
+            if !wroteAny {
+                self.lastError = "Couldn't put the screenshot on the clipboard."
+            } else {
+                self.lastError = nil
+            }
+        }
+    }
+
     private func write(cgImage: CGImage, to url: URL) {
         let bitmap = NSBitmapImageRep(cgImage: cgImage)
         guard let data = bitmap.representation(using: .png, properties: [:]) else {

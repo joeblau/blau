@@ -168,6 +168,8 @@ struct ContentView: View {
                         Label("New Device", systemImage: "iphone.gen3")
                     }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
+
+                    ideToolbarButton
                 }
                 .disabled(store.selectedWorkspace == nil)
                 Button {
@@ -295,6 +297,14 @@ struct ContentView: View {
         }
         .disabled(!isStreaming)
         .help("Save a screenshot of the iPhone screen to the Desktop")
+
+        Button {
+            session.copyScreenshotToClipboard()
+        } label: {
+            Label("Copy Screenshot", systemImage: "doc.on.clipboard")
+        }
+        .disabled(!isStreaming)
+        .help("Copy a screenshot of the iPhone screen to the clipboard")
     }
 
     @ViewBuilder
@@ -468,6 +478,34 @@ struct ContentView: View {
 
     private var selectedWorkspaceRootPath: String? {
         store.selectedWorkspace?.effectiveRootPath
+    }
+
+    /// Top-toolbar action that opens the active workspace's root in the
+    /// user's preferred external IDE — Cursor first, then Codex, then
+    /// VS Code. Disabled (with a "why" tooltip) when no supported IDE is
+    /// installed or the workspace has no root path yet.
+    @ViewBuilder
+    private var ideToolbarButton: some View {
+        let ide = IDELauncher.preferred
+        let rootPath = selectedWorkspaceRootPath
+        Button {
+            guard let ide, let rootPath else { return }
+            IDELauncher.open(directoryPath: rootPath, in: ide)
+        } label: {
+            Label("Open in IDE", systemImage: "wrench.and.screwdriver")
+        }
+        .disabled(ide == nil || rootPath == nil)
+        .help(ideButtonHelp(ide: ide, rootPath: rootPath))
+    }
+
+    private func ideButtonHelp(ide: ExternalIDE?, rootPath: String?) -> String {
+        if ide == nil {
+            return "No supported IDE installed (Cursor, Codex, or VS Code)"
+        }
+        if rootPath == nil {
+            return "Set a workspace root path to open in an IDE"
+        }
+        return "Open project in \(ide!.displayName)"
     }
 
     private var rootPathEditorPresentedBinding: Binding<Bool> {
