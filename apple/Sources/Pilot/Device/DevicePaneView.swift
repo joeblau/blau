@@ -7,6 +7,9 @@ struct DevicePaneView: View {
     let isActive: Bool
     let isSelected: Bool
 
+    @State private var showCopiedToast = false
+    @State private var toastDismissWorkItem: DispatchWorkItem?
+
     var body: some View {
         let session = DeviceCaptureRegistry.shared.session(for: paneID)
         ZStack {
@@ -15,8 +18,45 @@ struct DevicePaneView: View {
                 .opacity(session.status == .streaming ? 0 : 1)
                 .allowsHitTesting(session.status != .streaming)
                 .animation(.easeInOut(duration: 0.2), value: session.status)
+
+            if showCopiedToast {
+                CopiedToast()
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    .allowsHitTesting(false)
+                    .zIndex(20)
+            }
         }
         .background(Color.black)
+        .onChange(of: session.clipboardCopyCount) { _, _ in
+            flashCopiedToast()
+        }
+    }
+
+    private func flashCopiedToast() {
+        toastDismissWorkItem?.cancel()
+        withAnimation(.snappy(duration: 0.18)) {
+            showCopiedToast = true
+        }
+        let work = DispatchWorkItem {
+            withAnimation(.snappy(duration: 0.3)) {
+                showCopiedToast = false
+            }
+        }
+        toastDismissWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+    }
+}
+
+private struct CopiedToast: View {
+    var body: some View {
+        Label("Screenshot Copied", systemImage: "checkmark.circle.fill")
+            .font(.headline)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(.separator.opacity(0.4), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
     }
 }
 

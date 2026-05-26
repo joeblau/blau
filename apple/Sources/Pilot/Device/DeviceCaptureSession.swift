@@ -30,6 +30,10 @@ final class DeviceCaptureSession: NSObject {
     var deviceName: String?
     var isRecording: Bool = false
     var lastError: String?
+    /// Increments on every successful clipboard write. UI binds `.onChange`
+    /// to this to flash a "Copied" toast — counter instead of `Date?` so
+    /// back-to-back copies still fire the observation.
+    var clipboardCopyCount: Int = 0
 
     @ObservationIgnored private let logger = Logger(subsystem: "app.blau.pilot.device", category: "capture")
     @ObservationIgnored private let audioPreview = AVCaptureAudioPreviewOutput()
@@ -154,6 +158,7 @@ final class DeviceCaptureSession: NSObject {
                 self.lastError = "Couldn't put the screenshot on the clipboard."
             } else {
                 self.lastError = nil
+                self.clipboardCopyCount &+= 1
             }
         }
     }

@@ -8,16 +8,27 @@ struct TaskListView: View {
     @State private var newTaskTitle: String = ""
     @FocusState private var isNewTaskFieldFocused: Bool
     @State private var keyMonitor: Any?
+    @State private var showCopiedToast = false
+    @State private var toastDismissWorkItem: DispatchWorkItem?
 
     private func dismiss() { onDismiss() }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            taskList
-            Divider()
-            footer
+        ZStack {
+            VStack(spacing: 0) {
+                header
+                Divider()
+                taskList
+                Divider()
+                footer
+            }
+
+            if showCopiedToast {
+                CopiedTaskToast()
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    .allowsHitTesting(false)
+                    .zIndex(20)
+            }
         }
         .frame(minWidth: 420, idealWidth: 480, minHeight: 360, idealHeight: 520)
         .onAppear {
@@ -69,6 +80,7 @@ struct TaskListView: View {
         return List {
             ForEach(tasks) { task in
                 taskRow(task)
+                    .listRowSeparator(.hidden)
             }
             .onMove { source, destination in
                 workspace.moveTasks(from: source, to: destination)
@@ -86,7 +98,7 @@ struct TaskListView: View {
     }
 
     private func taskRow(_ task: WorkspaceTask) -> some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
             Button {
                 withAnimation(.snappy) {
                     workspace.toggleTaskCompletion(task)
@@ -98,20 +110,24 @@ struct TaskListView: View {
             }
             .buttonStyle(.plain)
 
-            if task.isCompleted {
-                Text(task.title)
-                    .strikethrough(color: .secondary)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
+            if focusedTaskID == task.id {
                 TextField("Task", text: Bindable(task).title, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...10)
                     .focused($focusedTaskID, equals: task.id)
+                    .onSubmit { focusedTaskID = nil }
                     .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(task.title)
+                    .strikethrough(task.isCompleted, color: .secondary)
+                    .foregroundStyle(task.isCompleted ? .secondary : .primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { focusedTaskID = task.id }
+                    .onTapGesture(count: 1) { copyTaskToClipboard(task) }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 
     /// Inline row at the bottom of the list — tap to start typing a new
@@ -202,6 +218,29 @@ struct TaskListView: View {
         isNewTaskFieldFocused = true
     }
 
+    private func copyTaskToClipboard(_ task: WorkspaceTask) {
+        let trimmed = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(trimmed, forType: .string)
+        flashCopiedToast()
+    }
+
+    private func flashCopiedToast() {
+        toastDismissWorkItem?.cancel()
+        withAnimation(.snappy(duration: 0.18)) {
+            showCopiedToast = true
+        }
+        let work = DispatchWorkItem {
+            withAnimation(.snappy(duration: 0.3)) {
+                showCopiedToast = false
+            }
+        }
+        toastDismissWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+    }
+
     /// Strip common list-item prefixes (bullets, numbered markers, checkboxes)
     /// so a pasted line like "- Finish the pitch deck" becomes
     /// "Finish the pitch deck".
@@ -216,6 +255,19 @@ struct TaskListView: View {
             withTemplate: ""
         )
         return stripped.trimmingCharacters(in: .whitespaces)
+    }
+}
+
+private struct CopiedTaskToast: View {
+    var body: some View {
+        Label("Task Copied", systemImage: "checkmark.circle.fill")
+            .font(.headline)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(.separator.opacity(0.4), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
     }
 }
 
