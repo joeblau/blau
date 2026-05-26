@@ -63,7 +63,7 @@ struct PilotApp: App {
                 .keyboardShortcut("x", modifiers: .command)
 
                 Button("Copy") {
-                    sendStandardEditAction(#selector(NSText.copy(_:)))
+                    copyOrCaptureScreenshot()
                 }
                 .keyboardShortcut("c", modifiers: .command)
 
@@ -169,6 +169,27 @@ struct PilotApp: App {
         if let firstBrowser = workspace.sortedPanes.first(where: { $0.kind == .browser }) {
             workspace.selectedPaneID = firstBrowser.id
         }
+    }
+
+    private func copyOrCaptureScreenshot() {
+        // If a text editor (sheet field, address bar, etc.) is the
+        // first responder, let it handle the standard copy.
+        if let responder = NSApp.keyWindow?.firstResponder,
+           responder is NSText {
+            sendStandardEditAction(#selector(NSText.copy(_:)))
+            return
+        }
+
+        // In a device pane: ⌘C grabs a screenshot to the clipboard. The
+        // session's `clipboardCopyCount` increment drives the toast.
+        if let pane = store.selectedWorkspace?.selectedPane,
+           pane.kind == .device {
+            DeviceCaptureRegistry.shared.session(for: pane.id)
+                .copyScreenshotToClipboard()
+            return
+        }
+
+        sendStandardEditAction(#selector(NSText.copy(_:)))
     }
 
     private func pasteIntoSelectedPane() {
