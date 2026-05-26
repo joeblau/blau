@@ -13,6 +13,11 @@ settings:
     SWIFT_VERSION: "6.0"
     ENABLE_USER_SCRIPT_SANDBOXING: true
     DEVELOPMENT_TEAM: K78G42H4U2
+    # Work around XcodeGen/Xcode's iOS SwiftPM integration losing Jinja's
+    # transitive OrderedCollections module search path.
+    SWIFT_INCLUDE_PATHS:
+      - "$(inherited)"
+      - "$(BUILD_DIR)/../../swift-collections/build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)"
 
 packages:
   WhisperKit:
@@ -25,12 +30,14 @@ targets:
     platform: macOS
     sources:
       - Sources/Pilot
-      - Sources/Shared
+      - path: Sources/Shared
+        # Audio capture + Whisper transcription live on Copilot now —
+        # Pilot just receives the finished text over the sync channel.
+        excludes:
+          - "TranscriptionService.swift"
     dependencies:
       - framework: Frameworks/GhosttyKit.xcframework
         embed: false
-      - package: WhisperKit
-        product: WhisperKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.pilot
@@ -59,6 +66,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
     dependencies:
       - target: Wingman Watch App
+      - package: WhisperKit
+        product: WhisperKit
 
   Wingman Watch App:
     type: application

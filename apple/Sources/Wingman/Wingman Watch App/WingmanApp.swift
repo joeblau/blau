@@ -18,9 +18,9 @@ private struct WingmanDoublePinchPayload: Sendable {
 final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendable {
     var isReachable = false
 
-    func session(_ session: WCSession,
-                 activationDidCompleteWith activationState: WCSessionActivationState,
-                 error: Error?) {
+    nonisolated func session(_ session: WCSession,
+                             activationDidCompleteWith activationState: WCSessionActivationState,
+                             error: Error?) {
         if error == nil {
             let isReachable = session.isReachable
             Task { @MainActor in
@@ -28,6 +28,16 @@ final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendab
             }
         }
     }
+
+    // `WCSessionDelegate` declares these as required in the Swift import
+    // even though the headers mark them `__WATCHOS_UNAVAILABLE`. Empty
+    // stubs satisfy the conformance for any iOS slice (e.g. Designed
+    // for iPad) that ever picks up this file. Compiling them under
+    // watchOS would fail with "marked unavailable", so the iOS guard.
+    #if os(iOS)
+    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
+    nonisolated func sessionDidDeactivate(_ session: WCSession) {}
+    #endif
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         let isReachable = session.isReachable
@@ -53,9 +63,14 @@ final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendab
             return
         }
 
+        // `isCompanionAppInstalled` only exists on watchOS — the
+        // counterpart iPhone always has the Watch app considered
+        // "installed" from its perspective.
+        #if os(watchOS)
         guard session.isCompanionAppInstalled else {
             return
         }
+        #endif
 
         if session.isReachable {
             session.sendMessage(dictionary, replyHandler: { _ in

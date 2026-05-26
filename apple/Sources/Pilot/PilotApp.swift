@@ -9,18 +9,22 @@ struct PilotApp: App {
     @State private var store: WorkspaceStore
     @State private var peerDeviceStatus = DeviceStatus()
     @State private var headphoneDetector = HeadphoneDetector()
-    @State private var remoteTranscription = TranscriptionService()
     @State private var syncService = PeerSyncService(
         role: .advertiser,
         displayName: Host.current().localizedName ?? "Mac"
     )
     @State private var recordingTargetPaneID: UUID?
+    /// True while a Copilot peer is currently push-to-talking. Flipped
+    /// from `.voiceRecord(.start | .stop)` messages so the Mac UI can
+    /// show a "listening" hint even though the audio + transcription
+    /// happen on the iPhone now.
+    @State private var isPeerRecording: Bool = false
     @State private var didSetupSync = false
 
     @AppStorage("ui.zoom") private var uiZoom: Double = UIZoomLadder.default
 
     init() {
-        let schema = Schema([Workspace.self, Pane.self, BrowserState.self])
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, WorkspaceTask.self])
         let container = try! ModelContainer(for: schema)
         self.modelContainer = container
         self._store = State(initialValue: WorkspaceStore(modelContext: container.mainContext))
@@ -28,7 +32,7 @@ struct PilotApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(store: store, syncService: syncService, peerDeviceStatus: peerDeviceStatus, localAudioOutput: headphoneDetector.audioOutput, remoteTranscription: remoteTranscription)
+            ContentView(store: store, syncService: syncService, peerDeviceStatus: peerDeviceStatus, localAudioOutput: headphoneDetector.audioOutput, isPeerRecording: isPeerRecording)
                 .environment(\.uiZoom, uiZoom)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                 .onChange(of: uiZoom) { _, newValue in
@@ -74,6 +78,13 @@ struct PilotApp: App {
                     workspace.setInspectorPresented(!workspace.isInspectorPresented)
                 }
                 .keyboardShortcut("i", modifiers: .command)
+                .disabled(store.selectedWorkspace == nil)
+
+                Button(store.selectedWorkspace?.isTaskListPresented == true ? "Hide Task List" : "Show Task List") {
+                    guard let workspace = store.selectedWorkspace else { return }
+                    workspace.setTaskListPresented(!workspace.isTaskListPresented)
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
                 .disabled(store.selectedWorkspace == nil)
 
                 Button("Focus Selected Pane") {
@@ -161,6 +172,15 @@ struct PilotApp: App {
     }
 
     private func pasteIntoSelectedPane() {
+        // If a text editor (sheet field, alert, address bar, etc.) is the
+        // first responder, let it handle paste normally — otherwise the
+        // terminal beneath the sheet would steal the keystroke.
+        if let responder = NSApp.keyWindow?.firstResponder,
+           responder is NSText {
+            sendStandardEditAction(#selector(NSText.paste(_:)))
+            return
+        }
+
         if let terminal = selectedTerminalView {
             terminal.paste(nil)
             return
@@ -198,6 +218,11 @@ struct PilotApp: App {
             case .mouseClick:
                 MouseBridge.shared.click()
             case .voiceRecord(let command):
+                // Audio capture + transcription now live on Copilot.
+                // Pilot uses this message only to switch to the
+                // workspace whose button is being held (snappy UI) and
+                // to remember which terminal pane should receive the
+                // text when the iPhone sends `.transcribedSpeech`.
                 switch command.control {
                 case .start:
                     let targetWorkspaceID = command.workspaceID ?? store.selectedWorkspaceID
@@ -205,21 +230,24 @@ struct PilotApp: App {
                         store.selectedWorkspaceID = targetWorkspaceID
                     }
                     recordingTargetPaneID = activeTerminalPane(in: targetWorkspaceID)?.id
-                    Task { await remoteTranscription.start() }
+                    isPeerRecording = true
                 case .stop:
-                    let targetPaneID = recordingTargetPaneID
-                    recordingTargetPaneID = nil
-                    Task {
-                        await remoteTranscription.stop()
-                        let text = [remoteTranscription.finalText, remoteTranscription.partialText]
-                            .filter { !$0.isEmpty }
-                            .joined(separator: " ")
-                            .replacingOccurrences(of: "Waiting for speech...", with: "")
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !text.isEmpty else { return }
-                        terminalView(for: targetPaneID)?.pasteText(text)
-                    }
+                    isPeerRecording = false
                 }
+            case .transcribedSpeech(let speech):
+                let trimmed = speech.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else {
+                    recordingTargetPaneID = nil
+                    return
+                }
+                // Prefer the pane captured at hold-start, fall back to
+                // the current active terminal of the workspace whose
+                // button was held (or the workspace selected when the
+                // message arrives, in case Pilot was launched mid-hold).
+                let targetPaneID = recordingTargetPaneID
+                    ?? activeTerminalPane(in: speech.workspaceID ?? store.selectedWorkspaceID)?.id
+                recordingTargetPaneID = nil
+                terminalView(for: targetPaneID)?.pasteText(trimmed)
             case .terminalInput(let input):
                 switch input {
                 case .enter:
