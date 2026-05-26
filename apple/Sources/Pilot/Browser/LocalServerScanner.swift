@@ -34,18 +34,28 @@ enum LocalServerScanner {
 
     private static func collect(rootPath: String) -> [LocalServer] {
         let root = URL(fileURLWithPath: rootPath)
-        let configFiles = collectConfigFiles(at: root)
+        let configFiles = collectConfigFiles(at: root).sorted { lhs, rhs in
+            // package.json wins over .env at the same project folder.
+            let lhsIsPkg = lhs.lastPathComponent == "package.json"
+            let rhsIsPkg = rhs.lastPathComponent == "package.json"
+            if lhsIsPkg != rhsIsPkg { return lhsIsPkg }
+            return lhs.path < rhs.path
+        }
 
-        var byPort: [Int: LocalServer] = [:]
+        // Dedupe by project folder so two Next.js apps that both default to
+        // 3000 both surface — port collisions are real and worth showing.
+        var byProject: [String: LocalServer] = [:]
         for url in configFiles {
             guard let server = parse(file: url) else { continue }
-            // First write wins so the more specific source (package.json) is
-            // preferred over an `.env` fallback at the same project root.
-            if byPort[server.port] == nil {
-                byPort[server.port] = server
+            let projectKey = url.deletingLastPathComponent().path
+            if byProject[projectKey] == nil {
+                byProject[projectKey] = server
             }
         }
-        return byPort.values.sorted { $0.port < $1.port }
+        return byProject.values.sorted {
+            if $0.port != $1.port { return $0.port < $1.port }
+            return $0.name < $1.name
+        }
     }
 
     // MARK: - Tree walk
@@ -104,9 +114,10 @@ enum LocalServerScanner {
             folder: url.deletingLastPathComponent().lastPathComponent
         )
         let scripts = json["scripts"] as? [String: String] ?? [:]
-        let scriptValue = ["dev", "start", "serve"]
+        let rawScript = ["dev", "start", "serve"]
             .compactMap { scripts[$0] }
             .first ?? ""
+        let scriptValue = resolveScriptIndirection(rawScript, scripts: scripts)
 
         if let port = extractPort(fromScript: scriptValue) {
             return LocalServer(port: port, name: projectName)
@@ -115,6 +126,26 @@ enum LocalServerScanner {
             return LocalServer(port: port, name: projectName)
         }
         return nil
+    }
+
+    // Follows `bun run X` / `npm run X` / `pnpm run X` / `yarn X` wrappers
+    // to the underlying script in the same package.json so the real -p flag
+    // is visible to `extractPort`. Bounded to 5 hops to defend against
+    // accidental cycles.
+    private static func resolveScriptIndirection(
+        _ script: String,
+        scripts: [String: String],
+        depth: Int = 0
+    ) -> String {
+        guard depth < 5 else { return script }
+        let tokens = script.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        guard tokens.count >= 2 else { return script }
+        let runners: Set<String> = ["bun", "npm", "pnpm", "yarn", "npx"]
+        guard runners.contains(tokens[0]) else { return script }
+        let candidateIndex = tokens[1] == "run" ? 2 : 1
+        guard candidateIndex < tokens.count else { return script }
+        guard let next = scripts[tokens[candidateIndex]] else { return script }
+        return resolveScriptIndirection(next, scripts: scripts, depth: depth + 1)
     }
 
     private static func parseEnv(at url: URL, fallbackName: String) -> LocalServer? {

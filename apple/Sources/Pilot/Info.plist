@@ -28,8 +28,6 @@
     </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Pilot uses the local network to sync with Copilot.</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>Pilot uses the microphone for live speech-to-text transcription.</string>
     <key>NSCameraUsageDescription</key>
     <string>Pilot uses camera access to mirror a USB-tethered iPhone in the device pane, the same way QuickTime does.</string>
 </dict>

@@ -16,6 +16,14 @@ struct VoiceRecordCommand: Codable, Sendable {
     let workspaceID: UUID?
 }
 
+/// Final transcript produced on Copilot (iPhone). Sent to Pilot at the
+/// end of a push-to-talk hold so the Mac can paste it into the workspace
+/// whose volume button was held — no audio bytes ever cross the wire.
+struct TranscribedSpeech: Codable, Sendable {
+    let workspaceID: UUID?
+    let text: String
+}
+
 enum TerminalInput: String, Codable, Sendable {
     case enter
 }
@@ -27,6 +35,7 @@ enum SyncMessage: Codable, Sendable {
     case mouseMove(MouseMove)
     case mouseClick(MouseClick)
     case voiceRecord(VoiceRecordCommand)
+    case transcribedSpeech(TranscribedSpeech)
     case terminalInput(TerminalInput)
 }
 

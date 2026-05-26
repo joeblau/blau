@@ -7,7 +7,10 @@ struct ContentView: View {
     var syncService: PeerSyncService
     var peerDeviceStatus: DeviceStatus
     var localAudioOutput: AudioOutputDevice?
-    var remoteTranscription: TranscriptionService
+    /// Reflects whether a Copilot peer is currently push-to-talking. The
+    /// transcription itself runs on the iPhone now — Pilot only paints
+    /// the "listening" indicator and pastes the finished text.
+    var isPeerRecording: Bool
     @State private var gitStore = GitCommitStore()
     @State private var rootPathEditorWorkspaceID: UUID?
     @State private var rootPathEditorText = ""
@@ -48,7 +51,7 @@ struct ContentView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 12) {
-                    RecordingStatusIndicator(isRecording: remoteTranscription.isTranscribing)
+                    RecordingStatusIndicator(isRecording: isPeerRecording)
 
                     Spacer(minLength: 0)
 
@@ -99,6 +102,17 @@ struct ContentView: View {
             )
                 .inspectorColumnWidth(min: 220, ideal: 280, max: 400)
         }
+        .overlay {
+            if let workspace = store.selectedWorkspace,
+               workspace.isTaskListPresented {
+                TaskListOverlay(workspace: workspace) {
+                    workspace.setTaskListPresented(false)
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                .zIndex(100)
+            }
+        }
+        .animation(.snappy(duration: 0.18), value: store.selectedWorkspace?.isTaskListPresented)
         .onChange(of: activeInspectorRepoPath) {
             syncInspectorRepo(activeInspectorRepoPath)
         }
@@ -172,6 +186,14 @@ struct ContentView: View {
                     ideToolbarButton
                 }
                 .disabled(store.selectedWorkspace == nil)
+                Button {
+                    guard let workspace = store.selectedWorkspace else { return }
+                    workspace.setTaskListPresented(!workspace.isTaskListPresented)
+                } label: {
+                    Label("Tasks", systemImage: "checklist")
+                }
+                .disabled(store.selectedWorkspace == nil)
+                .help("Show task list")
                 Button {
                     guard let workspace = store.selectedWorkspace else { return }
                     workspace.setInspectorPresented(!workspace.isInspectorPresented)
@@ -425,6 +447,15 @@ struct ContentView: View {
         store.selectedWorkspace?.isInspectorPresented ?? false
     }
 
+    private var selectedWorkspaceTaskListPresentedBinding: Binding<Bool> {
+        Binding(
+            get: { store.selectedWorkspace?.isTaskListPresented ?? false },
+            set: { isPresented in
+                store.selectedWorkspace?.setTaskListPresented(isPresented)
+            }
+        )
+    }
+
     private var selectedBrowserState: BrowserState? {
         guard let pane = store.selectedWorkspace?.selectedPane,
               pane.kind == .browser else { return nil }
@@ -581,7 +612,7 @@ extension Notification.Name {
 @MainActor
 private enum ContentViewPreviewData {
     static let container: ModelContainer = {
-        let schema = Schema([Workspace.self, Pane.self, BrowserState.self])
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, WorkspaceTask.self])
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: configuration)
     }()
@@ -593,7 +624,7 @@ private enum ContentViewPreviewData {
         syncService: PeerSyncService(role: .advertiser, displayName: "Preview"),
         peerDeviceStatus: DeviceStatus(),
         localAudioOutput: nil,
-        remoteTranscription: TranscriptionService()
+        isPeerRecording: false
     )
     .modelContainer(ContentViewPreviewData.container)
 }

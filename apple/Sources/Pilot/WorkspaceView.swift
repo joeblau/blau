@@ -761,9 +761,10 @@ struct WebViewRepresentable: NSViewRepresentable {
         return URL(string: "https://\(trimmed)")
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKDownloadDelegate {
         let state: BrowserState
         private var urlObservation: NSKeyValueObservation?
+        private var pendingDestinations: [ObjectIdentifier: URL] = [:]
 
         init(state: BrowserState) {
             self.state = state
@@ -787,6 +788,77 @@ struct WebViewRepresentable: NSViewRepresentable {
                     }
                 }
             }
+        }
+
+        // MARK: - Download routing
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationResponse: WKNavigationResponse,
+            decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+        ) {
+            // Anything WebKit can't render inline (zip, dmg, pkg, raw images
+            // when triggered via Save As, etc.) is converted to a download.
+            decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            navigationAction: WKNavigationAction,
+            didBecome download: WKDownload
+        ) {
+            download.delegate = self
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            navigationResponse: WKNavigationResponse,
+            didBecome download: WKDownload
+        ) {
+            download.delegate = self
+        }
+
+        // MARK: - WKDownloadDelegate
+
+        func download(
+            _ download: WKDownload,
+            decideDestinationUsing response: URLResponse,
+            suggestedFilename: String,
+            completionHandler: @MainActor @Sendable @escaping (URL?) -> Void
+        ) {
+            let directory = FileManager.default.urls(
+                for: .downloadsDirectory,
+                in: .userDomainMask
+            ).first ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Downloads")
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+            let destination = Self.uniqueDestination(in: directory, suggestedFilename: suggestedFilename)
+            pendingDestinations[ObjectIdentifier(download)] = destination
+            completionHandler(destination)
+        }
+
+        func downloadDidFinish(_ download: WKDownload) {
+            guard let url = pendingDestinations.removeValue(forKey: ObjectIdentifier(download)) else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+
+        func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+            pendingDestinations.removeValue(forKey: ObjectIdentifier(download))
+        }
+
+        private static func uniqueDestination(in directory: URL, suggestedFilename: String) -> URL {
+            let fallback = suggestedFilename.isEmpty ? "download" : suggestedFilename
+            var candidate = directory.appendingPathComponent(fallback)
+            guard FileManager.default.fileExists(atPath: candidate.path) else { return candidate }
+
+            let ext = candidate.pathExtension
+            let stem = candidate.deletingPathExtension().lastPathComponent
+            for n in 1...999 {
+                let nextName = ext.isEmpty ? "\(stem) \(n)" : "\(stem) \(n).\(ext)"
+                candidate = directory.appendingPathComponent(nextName)
+                if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            }
+            return candidate
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {

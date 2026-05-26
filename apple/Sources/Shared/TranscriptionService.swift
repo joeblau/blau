@@ -2,6 +2,10 @@ import Foundation
 import Observation
 @preconcurrency import WhisperKit
 
+#if canImport(AVFAudio)
+import AVFAudio
+#endif
+
 @Observable
 @MainActor
 final class TranscriptionService: @unchecked Sendable {
@@ -10,6 +14,13 @@ final class TranscriptionService: @unchecked Sendable {
     var isTranscribing: Bool = false
     var isModelLoaded: Bool = false
     var modelLoadingProgress: String = ""
+
+    /// Model selection rationale: `base` runs at roughly 0.1× real-time on
+    /// recent iPhones via the Neural Engine, with materially better
+    /// accuracy than `tiny` for the short command-style utterances
+    /// walkie-talkie produces. WhisperKit downloads the CoreML model on
+    /// first use and caches it on-device.
+    private static let modelName = "openai_whisper-base"
 
     private var whisperKit: WhisperKit?
     private var streamTranscriber: AudioStreamTranscriber?
@@ -22,7 +33,7 @@ final class TranscriptionService: @unchecked Sendable {
         do {
             let kit = try await WhisperKit(
                 WhisperKitConfig(
-                    model: "openai_whisper-tiny",
+                    model: Self.modelName,
                     verbose: false,
                     logLevel: .none,
                     prewarm: true,
@@ -45,6 +56,11 @@ final class TranscriptionService: @unchecked Sendable {
             await loadModel()
         }
         guard let kit = whisperKit else { return }
+
+        // On iOS, the shared `AVAudioSession` must be in a category that
+        // permits recording before WhisperKit's `AudioProcessor` opens
+        // the input node. macOS doesn't use `AVAudioSession`.
+        Self.activateRecordingAudioSession()
 
         transcriptionGeneration += 1
         let generation = transcriptionGeneration
@@ -117,28 +133,46 @@ final class TranscriptionService: @unchecked Sendable {
         await streamTranscriber?.stopStreamTranscription()
         streamTranscriber = nil
         isTranscribing = false
+        Self.deactivateRecordingAudioSession()
     }
 
-    private func handleStateChange(
-        oldState: AudioStreamTranscriber.State,
-        newState: AudioStreamTranscriber.State
-    ) {
-        let confirmed = newState.confirmedSegments
-            .map(\.text)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let unconfirmed = newState.unconfirmedSegments
-            .map(\.text)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let current = newState.currentText
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        finalText = confirmed
-        partialText = [unconfirmed, current]
+    /// Returns the best-effort full transcript captured during the most
+    /// recent `start()/stop()` cycle. Call after `stop()` returns.
+    var combinedText: String {
+        [finalText, partialText]
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+            .replacingOccurrences(of: "Waiting for speech...", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - AVAudioSession (iOS only)
+
+    private static func activateRecordingAudioSession() {
+        #if canImport(AVFAudio) && os(iOS)
+        let session = AVAudioSession.sharedInstance()
+        do {
+            // `.playAndRecord` (vs. `.record`) keeps system sounds and
+            // other apps mixable, and `.duckOthers` lowers their volume
+            // while we listen. `.allowBluetooth` covers AirPods mics.
+            try session.setCategory(
+                .playAndRecord,
+                mode: .measurement,
+                options: [.duckOthers, .allowBluetooth, .defaultToSpeaker]
+            )
+            try session.setActive(true, options: [])
+        } catch {
+            // Best-effort: WhisperKit will surface an audio engine error
+            // if the session isn't usable.
+        }
+        #endif
+    }
+
+    private static func deactivateRecordingAudioSession() {
+        #if canImport(AVFAudio) && os(iOS)
+        let session = AVAudioSession.sharedInstance()
+        // Notify other apps we're done so they can ramp back up.
+        try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+        #endif
     }
 }

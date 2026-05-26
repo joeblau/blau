@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var selectedID: UUID?
     @State private var recordingWorkspaceID: UUID?
     @State private var preHoldWorkspaceID: UUID?
+    @State private var transcription = TranscriptionService()
 
     var body: some View {
         NavigationStack {
@@ -65,17 +66,29 @@ struct ContentView: View {
             onVolumeHoldStart: {
                 let workspaceID = preHoldWorkspaceID ?? selectedID
                 recordingWorkspaceID = workspaceID
+                // Tell Pilot to focus that workspace immediately and
+                // show the listening indicator — the actual mic/Whisper
+                // run on this device.
                 syncService.send(.voiceRecord(
                     VoiceRecordCommand(control: .start, workspaceID: workspaceID)
                 ))
+                Task { await transcription.start() }
             },
             onVolumeHoldEnd: {
                 let workspaceID = recordingWorkspaceID ?? selectedID
-                syncService.send(.voiceRecord(
-                    VoiceRecordCommand(control: .stop, workspaceID: workspaceID)
-                ))
                 recordingWorkspaceID = nil
                 preHoldWorkspaceID = nil
+                Task {
+                    await transcription.stop()
+                    syncService.send(.voiceRecord(
+                        VoiceRecordCommand(control: .stop, workspaceID: workspaceID)
+                    ))
+                    let text = transcription.combinedText
+                    guard !text.isEmpty else { return }
+                    syncService.send(.transcribedSpeech(
+                        TranscribedSpeech(workspaceID: workspaceID, text: text)
+                    ))
+                }
             }
         ) { workspace, isHighlighted in
             workspaceRow(workspace, isHighlighted: isHighlighted)
@@ -158,11 +171,16 @@ struct ContentView: View {
             case .workspaceState(let state):
                 workspaces = state.workspaces
                 selectedID = state.selectedWorkspaceID
-            case .selectWorkspace, .deviceStatus, .mouseMove, .mouseClick, .voiceRecord, .terminalInput:
+            case .selectWorkspace, .deviceStatus, .mouseMove, .mouseClick,
+                 .voiceRecord, .transcribedSpeech, .terminalInput:
                 break
             }
         }
         syncService.start()
+        // Prewarm Whisper so the first hold doesn't pay the ~2s model
+        // load. Network download (≈150 MB for `base`) still happens
+        // lazily on first run; subsequent launches reuse the cache.
+        Task { await transcription.loadModel() }
     }
 
     private func sendDeviceStatus() {
