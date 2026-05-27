@@ -15,6 +15,7 @@ final class GhosttyRuntime: @unchecked Sendable {
     )
     static let terminalBackgroundHex = "#1c1c1c"
     private static let defaultTerminalFontSizePoints: CGFloat = 13.0
+    private static let nativeDisplayModeFlag: UInt32 = 0x02000000
 
     private(set) var app: ghostty_app_t?
     private(set) var config: ghostty_config_t?
@@ -118,20 +119,7 @@ final class GhosttyRuntime: @unchecked Sendable {
     }
 
     func terminalFontSize(for screen: NSScreen?) -> CGFloat {
-        // Earlier versions multiplied by a `displayModeFontScale(for:)`
-        // heuristic that tried to bump font size on "More Space" Retina
-        // configurations. It relied on the *smallest* native-flagged
-        // `CGDisplayMode` as the baseline, which misbehaves on non-Retina
-        // ultrawides: an LG 34UM95 reports a native-flagged 1720×720 mode
-        // alongside its real 3440×1440 mode, so the heuristic decided the
-        // screen was 2× over-driven and clamped to the 1.8× cap — bumping
-        // 13pt → 23.4pt. Text overflowed every pane.
-        //
-        // Drop the heuristic entirely. The user already has ⌘+/⌘-/⌘0 zoom
-        // (`userZoomFactor`), which is a more reliable and predictable
-        // control than guessing intent from display modes.
-        _ = screen
-        return baseFontSizePoints * userZoomFactor
+        baseFontSizePoints * Self.displayModeFontScale(for: screen) * userZoomFactor
     }
 
     func updatedConfig(overridingFontSize fontSize: CGFloat) -> ghostty_config_t? {
@@ -284,6 +272,58 @@ final class GhosttyRuntime: @unchecked Sendable {
             return defaultTerminalFontSizePoints
         }
         return CGFloat(value)
+    }
+
+    private static func displayModeFontScale(for screen: NSScreen?) -> CGFloat {
+        guard let screen, screen.backingScaleFactor > 1.0 else {
+            return 1.0
+        }
+        guard let nativeLogicalSize = nativeLogicalDisplaySize(for: screen) else {
+            return 1.0
+        }
+        guard nativeLogicalSize.width > 0, nativeLogicalSize.height > 0 else {
+            return 1.0
+        }
+
+        let widthScale = screen.frame.width / nativeLogicalSize.width
+        let heightScale = screen.frame.height / nativeLogicalSize.height
+        return max(1.0, min(max(widthScale, heightScale), 1.35))
+    }
+
+    private static func nativeLogicalDisplaySize(for screen: NSScreen) -> CGSize? {
+        guard let displayID = displayID(for: screen) else { return nil }
+
+        let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(displayID, options) as? [CGDisplayMode],
+              !modes.isEmpty else {
+            return nil
+        }
+
+        let nativeModes = modes.filter { ($0.ioFlags & nativeDisplayModeFlag) != 0 }
+        if let smallestNativeMode = nativeModes.min(by: { pointArea(of: $0) < pointArea(of: $1) }) {
+            return pointSize(for: smallestNativeMode)
+        }
+
+        let backingScale = max(screen.backingScaleFactor, 1.0)
+        let pixelWidth = CGFloat(CGDisplayPixelsWide(displayID))
+        let pixelHeight = CGFloat(CGDisplayPixelsHigh(displayID))
+        guard pixelWidth > 0, pixelHeight > 0 else { return nil }
+        return CGSize(width: pixelWidth / backingScale, height: pixelHeight / backingScale)
+    }
+
+    private static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
+        guard let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+            return nil
+        }
+        return CGDirectDisplayID(screenNumber.uint32Value)
+    }
+
+    private static func pointSize(for mode: CGDisplayMode) -> CGSize {
+        CGSize(width: CGFloat(mode.width), height: CGFloat(mode.height))
+    }
+
+    private static func pointArea(of mode: CGDisplayMode) -> CGFloat {
+        CGFloat(mode.width) * CGFloat(mode.height)
     }
 
     deinit {
@@ -652,6 +692,11 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         contentScaleX: CGFloat,
         contentScaleY: CGFloat
     ) {
+        let layerScale = max(contentScaleX, contentScaleY)
+        if let layer, abs(layer.contentsScale - layerScale) > 0.001 {
+            layer.contentsScale = layerScale
+        }
+
         ghostty_surface_set_content_scale(
             surface,
             Double(contentScaleX),

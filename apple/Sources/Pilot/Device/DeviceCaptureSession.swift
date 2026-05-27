@@ -47,7 +47,7 @@ final class DeviceCaptureSession: NSObject {
     override init() {
         super.init()
         Self.enableScreenCaptureDevices()
-        session.sessionPreset = .high
+        applyHighestAvailableSessionPreset()
         audioPreview.volume = 1.0
         videoDataOutput.alwaysDiscardsLateVideoFrames = true
         videoDataOutput.setSampleBufferDelegate(frameDelegate, queue: frameQueue)
@@ -299,6 +299,9 @@ final class DeviceCaptureSession: NSObject {
         for input in session.inputs { session.removeInput(input) }
         for output in session.outputs { session.removeOutput(output) }
 
+        applyHighestAvailableSessionPreset()
+        configureHighestResolutionFormat(for: device)
+
         do {
             let videoInput = try AVCaptureDeviceInput(device: device)
             if session.canAddInput(videoInput) {
@@ -377,6 +380,44 @@ final class DeviceCaptureSession: NSObject {
             return modelMatch
         }
         return candidates.first { $0.localizedName == video.localizedName }
+    }
+
+    private func applyHighestAvailableSessionPreset() {
+        for preset in [AVCaptureSession.Preset.hd4K3840x2160, .hd1920x1080, .high] {
+            if session.canSetSessionPreset(preset) {
+                session.sessionPreset = preset
+                return
+            }
+        }
+    }
+
+    private func configureHighestResolutionFormat(for device: AVCaptureDevice) {
+        let bestFormat = device.formats.max { lhs, rhs in
+            let lhsSize = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
+            let rhsSize = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
+            let lhsPixels = Int(lhsSize.width) * Int(lhsSize.height)
+            let rhsPixels = Int(rhsSize.width) * Int(rhsSize.height)
+            if lhsPixels != rhsPixels {
+                return lhsPixels < rhsPixels
+            }
+            return lhs.videoSupportedFrameRateRanges.bestFrameRate
+                < rhs.videoSupportedFrameRateRanges.bestFrameRate
+        }
+
+        guard let bestFormat else { return }
+        do {
+            try device.lockForConfiguration()
+            device.activeFormat = bestFormat
+            device.unlockForConfiguration()
+        } catch {
+            logger.warning("screen capture format selection failed: \(error.localizedDescription)")
+        }
+    }
+}
+
+private extension [AVFrameRateRange] {
+    var bestFrameRate: Double {
+        map(\.maxFrameRate).max() ?? 0
     }
 }
 
