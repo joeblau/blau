@@ -24,7 +24,7 @@ struct PilotApp: App {
     @AppStorage("ui.zoom") private var uiZoom: Double = UIZoomLadder.default
 
     init() {
-        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, WorkspaceTask.self])
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, WorkspaceTask.self, Note.self])
         let container = try! ModelContainer(for: schema)
         self.modelContainer = container
         self._store = State(initialValue: WorkspaceStore(modelContext: container.mainContext))
@@ -87,6 +87,11 @@ struct PilotApp: App {
                 .keyboardShortcut("t", modifiers: [.command, .shift])
                 .disabled(store.selectedWorkspace == nil)
 
+                Button(store.isNotesMode ? "Hide Notes" : "Show Notes") {
+                    store.toggleNotesMode()
+                }
+                .keyboardShortcut("0", modifiers: .command)
+
                 Button("Focus Selected Pane") {
                     guard let workspace = store.selectedWorkspace,
                           let pane = workspace.selectedPane else { return }
@@ -109,7 +114,7 @@ struct PilotApp: App {
                 Button("Actual Size") {
                     uiZoom = UIZoomLadder.default
                 }
-                .keyboardShortcut("0", modifiers: .command)
+                .keyboardShortcut("0", modifiers: [.command, .option])
             }
             CommandMenu("Browser") {
                 Button("Reload") {
@@ -221,6 +226,7 @@ struct PilotApp: App {
         syncService.onReceive = { (message: SyncMessage) in
             switch message {
             case .selectWorkspace(let sel):
+                store.isNotesMode = false
                 store.selectedWorkspaceID = sel.workspaceID
                 // Ensure the workspace's terminal is selected and focused
                 if let workspace = store.workspaces.first(where: { $0.id == sel.workspaceID }),

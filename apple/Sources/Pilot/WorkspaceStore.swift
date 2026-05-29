@@ -16,6 +16,23 @@ final class WorkspaceStore {
         }
     }
 
+    /// True while the global Notes mode is showing in the detail area
+    /// (toggled with ⌘0). Independent of `selectedWorkspaceID` so toggling
+    /// out of Notes returns to whatever workspace was selected.
+    var isNotesMode: Bool = false {
+        didSet { UserDefaults.standard.set(isNotesMode, forKey: "notesMode") }
+    }
+
+    var selectedNoteID: UUID? {
+        didSet {
+            if let id = selectedNoteID {
+                UserDefaults.standard.set(id.uuidString, forKey: "selectedNoteID")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "selectedNoteID")
+            }
+        }
+    }
+
     var workspaces: [Workspace] {
         _ = changeCount // access to establish observation dependency
         let descriptor = FetchDescriptor<Workspace>()
@@ -65,6 +82,66 @@ final class WorkspaceStore {
         workspaces.first { $0.id == selectedWorkspaceID }
     }
 
+    var notes: [Note] {
+        _ = changeCount // access to establish observation dependency
+        let descriptor = FetchDescriptor<Note>(
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.createdAt)]
+        )
+        return (try? modelContext.fetch(descriptor)) ?? []
+    }
+
+    var selectedNote: Note? {
+        notes.first { $0.id == selectedNoteID }
+    }
+
+    /// ⌘0: flip into Notes mode (ensuring there's a note to show) or back
+    /// out to the previously selected workspace.
+    func toggleNotesMode() {
+        if isNotesMode {
+            isNotesMode = false
+        } else {
+            enterNotesMode()
+        }
+    }
+
+    func enterNotesMode() {
+        ensureAtLeastOneNote()
+        isNotesMode = true
+    }
+
+    @discardableResult
+    func addNote() -> Note {
+        let maxOrder = notes.map(\.sortOrder).max() ?? -1
+        let note = Note(sortOrder: maxOrder + 1)
+        modelContext.insert(note)
+        try? modelContext.save()
+        changeCount += 1
+        selectedNoteID = note.id
+        return note
+    }
+
+    func deleteNote(_ note: Note) {
+        let wasSelected = selectedNoteID == note.id
+        let remaining = notes.filter { $0.id != note.id }
+        modelContext.delete(note)
+        for (index, remainingNote) in remaining.enumerated() {
+            remainingNote.sortOrder = index
+        }
+        try? modelContext.save()
+        changeCount += 1
+        if wasSelected {
+            selectedNoteID = remaining.first?.id
+        }
+    }
+
+    private func ensureAtLeastOneNote() {
+        if notes.isEmpty {
+            addNote()
+        } else if selectedNote == nil {
+            selectedNoteID = notes.first?.id
+        }
+    }
+
     var summaries: [WorkspaceSummary] {
         workspaces.map { WorkspaceSummary(id: $0.id, name: $0.name, isPinned: $0.isPinned, badgeCount: $0.badgeCount) }
     }
@@ -74,6 +151,10 @@ final class WorkspaceStore {
         if let stored = UserDefaults.standard.string(forKey: "selectedWorkspaceID") {
             self.selectedWorkspaceID = UUID(uuidString: stored)
         }
+        if let storedNote = UserDefaults.standard.string(forKey: "selectedNoteID") {
+            self.selectedNoteID = UUID(uuidString: storedNote)
+        }
+        self.isNotesMode = UserDefaults.standard.bool(forKey: "notesMode")
         cleanupBadDirectories()
     }
 
