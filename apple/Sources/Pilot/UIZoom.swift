@@ -2,7 +2,7 @@ import SwiftUI
 
 // UIZoom — single source of truth for IDE-wide text scaling.
 //
-// Driven by ⌘+ / ⌘- / ⌘0 in the View menu. Stepped through a fixed
+// Driven by ⌘+ / ⌘- / ⌥⌘0 in the View menu. Stepped through a fixed
 // ladder so zoom-in / zoom-out feel snappy instead of drifting on
 // arbitrary 5%-ish increments. Propagated through the SwiftUI
 // environment so chrome (.scaledFont), the WebKit `pageZoom`, and

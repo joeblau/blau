@@ -25,9 +25,16 @@ struct ContentView: View {
         let workspaceShortcutIDs = workspaces.prefix(9).map(\.id)
 
         NavigationSplitView {
-            List(selection: $store.selectedWorkspaceID) {
+            List(selection: sidebarSelectionBinding) {
                 let pinned = workspaces.filter(\.isPinned)
                 let unpinned = workspaces.filter { !$0.isPinned }
+
+                Section {
+                    Label("Notes", systemImage: "note.text")
+                        .tag(SidebarSelection.notes)
+                } header: {
+                    Text("Notes")
+                }
 
                 if !pinned.isEmpty {
                     Section(isExpanded: $pinnedSectionExpanded) {
@@ -70,7 +77,9 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
             ZStack {
-                if workspaces.isEmpty {
+                if store.isNotesMode {
+                    NotesView(store: store)
+                } else if workspaces.isEmpty {
                     ContentUnavailableView("No Workspace Selected",
                                            systemImage: "rectangle.on.rectangle.slash",
                                            description: Text("Create a workspace with the + button."))
@@ -93,7 +102,7 @@ struct ContentView: View {
                 }
 
             }
-            .navigationTitle(store.selectedWorkspace?.name ?? "")
+            .navigationTitle(store.isNotesMode ? "Notes" : (store.selectedWorkspace?.name ?? ""))
         }
         .inspector(isPresented: selectedWorkspaceInspectorPresentedBinding) {
             InspectorPanelView(
@@ -104,7 +113,8 @@ struct ContentView: View {
         }
         .overlay {
             if let workspace = store.selectedWorkspace,
-               workspace.isTaskListPresented {
+               workspace.isTaskListPresented,
+               !store.isNotesMode {
                 TaskListOverlay(workspace: workspace) {
                     workspace.setTaskListPresented(false)
                 }
@@ -151,11 +161,13 @@ struct ContentView: View {
                 }
             }
             ToolbarItemGroup(placement: .secondaryAction) {
-                if let pane = store.selectedWorkspace?.selectedPane,
+                if !store.isNotesMode,
+                   let pane = store.selectedWorkspace?.selectedPane,
                    pane.kind == .browser,
                    let browserState = pane.browserState {
                     browserToolbar(state: browserState)
-                } else if let pane = store.selectedWorkspace?.selectedPane,
+                } else if !store.isNotesMode,
+                          let pane = store.selectedWorkspace?.selectedPane,
                           pane.kind == .device {
                     deviceToolbar(paneID: pane.id)
                 }
@@ -185,14 +197,14 @@ struct ContentView: View {
 
                     ideToolbarButton
                 }
-                .disabled(store.selectedWorkspace == nil)
+                .disabled(store.selectedWorkspace == nil || store.isNotesMode)
                 Button {
                     guard let workspace = store.selectedWorkspace else { return }
                     workspace.setTaskListPresented(!workspace.isTaskListPresented)
                 } label: {
                     Label("Tasks", systemImage: "checklist")
                 }
-                .disabled(store.selectedWorkspace == nil)
+                .disabled(store.selectedWorkspace == nil || store.isNotesMode)
                 .help("Show task list")
                 Button {
                     guard let workspace = store.selectedWorkspace else { return }
@@ -200,7 +212,7 @@ struct ContentView: View {
                 } label: {
                     Label("Inspector", systemImage: "sidebar.trailing")
                 }
-                .disabled(store.selectedWorkspace == nil)
+                .disabled(store.selectedWorkspace == nil || store.isNotesMode)
             }
         }
         .background {
@@ -208,6 +220,7 @@ struct ContentView: View {
                 ForEach(1...9, id: \.self) { index in
                     Button("") {
                         guard index - 1 < workspaceShortcutIDs.count else { return }
+                        store.isNotesMode = false
                         store.selectedWorkspaceID = workspaceShortcutIDs[index - 1]
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
@@ -235,6 +248,32 @@ struct ContentView: View {
             .keyboardShortcut(.tab, modifiers: [.control, .shift])
             .hidden()
         }
+    }
+
+    /// Bridges the single-typed `List` selection to the store's split state:
+    /// Notes mode lives in `isNotesMode`, workspace selection in
+    /// `selectedWorkspaceID`. Selecting a workspace row (even the one already
+    /// backing `selectedWorkspaceID`) flips out of Notes mode, because the
+    /// selection value changes from `.notes` to `.workspace`.
+    private var sidebarSelectionBinding: Binding<SidebarSelection?> {
+        Binding(
+            get: {
+                if store.isNotesMode { return .notes }
+                if let id = store.selectedWorkspaceID { return .workspace(id) }
+                return nil
+            },
+            set: { newValue in
+                switch newValue {
+                case .notes:
+                    store.enterNotesMode()
+                case .workspace(let id):
+                    store.isNotesMode = false
+                    store.selectedWorkspaceID = id
+                case nil:
+                    break
+                }
+            }
+        )
     }
 
     private func focusSelectedPaneIfTerminal() {
@@ -270,7 +309,7 @@ struct ContentView: View {
                     .background(.red, in: Capsule())
             }
         }
-        .tag(workspace.id)
+        .tag(SidebarSelection.workspace(workspace.id))
         .contextMenu {
             Button {
                 showRootPathEditor(for: workspace)
@@ -444,7 +483,7 @@ struct ContentView: View {
     }
 
     private var isInspectorPresentedForSelectedWorkspace: Bool {
-        store.selectedWorkspace?.isInspectorPresented ?? false
+        !store.isNotesMode && (store.selectedWorkspace?.isInspectorPresented ?? false)
     }
 
     private var selectedWorkspaceTaskListPresentedBinding: Binding<Bool> {
@@ -604,6 +643,13 @@ private struct RecordingStatusIndicator: View {
     }
 }
 
+/// Single-typed selection model for the sidebar `List`, which mixes the
+/// permanent Notes row with the per-workspace rows.
+enum SidebarSelection: Hashable {
+    case notes
+    case workspace(UUID)
+}
+
 extension Notification.Name {
     static let pilotFocusBrowserAddressBar = Notification.Name("pilotFocusBrowserAddressBar")
 }
@@ -612,7 +658,7 @@ extension Notification.Name {
 @MainActor
 private enum ContentViewPreviewData {
     static let container: ModelContainer = {
-        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, WorkspaceTask.self])
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, WorkspaceTask.self, Note.self])
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: configuration)
     }()
