@@ -77,17 +77,19 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
             ZStack {
-                if store.isNotesMode {
-                    NotesView(store: store)
-                } else if workspaces.isEmpty {
+                if workspaces.isEmpty {
                     ContentUnavailableView("No Workspace Selected",
                                            systemImage: "rectangle.on.rectangle.slash",
                                            description: Text("Create a workspace with the + button."))
-                } else if let selectedWorkspaceID = store.selectedWorkspaceID,
-                          workspaces.contains(where: { $0.id == selectedWorkspaceID }) {
+                } else {
+                    // The workspace stack stays mounted at all times — even in
+                    // Notes mode — so entering Notes never tears down live
+                    // terminals/browsers. Notes just deactivates every
+                    // workspace, exactly like switching between workspaces does.
                     ZStack {
                         ForEach(workspaces) { workspace in
-                            let isActive = workspace.id == selectedWorkspaceID
+                            let isActive = !store.isNotesMode
+                                && workspace.id == store.selectedWorkspaceID
                             WorkspaceView(workspace: workspace, isActive: isActive)
                                 .zIndex(isActive ? 1 : 0)
                                 .opacity(isActive ? 1 : 0)
@@ -95,12 +97,18 @@ struct ContentView: View {
                                 .accessibilityHidden(!isActive)
                         }
                     }
-                } else {
-                    ContentUnavailableView("No Workspace Selected",
-                                           systemImage: "rectangle.on.rectangle.slash",
-                                           description: Text("Create a workspace with the + button."))
+
+                    if !store.isNotesMode && !hasSelectedWorkspace {
+                        ContentUnavailableView("No Workspace Selected",
+                                               systemImage: "rectangle.on.rectangle.slash",
+                                               description: Text("Select a workspace from the sidebar."))
+                    }
                 }
 
+                if store.isNotesMode {
+                    NotesView(store: store)
+                        .zIndex(100)
+                }
             }
             .navigationTitle(store.isNotesMode ? "Notes" : (store.selectedWorkspace?.name ?? ""))
         }
@@ -484,6 +492,11 @@ struct ContentView: View {
 
     private var isInspectorPresentedForSelectedWorkspace: Bool {
         !store.isNotesMode && (store.selectedWorkspace?.isInspectorPresented ?? false)
+    }
+
+    private var hasSelectedWorkspace: Bool {
+        guard let id = store.selectedWorkspaceID else { return false }
+        return store.workspaces.contains { $0.id == id }
     }
 
     private var selectedWorkspaceTaskListPresentedBinding: Binding<Bool> {
