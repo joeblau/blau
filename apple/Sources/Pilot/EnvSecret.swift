@@ -11,6 +11,9 @@ enum EnvSecret {
     )
 
     struct Match {
+        /// The key name (e.g. `JOE_PLAYER_ONE`) — stable identity for the
+        /// per-secret reveal toggle, since char ranges shift as you edit.
+        let key: String
         let keyRange: NSRange
         /// The secret content range — inside the quotes when the value is quoted.
         let valueRange: NSRange
@@ -37,7 +40,8 @@ enum EnvSecret {
             }
             guard valueRange.length > 0 else { return }
 
-            result.append(Match(keyRange: keyRange,
+            result.append(Match(key: ns.substring(with: keyRange),
+                                keyRange: keyRange,
                                 valueRange: valueRange,
                                 value: ns.substring(with: valueRange)))
         }
@@ -48,11 +52,35 @@ enum EnvSecret {
 /// Masks `.env` secret values in an `NSTextView` by substituting bullet glyphs
 /// at the layout-manager level — the real characters stay in the text storage
 /// (so the note still persists as plain text), only the rendered glyphs change.
-/// The value on the line currently holding the caret is left unmasked so it can
-/// be edited.
+/// Values stay masked until the user unlocks them with the per-line lock; the
+/// caret never reveals them.
 final class EnvMaskController: NSObject, NSLayoutManagerDelegate {
     weak var textView: MultiCursorTextView?
     private(set) var maskedRanges: [NSRange] = []
+    /// All secrets currently in the document (for hover/lock hit-testing).
+    private(set) var secrets: [EnvSecret.Match] = []
+    /// Keys the user has explicitly unlocked via the per-line lock toggle.
+    private var revealedKeys: Set<String> = []
+
+    func isRevealed(_ key: String) -> Bool { revealedKeys.contains(key) }
+
+    func toggleReveal(_ key: String) {
+        if revealedKeys.contains(key) {
+            revealedKeys.remove(key)
+        } else {
+            revealedKeys.insert(key)
+        }
+        refresh()
+    }
+
+    /// The secret whose value sits on the same line as `charIndex`, if any.
+    func secret(atLine charIndex: Int) -> EnvSecret.Match? {
+        guard let textView else { return nil }
+        let ns = textView.string as NSString
+        guard charIndex <= ns.length else { return nil }
+        let line = ns.lineRange(for: NSRange(location: min(charIndex, max(0, ns.length - 1)), length: 0))
+        return secrets.first { NSIntersectionRange(line, $0.valueRange).length > 0 || NSLocationInRange($0.keyRange.location, line) }
+    }
 
     /// Recompute which secret values should be masked and re-lay-out if that
     /// set changed. Cheap no-op when nothing moved.
@@ -60,17 +88,19 @@ final class EnvMaskController: NSObject, NSLayoutManagerDelegate {
         guard let textView, let layoutManager = textView.layoutManager else { return }
         let string = textView.string
 
-        let activeLine: NSRange? = {
-            guard textView.selectedRanges.count == 1 else { return nil }
-            return (string as NSString).lineRange(for: textView.selectedRange())
-        }()
+        let matches = EnvSecret.matches(in: string)
+        secrets = matches
 
-        let newMasked = EnvSecret.matches(in: string)
+        // Locked by default: a value is only visible when the user explicitly
+        // unlocks its key. Caret position / hover never reveal it, so clicking
+        // into or mousing over a secret line keeps the value hidden.
+        let newMasked = matches
+            .filter { !revealedKeys.contains($0.key) }
             .map(\.valueRange)
-            .filter { range in
-                guard let activeLine else { return true }
-                return NSIntersectionRange(activeLine, range).length == 0
-            }
+
+        // Affordance rects (lock/tooltip) may move even when the masked set is
+        // unchanged, so refresh them before the early-out.
+        textView.updateSecretAffordances()
 
         guard newMasked != maskedRanges else { return }
         maskedRanges = newMasked

@@ -106,6 +106,17 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
                 storage.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: box)
             }
         }
+        // Completed tasks ([x]) get a subtle strikethrough + dimmed text.
+        eachMatch(Self.completedTask) { match in
+            guard !isProtected(match.range) else { return }
+            let content = match.range(at: 1)
+            guard content.location != NSNotFound, content.length > 0 else { return }
+            storage.addAttributes([
+                .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+                .strikethroughColor: NSColor.tertiaryLabelColor,
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ], range: content)
+        }
         eachMatch(Self.horizontalRule) { match in
             guard !isProtected(match.range) else { return }
             storage.addAttribute(.foregroundColor, value: NSColor.tertiaryLabelColor, range: match.range)
@@ -132,13 +143,40 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         eachMatch(Self.link) { match in
             guard !isProtected(match.range) else { return }
             let label = match.range(at: 1)
-            storage.addAttributes(
-                [.foregroundColor: NSColor.linkColor, .underlineStyle: NSUnderlineStyle.single.rawValue],
-                range: label
-            )
+            var attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: NSColor.linkColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+            ]
+            let target = ns.substring(with: match.range(at: 2))
+            if let url = URL(string: target.hasPrefix("www.") ? "https://\(target)" : target) {
+                attrs[.link] = url
+            }
+            storage.addAttributes(attrs, range: label)
             // Dim the brackets and the (url) tail surrounding the label.
             dim(storage, NSRange(location: match.range.location, length: label.location - match.range.location))
             dim(storage, NSRange(location: NSMaxRange(label), length: NSMaxRange(match.range) - NSMaxRange(label)))
+        }
+
+        // Bare URLs (https://…, www.…) become clickable links.
+        eachMatch(Self.bareURL) { match in
+            var range = match.range(at: 1)
+            guard !isProtected(range) else { return }
+            // Trim trailing sentence punctuation that isn't part of the URL.
+            while range.length > 0 {
+                let last = ns.substring(with: NSRange(location: NSMaxRange(range) - 1, length: 1))
+                guard ".,;:!?".contains(last) else { break }
+                range.length -= 1
+            }
+            guard range.length > 0 else { return }
+            var urlString = ns.substring(with: range)
+            if urlString.hasPrefix("www.") { urlString = "https://\(urlString)" }
+            guard let url = URL(string: urlString) else { return }
+            storage.addAttributes([
+                .foregroundColor: NSColor.linkColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                .link: url,
+            ], range: range)
+            protectedRanges.append(range)
         }
     }
 
@@ -200,6 +238,7 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
     private static let blockquote = regex(#"^[ \t]*>[ \t]?.*$"#, .anchorsMatchLines)
     private static let listMarker = regex(#"^([ \t]*)([-*+]|\d+[.)])[ \t]+"#, .anchorsMatchLines)
     private static let taskMarker = regex(#"^[ \t]*[-*+][ \t]+(\[[ xX]\])"#, .anchorsMatchLines)
+    private static let completedTask = regex(#"^[ \t]*[-*+][ \t]+\[[xX]\][ \t]*(.*)$"#, .anchorsMatchLines)
     private static let horizontalRule = regex(#"^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$"#, .anchorsMatchLines)
     private static let fencedCode = regex(#"```[\s\S]*?```"#)
     private static let inlineCode = regex(#"`[^`\n]+`"#)
@@ -208,4 +247,5 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
     private static let italicUnderscore = regex(#"(?<![_\w])_(?!\s)([^_\n]+?)(?<!\s)_(?![_\w])"#)
     private static let strikethrough = regex(#"~~([^\n]+?)~~"#)
     private static let link = regex(#"\[([^\]\n]+)\]\(([^)\n]+)\)"#)
+    private static let bareURL = regex(#"(?<![\w@./])((?:https?://|www\.)[^\s<>"')\]]+)"#)
 }

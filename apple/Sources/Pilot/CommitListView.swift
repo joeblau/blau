@@ -42,6 +42,7 @@ struct RoundedSegmentedPicker: NSViewRepresentable {
 
 struct InspectorPanelView: View {
     let gitStore: GitCommitStore
+    let tasksStore: GitHubTasksStore
     @Binding var selectedTab: InspectorTab
 
     var body: some View {
@@ -49,6 +50,8 @@ struct InspectorPanelView: View {
             switch selectedTab {
             case .actions:
                 ActionsListView(store: gitStore)
+            case .tasks:
+                GitHubTasksView(store: tasksStore)
             case .commits:
                 CommitListView(store: gitStore)
             case .filesystem:

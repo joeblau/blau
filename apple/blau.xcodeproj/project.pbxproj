@@ -16,6 +16,7 @@
 		255E48A2365C7AA480C081DC /* LocalServerProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB128E7236AC4C65E97A2041 /* LocalServerProbe.swift */; };
 		2D467D25E5DB354DC43D8451 /* LocalServerScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A912031A64F684013037FBB /* LocalServerScanner.swift */; };
 		37EADAE9D95AC0783A100A10 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 5C1264368FD7B88CE2870492 /* WhisperKit */; };
+		3DA4B44B89281F76759EE2CE /* InkOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D88EA79C48861054839A54 /* InkOverlay.swift */; };
 		48B57B6199067D9FB4CB7D93 /* SyncMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67FAA18AA33DB039B0026206 /* SyncMessages.swift */; };
 		4BF7276892BD5F1F7E405130 /* VolumeScrollListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C985F86115A698849ED108 /* VolumeScrollListView.swift */; };
 		4CEF3D647FCEBF6F8B0D61C1 /* TranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFEA082D543FE38BE6F626A3 /* TranscriptionService.swift */; };
@@ -49,7 +50,7 @@
 		CF0427ED034B7A71489D82F9 /* PeerSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */; };
 		CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F684D74A8F12B03954CC49B3 /* PilotApp.swift */; };
 		D0614091089D4F0F461285ED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1D8AC628F3F55D563872C7 /* ContentView.swift */; };
-		DADAA337BF80E09675B6B736 /* TaskListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97E85B54515073CF6BA4B71E /* TaskListView.swift */; };
+		E57F6CDE4BED1E1E9489FE9E /* GitHubTasksStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09CBC9A2EAF71B52D91F96DB /* GitHubTasksStore.swift */; };
 		EA6044046223AE65A20D870B /* MarkdownStyler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3773008E360B991866932E4A /* MarkdownStyler.swift */; };
 		F797C21E5A72C28BD91D6073 /* GitCommitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */; };
 /* End PBXBuildFile section */
@@ -95,10 +96,12 @@
 /* Begin PBXFileReference section */
 		0057932203C8B246C76D50DC /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GhosttyKit.xcframework; path = Frameworks/GhosttyKit.xcframework; sourceTree = "<group>"; };
 		0146AB6C59B6957CE9B7E874 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		09CBC9A2EAF71B52D91F96DB /* GitHubTasksStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubTasksStore.swift; sourceTree = "<group>"; };
 		132CB022A0BDFF0DE96316EF /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		158C2018D7407AF1E5F146CB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1B3448A85CDA9475511475C2 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		1C98BD914066A308C6C6C1C9 /* Pilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		21D88EA79C48861054839A54 /* InkOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkOverlay.swift; sourceTree = "<group>"; };
 		24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
 		26E21596BD1590738CF89498 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		32D547158D65899195FA3359 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -121,7 +124,6 @@
 		89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Wingman Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B4486B0848D4DDEE5E23D18 /* Pilot.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Pilot.entitlements; sourceTree = "<group>"; };
 		97052041CFD5C5F3CAFA379C /* SharedTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SharedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		97E85B54515073CF6BA4B71E /* TaskListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskListView.swift; sourceTree = "<group>"; };
 		A0144CE36B7342F7D171F350 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A1C985F86115A698849ED108 /* VolumeScrollListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeScrollListView.swift; sourceTree = "<group>"; };
 		A8128F295B3D268259C8F98F /* EnvSecret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvSecret.swift; sourceTree = "<group>"; };
@@ -247,9 +249,11 @@
 				A8128F295B3D268259C8F98F /* EnvSecret.swift */,
 				71A7E1AE9E717B53A369709B /* GhosttyTerminal.swift */,
 				DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */,
+				09CBC9A2EAF71B52D91F96DB /* GitHubTasksStore.swift */,
 				AEF294C6D54F08AFA7316B33 /* HeadphoneDetector.swift */,
 				C158EABC62B1A1985C1F548E /* IDELauncher.swift */,
 				0146AB6C59B6957CE9B7E874 /* Info.plist */,
+				21D88EA79C48861054839A54 /* InkOverlay.swift */,
 				5B068834105F375479ADF423 /* InspectorHelper.swift */,
 				3773008E360B991866932E4A /* MarkdownStyler.swift */,
 				3BA97D476477BE66A97A9D77 /* MouseBridge.swift */,
@@ -257,7 +261,6 @@
 				E4A70BA667DE284AA151D2E2 /* NotesView.swift */,
 				8B4486B0848D4DDEE5E23D18 /* Pilot.entitlements */,
 				F684D74A8F12B03954CC49B3 /* PilotApp.swift */,
-				97E85B54515073CF6BA4B71E /* TaskListView.swift */,
 				5A2C2E1B521C51A4B0B660B1 /* UIZoom.swift */,
 				1B3448A85CDA9475511475C2 /* Workspace.swift */,
 				84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */,
@@ -517,8 +520,10 @@
 				7E673C3AAC69631D9B9809E2 /* EnvSecret.swift in Sources */,
 				72A25CCED00C4DA32999DC63 /* GhosttyTerminal.swift in Sources */,
 				F797C21E5A72C28BD91D6073 /* GitCommitStore.swift in Sources */,
+				E57F6CDE4BED1E1E9489FE9E /* GitHubTasksStore.swift in Sources */,
 				9CCB3AE0ECFF1D2D7C809867 /* HeadphoneDetector.swift in Sources */,
 				8A94170AE83036EEA8FD2924 /* IDELauncher.swift in Sources */,
+				3DA4B44B89281F76759EE2CE /* InkOverlay.swift in Sources */,
 				6215B9C6DFBF73DB93072BD2 /* InspectorHelper.swift in Sources */,
 				255E48A2365C7AA480C081DC /* LocalServerProbe.swift in Sources */,
 				2D467D25E5DB354DC43D8451 /* LocalServerScanner.swift in Sources */,
@@ -529,7 +534,6 @@
 				CF0427ED034B7A71489D82F9 /* PeerSyncService.swift in Sources */,
 				CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */,
 				83D64D93C19B54470E4E1C2C /* SyncMessages.swift in Sources */,
-				DADAA337BF80E09675B6B736 /* TaskListView.swift in Sources */,
 				506D51547D6AA3C40D9B1161 /* UIZoom.swift in Sources */,
 				A755A8C5DCFF1165E408136A /* Workspace.swift in Sources */,
 				7C8C2A101382F27189DA38D6 /* WorkspaceStore.swift in Sources */,
