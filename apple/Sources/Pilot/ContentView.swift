@@ -33,8 +33,6 @@ struct ContentView: View {
                 Section {
                     Label("Notes", systemImage: "note.text")
                         .tag(SidebarSelection.notes)
-                } header: {
-                    Text("Notes")
                 }
 
                 if !pinned.isEmpty {
