@@ -17,6 +17,7 @@ struct ContentView: View {
     @AppStorage("sidebar.pinnedExpanded") private var pinnedSectionExpanded = true
     @AppStorage("sidebar.workspacesExpanded") private var workspacesSectionExpanded = true
     @FocusState private var isBrowserURLFieldFocused: Bool
+    @State private var notesToggleMonitor: Any?
 
     var body: some View {
         let activeInspectorRepoPath = isInspectorPresentedForSelectedWorkspace ? selectedWorkspaceRootPath : nil
@@ -148,6 +149,8 @@ struct ContentView: View {
             syncInspectorRepo(activeInspectorRepoPath)
             focusSelectedWorkspaceTerminal()
         }
+        .onAppear { installNotesToggleMonitor() }
+        .onDisappear { removeNotesToggleMonitor() }
         .onReceive(NotificationCenter.default.publisher(for: .pilotFocusBrowserAddressBar)) { _ in
             focusBrowserAddressBar()
         }
@@ -282,6 +285,31 @@ struct ContentView: View {
                 }
             }
         )
+    }
+
+    /// ⌘0 toggles Notes ↔ the current workspace from anywhere. We use a local
+    /// `NSEvent` monitor rather than only a menu shortcut because monitors run
+    /// before key-equivalent dispatch and before the focused view — so it beats
+    /// both Ghostty (which binds ⌘0 to reset-font-size) and the notes editor's
+    /// field editor. `⌥⌘0` (Actual Size) is excluded by the exact-flags check.
+    private func installNotesToggleMonitor() {
+        guard notesToggleMonitor == nil else { return }
+        notesToggleMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags == .command,
+                  event.charactersIgnoringModifiers == "0" else {
+                return event
+            }
+            store.toggleNotesMode()
+            return nil
+        }
+    }
+
+    private func removeNotesToggleMonitor() {
+        if let monitor = notesToggleMonitor {
+            NSEvent.removeMonitor(monitor)
+            notesToggleMonitor = nil
+        }
     }
 
     private func focusSelectedPaneIfTerminal() {

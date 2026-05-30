@@ -71,6 +71,13 @@ struct PilotApp: App {
                     pasteIntoSelectedPane()
                 }
                 .keyboardShortcut("v", modifiers: .command)
+
+                // Replacing `.pasteboard` drops the stock Select All too;
+                // re-add it so ⌘A works in the notes editor and other fields.
+                Button("Select All") {
+                    sendStandardEditAction(#selector(NSText.selectAll(_:)))
+                }
+                .keyboardShortcut("a", modifiers: .command)
             }
             CommandGroup(after: .sidebar) {
                 Button(store.selectedWorkspace?.isInspectorPresented == true ? "Hide Inspector" : "Show Inspector") {
