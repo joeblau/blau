@@ -24,7 +24,7 @@ struct PilotApp: App {
     @AppStorage("ui.zoom") private var uiZoom: Double = UIZoomLadder.default
 
     init() {
-        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, WorkspaceTask.self, Note.self])
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, Note.self])
         let container = try! ModelContainer(for: schema)
         self.modelContainer = container
         self._store = State(initialValue: WorkspaceStore(modelContext: container.mainContext))
@@ -85,13 +85,6 @@ struct PilotApp: App {
                     workspace.setInspectorPresented(!workspace.isInspectorPresented)
                 }
                 .keyboardShortcut("i", modifiers: .command)
-                .disabled(store.selectedWorkspace == nil)
-
-                Button(store.selectedWorkspace?.isTaskListPresented == true ? "Hide Task List" : "Show Task List") {
-                    guard let workspace = store.selectedWorkspace else { return }
-                    workspace.setTaskListPresented(!workspace.isTaskListPresented)
-                }
-                .keyboardShortcut("t", modifiers: [.command, .shift])
                 .disabled(store.selectedWorkspace == nil)
 
                 Button(store.isNotesMode ? "Hide Notes" : "Show Notes") {

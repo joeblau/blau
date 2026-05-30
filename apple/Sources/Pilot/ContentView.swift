@@ -12,6 +12,8 @@ struct ContentView: View {
     /// the "listening" indicator and pastes the finished text.
     var isPeerRecording: Bool
     @State private var gitStore = GitCommitStore()
+    @State private var tasksStore = GitHubTasksStore()
+    @State private var isDrawingActive = false
     @State private var rootPathEditorWorkspaceID: UUID?
     @State private var rootPathEditorText = ""
     @AppStorage("sidebar.pinnedExpanded") private var pinnedSectionExpanded = true
@@ -108,28 +110,22 @@ struct ContentView: View {
                     NotesView(store: store)
                         .zIndex(100)
                 }
+
+                if isDrawingActive && !store.isNotesMode && !workspaces.isEmpty {
+                    InkOverlay(isActive: $isDrawingActive)
+                        .zIndex(60)
+                }
             }
             .navigationTitle(store.isNotesMode ? "Notes" : (store.selectedWorkspace?.name ?? ""))
         }
         .inspector(isPresented: selectedWorkspaceInspectorPresentedBinding) {
             InspectorPanelView(
                 gitStore: gitStore,
+                tasksStore: tasksStore,
                 selectedTab: selectedWorkspaceInspectorTabBinding
             )
                 .inspectorColumnWidth(min: 220, ideal: 280, max: 400)
         }
-        .overlay {
-            if let workspace = store.selectedWorkspace,
-               workspace.isTaskListPresented,
-               !store.isNotesMode {
-                TaskListOverlay(workspace: workspace) {
-                    workspace.setTaskListPresented(false)
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.97)))
-                .zIndex(100)
-            }
-        }
-        .animation(.snappy(duration: 0.18), value: store.selectedWorkspace?.isTaskListPresented)
         .onChange(of: activeInspectorRepoPath) {
             syncInspectorRepo(activeInspectorRepoPath)
         }
@@ -208,13 +204,13 @@ struct ContentView: View {
                 }
                 .disabled(store.selectedWorkspace == nil || store.isNotesMode)
                 Button {
-                    guard let workspace = store.selectedWorkspace else { return }
-                    workspace.setTaskListPresented(!workspace.isTaskListPresented)
+                    isDrawingActive.toggle()
                 } label: {
-                    Label("Tasks", systemImage: "checklist")
+                    Label("Annotate",
+                          systemImage: isDrawingActive ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle")
                 }
                 .disabled(store.selectedWorkspace == nil || store.isNotesMode)
-                .help("Show task list")
+                .help("Draw over the active pane (⇧⌘D)")
                 Button {
                     guard let workspace = store.selectedWorkspace else { return }
                     workspace.setInspectorPresented(!workspace.isInspectorPresented)
@@ -243,6 +239,12 @@ struct ContentView: View {
                 workspace.removePane(pane)
             }
             .keyboardShortcut("w", modifiers: .command)
+            .hidden()
+            Button("") {
+                guard store.selectedWorkspace != nil, !store.isNotesMode else { return }
+                isDrawingActive.toggle()
+            }
+            .keyboardShortcut("d", modifiers: [.command, .shift])
             .hidden()
             Button("") {
                 store.selectedWorkspace?.selectNextPane()
@@ -525,15 +527,6 @@ struct ContentView: View {
         return store.workspaces.contains { $0.id == id }
     }
 
-    private var selectedWorkspaceTaskListPresentedBinding: Binding<Bool> {
-        Binding(
-            get: { store.selectedWorkspace?.isTaskListPresented ?? false },
-            set: { isPresented in
-                store.selectedWorkspace?.setTaskListPresented(isPresented)
-            }
-        )
-    }
-
     private var selectedBrowserState: BrowserState? {
         guard let pane = store.selectedWorkspace?.selectedPane,
               pane.kind == .browser else { return nil }
@@ -660,10 +653,12 @@ struct ContentView: View {
     private func syncInspectorRepo(_ repoPath: String?) {
         guard let repoPath else {
             gitStore.stopWatching()
+            tasksStore.load(directory: nil)
             return
         }
 
         gitStore.startWatching(directory: repoPath)
+        tasksStore.load(directory: repoPath)
     }
 }
 
@@ -697,7 +692,7 @@ extension Notification.Name {
 @MainActor
 private enum ContentViewPreviewData {
     static let container: ModelContainer = {
-        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, WorkspaceTask.self, Note.self])
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, Note.self])
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: configuration)
     }()

@@ -31,6 +31,7 @@ enum AppearanceMode: String, Codable, CaseIterable {
 
 enum InspectorTab: String, Codable, CaseIterable {
     case actions = "Actions"
+    case tasks = "Tasks"
     case commits = "Commits"
     case filesystem = "Files"
 }
@@ -166,26 +167,6 @@ final class BrowserState {
 }
 
 @Model
-final class WorkspaceTask {
-    #Unique([\WorkspaceTask.id])
-
-    var id: UUID = UUID()
-    var title: String = ""
-    var isCompleted: Bool = false
-    var createdAt: Date = Date()
-    var sortOrder: Int = 0
-
-    var workspace: Workspace?
-
-    init(title: String = "", sortOrder: Int = 0) {
-        self.id = UUID()
-        self.title = title
-        self.sortOrder = sortOrder
-        self.createdAt = Date()
-    }
-}
-
-@Model
 final class Pane {
     #Unique([\Pane.id])
 
@@ -292,22 +273,9 @@ final class Workspace {
     var workspaceSortOrder: Int = 0
     var rootPath: String = ""
     var rootPathSourceRaw: String? = RootPathSource.automatic.rawValue
-    var isTaskListPresented: Bool = false
 
     @Relationship(deleteRule: .cascade, inverse: \Pane.workspace)
     var panes: [Pane] = []
-
-    @Relationship(deleteRule: .cascade, inverse: \WorkspaceTask.workspace)
-    var tasks: [WorkspaceTask] = []
-
-    var sortedTasks: [WorkspaceTask] {
-        tasks.sorted { a, b in
-            // Incomplete tasks float to the top; completed sink to the bottom.
-            if a.isCompleted != b.isCompleted { return !a.isCompleted }
-            if a.sortOrder != b.sortOrder { return a.sortOrder < b.sortOrder }
-            return a.createdAt < b.createdAt
-        }
-    }
 
     var selectedPane: Pane? {
         sortedPanes.first { $0.id == selectedPaneID }
@@ -496,56 +464,6 @@ final class Workspace {
     func setInspectorTab(_ tab: InspectorTab) {
         guard inspectorTab != tab else { return }
         inspectorTab = tab
-        try? modelContext?.save()
-    }
-
-    func setTaskListPresented(_ isPresented: Bool) {
-        guard isTaskListPresented != isPresented else { return }
-        isTaskListPresented = isPresented
-        try? modelContext?.save()
-    }
-
-    @discardableResult
-    func addTask(title: String = "") -> WorkspaceTask {
-        let maxOrder = tasks.map(\.sortOrder).max() ?? -1
-        let task = WorkspaceTask(title: title, sortOrder: maxOrder + 1)
-        tasks.append(task)
-        try? modelContext?.save()
-        return task
-    }
-
-    func removeTask(_ task: WorkspaceTask) {
-        tasks.removeAll { $0.id == task.id }
-        modelContext?.delete(task)
-        try? modelContext?.save()
-    }
-
-    func toggleTaskCompletion(_ task: WorkspaceTask) {
-        task.isCompleted.toggle()
-        try? modelContext?.save()
-    }
-
-    func moveTasks(from source: IndexSet, to destination: Int) {
-        var ordered = sortedTasks
-        let movingItems = source.sorted().map { ordered[$0] }
-        let adjustedDestination = destination - source.filter { $0 < destination }.count
-        for index in source.sorted(by: >) {
-            ordered.remove(at: index)
-        }
-        ordered.insert(contentsOf: movingItems, at: adjustedDestination)
-        for (index, task) in ordered.enumerated() {
-            task.sortOrder = index
-        }
-        try? modelContext?.save()
-    }
-
-    func clearCompletedTasks() {
-        let completed = tasks.filter(\.isCompleted)
-        guard !completed.isEmpty else { return }
-        for task in completed {
-            tasks.removeAll { $0.id == task.id }
-            modelContext?.delete(task)
-        }
         try? modelContext?.save()
     }
 

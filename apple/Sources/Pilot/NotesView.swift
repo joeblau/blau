@@ -123,7 +123,8 @@ private struct NoteTextView: NSViewRepresentable {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
-        textView.textContainerInset = NSSize(width: 8, height: 10)
+        // Wider horizontal inset carves out a left gutter for the secret lock.
+        textView.textContainerInset = NSSize(width: 28, height: 10)
         textView.drawsBackground = false
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
@@ -150,6 +151,8 @@ private struct NoteTextView: NSViewRepresentable {
             styler.style(storage)
         }
         maskController.refresh()
+        // Sort any already-completed tasks to the bottom of their group on load.
+        DispatchQueue.main.async { textView.reorderCompletedTasks() }
 
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
@@ -191,15 +194,29 @@ private struct NoteTextView: NSViewRepresentable {
         }
 
         func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
+            guard let textView = notification.object as? MultiCursorTextView else { return }
             parent.text = textView.string
             maskController.refresh()
+            textView.reorderCompletedTasks()
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
             // Reveal the secret on the line being edited, re-mask the rest.
             maskController.refresh()
         }
+    }
+}
+
+/// Borderless SF Symbol button used for the editor's gutter affordances.
+private final class GutterButton: NSButton {
+    var onClick: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
     }
 }
 
@@ -210,6 +227,9 @@ private struct NoteTextView: NSViewRepresentable {
 final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
     weak var maskController: EnvMaskController?
     var onCopySecret: (() -> Void)?
+    private let lockSize: CGFloat = 16
+    private var isReordering = false
+    private var gutterButtons: [NSButton] = []
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -221,12 +241,158 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
         return super.performKeyEquivalent(with: event)
     }
 
-    /// Clicking a masked `.env` secret copies it; clicking a `[ ]` / `[x]`
-    /// checkbox toggles it. Any other click behaves normally.
+    /// Clicking the hover lock toggles a secret's visibility; clicking a masked
+    /// `.env` value copies it; clicking a `[ ]` / `[x]` toggles it. Any other
+    /// click behaves normally.
     override func mouseDown(with event: NSEvent) {
+        if openLink(at: event) { return }
         if copySecret(at: event) { return }
         if toggleTaskCheckbox(at: event) { return }
         super.mouseDown(with: event)
+    }
+
+    /// Single-click on a link (bare URL or markdown link) opens it in the
+    /// user's default browser via NSWorkspace.
+    private func openLink(at event: NSEvent) -> Bool {
+        guard event.clickCount == 1, let layoutManager, let textContainer, let textStorage else { return false }
+        let ns = string as NSString
+        guard ns.length > 0 else { return false }
+
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let origin = textContainerOrigin
+        let containerPoint = NSPoint(x: viewPoint.x - origin.x, y: viewPoint.y - origin.y)
+
+        var fraction: CGFloat = 0
+        let glyphIndex = layoutManager.glyphIndex(
+            for: containerPoint, in: textContainer, fractionOfDistanceThroughGlyph: &fraction
+        )
+        // Ignore clicks past the end of the line's text (in the trailing margin).
+        let used = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+        guard containerPoint.x <= used.maxX else { return false }
+
+        let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard charIndex < ns.length,
+              let value = textStorage.attribute(.link, at: charIndex, effectiveRange: nil) else { return false }
+        let url = (value as? URL) ?? (value as? String).flatMap(URL.init(string:))
+        guard let url else { return false }
+        NSWorkspace.shared.open(url)
+        return true
+    }
+
+    // MARK: - Per-line secret lock toggle (always shown in the left gutter)
+
+    private func lockRect(for match: EnvSecret.Match) -> NSRect? {
+        guard let layoutManager, let textContainer else { return nil }
+        let glyphs = layoutManager.glyphRange(forCharacterRange: match.keyRange, actualCharacterRange: nil)
+        let keyRect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        let origin = textContainerOrigin
+        // Centered in the left gutter (the area left of the text), on the
+        // secret's line.
+        let x = max(4, (origin.x - lockSize) / 2)
+        let y = keyRect.midY + origin.y - lockSize / 2
+        return NSRect(x: x, y: y, width: lockSize, height: lockSize)
+    }
+
+    override func layout() {
+        super.layout()
+        layoutGutterIcons()
+    }
+
+    /// Gutter affordances are real buttons (custom drawing in `NSTextView.draw`
+    /// doesn't composite reliably): a lock per secret line and a copy button per
+    /// fenced code block, positioned in the left gutter. They live in the text
+    /// view's flipped coordinate space, so they scroll with the content.
+    private func layoutGutterIcons() {
+        gutterButtons.forEach { $0.removeFromSuperview() }
+        gutterButtons.removeAll()
+
+        if let maskController {
+            for secret in maskController.secrets {
+                guard let rect = lockRect(for: secret) else { continue }
+                let revealed = maskController.isRevealed(secret.key)
+                let key = secret.key
+                addGutterButton(
+                    symbol: revealed ? "lock.open.fill" : "lock.fill",
+                    tint: revealed ? .controlAccentColor : .secondaryLabelColor,
+                    frame: rect,
+                    help: revealed ? "Hide value" : "Reveal value"
+                ) { [weak self] in
+                    self?.maskController?.toggleReveal(key)
+                    self?.layoutGutterIcons()
+                }
+            }
+        }
+
+        for block in fencedBlocks() {
+            guard let rect = copyIconRect(for: block.range) else { continue }
+            let content = block.content
+            addGutterButton(symbol: "doc.on.doc", tint: .secondaryLabelColor,
+                            frame: rect, help: "Copy code block") { [weak self] in
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(content, forType: .string)
+                self?.onCopySecret?()
+            }
+        }
+    }
+
+    private func addGutterButton(symbol: String, tint: NSColor, frame: NSRect,
+                                 help: String, action: @escaping () -> Void) {
+        let button = GutterButton(frame: frame)
+        button.onClick = action
+        button.isBordered = false
+        button.bezelStyle = .regularSquare
+        button.imagePosition = .imageOnly
+        button.title = ""
+        button.toolTip = help
+        button.contentTintColor = tint
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: help)?
+            .withSymbolConfiguration(config) {
+            image.isTemplate = true
+            button.image = image
+        }
+        addSubview(button)
+        gutterButtons.append(button)
+    }
+
+    // MARK: - Fenced code block copy
+
+    private static let fencedCodeBlock = try! NSRegularExpression(pattern: #"```[\s\S]*?```"#)
+
+    /// Each fenced code block's full range plus its inner code (fences stripped).
+    private func fencedBlocks() -> [(range: NSRange, content: String)] {
+        let ns = string as NSString
+        guard ns.length > 0 else { return [] }
+        var result: [(NSRange, String)] = []
+        Self.fencedCodeBlock.enumerateMatches(in: ns as String,
+                                              range: NSRange(location: 0, length: ns.length)) { match, _, _ in
+            guard let range = match?.range else { return }
+            var content = ns.substring(with: range)
+            // Drop the opening ```lang line.
+            if let firstNewline = content.firstIndex(of: "\n") {
+                content = String(content[content.index(after: firstNewline)...])
+            } else {
+                content = ""
+            }
+            // Drop the closing fence (and the newline before it).
+            if let close = content.range(of: "```", options: .backwards) {
+                content = String(content[..<close.lowerBound])
+            }
+            if content.hasSuffix("\n") { content.removeLast() }
+            result.append((range, content))
+        }
+        return result
+    }
+
+    private func copyIconRect(for blockRange: NSRange) -> NSRect? {
+        guard let layoutManager, let textContainer else { return nil }
+        let firstLine = (string as NSString).lineRange(for: NSRange(location: blockRange.location, length: 0))
+        let glyphs = layoutManager.glyphRange(forCharacterRange: firstLine, actualCharacterRange: nil)
+        let rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        let origin = textContainerOrigin
+        let x = max(4, (origin.x - lockSize) / 2)
+        return NSRect(x: x, y: rect.midY + origin.y - lockSize / 2, width: lockSize, height: lockSize)
     }
 
     // MARK: - Env secret copy + hover affordances
@@ -253,6 +419,7 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
             addToolTip(rect, owner: self, userData: nil)
         }
         window?.invalidateCursorRects(for: self)
+        layoutGutterIcons()
     }
 
     override func resetCursorRects() {
@@ -339,6 +506,72 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
         return true
     }
 
+    private static let anyTaskLine = try! NSRegularExpression(pattern: #"^[ \t]*[-*+][ \t]+\[[ xX]\]"#)
+    private static let doneTaskLine = try! NSRegularExpression(pattern: #"^[ \t]*[-*+][ \t]+\[[xX]\]"#)
+
+    private func isTaskLine(_ line: String) -> Bool {
+        Self.anyTaskLine.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
+    }
+
+    private func isDoneTaskLine(_ line: String) -> Bool {
+        Self.doneTaskLine.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
+    }
+
+    /// Auto-sort every contiguous task group so incomplete tasks stay on top and
+    /// completed ones sink to the bottom. A no-op unless some group is actually
+    /// out of order, so it never disturbs normal typing; the caret follows its
+    /// line to the new position.
+    func reorderCompletedTasks() {
+        guard !isReordering, let textStorage else { return }
+        let ns = string as NSString
+        guard ns.length > 0 else { return }
+
+        var lines = (ns as String).components(separatedBy: "\n")
+        var changed = false
+        var i = 0
+        while i < lines.count {
+            guard isTaskLine(lines[i]) else { i += 1; continue }
+            var j = i
+            while j < lines.count, isTaskLine(lines[j]) { j += 1 }
+            let group = Array(lines[i..<j])
+            let sorted = group.filter { !isDoneTaskLine($0) } + group.filter { isDoneTaskLine($0) }
+            if sorted != group {
+                lines.replaceSubrange(i..<j, with: sorted)
+                changed = true
+            }
+            i = j
+        }
+        guard changed else { return }
+
+        // Remember the caret's line + column so it can follow the moved line.
+        let sel = selectedRange()
+        let caretLineRange = ns.lineRange(for: NSRange(location: min(sel.location, ns.length), length: 0))
+        let caretLine = ns.substring(with: caretLineRange).trimmingCharacters(in: .newlines)
+        let caretColumn = sel.location - caretLineRange.location
+
+        let newText = lines.joined(separator: "\n")
+        let full = NSRange(location: 0, length: ns.length)
+        isReordering = true
+        if shouldChangeText(in: full, replacementString: newText) {
+            textStorage.replaceCharacters(in: full, with: newText)
+            didChangeText()
+        }
+        isReordering = false
+
+        // Restore the caret onto the same line in the reordered text.
+        let newNS = string as NSString
+        var restored = min(sel.location, newNS.length)
+        var offset = 0
+        for line in newText.components(separatedBy: "\n") {
+            if line == caretLine {
+                restored = min(offset + caretColumn, offset + (line as NSString).length)
+                break
+            }
+            offset += (line as NSString).length + 1
+        }
+        setSelectedRange(NSRange(location: min(restored, newNS.length), length: 0))
+    }
+
     private func splitSelectionIntoLines() {
         let ns = string as NSString
         var cursors: [NSRange] = []
@@ -379,7 +612,7 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
 
 private struct CopiedSecretToast: View {
     var body: some View {
-        Label("Secret Copied", systemImage: "checkmark.circle.fill")
+        Label("Copied", systemImage: "checkmark.circle.fill")
             .scaledFont(size: 13, weight: .semibold)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
