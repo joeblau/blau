@@ -8,7 +8,7 @@ struct ContentView: View {
     var peerDeviceStatus: DeviceStatus
     var localAudioOutput: AudioOutputDevice?
     var isPlotterConnected: Bool
-    var remoteInkModel: RemoteInkModel
+    var inkModel: InkModel
     /// Reflects whether a Copilot peer is currently push-to-talking. The
     /// transcription itself runs on the iPhone now — Pilot only paints
     /// the "listening" indicator and pastes the finished text.
@@ -113,10 +113,6 @@ struct ContentView: View {
                         .zIndex(100)
                 }
 
-                if isDrawingActive && !store.isNotesMode && !workspaces.isEmpty {
-                    InkOverlay(isActive: $isDrawingActive)
-                        .zIndex(60)
-                }
             }
             .navigationTitle(store.isNotesMode ? "Notes" : (store.selectedWorkspace?.name ?? ""))
         }
@@ -139,12 +135,6 @@ struct ContentView: View {
                 }
             }
             focusSelectedWorkspaceTerminal()
-        }
-        .onChange(of: remoteInkModel.changeID) {
-            guard remoteInkModel.hasInk,
-                  !store.isNotesMode,
-                  !workspaces.isEmpty else { return }
-            isDrawingActive = true
         }
         .task {
             syncSelectedWorkspaceRootPath()
@@ -267,22 +257,15 @@ struct ContentView: View {
             .keyboardShortcut(.tab, modifiers: [.control, .shift])
             .hidden()
         }
-        // Remote ink (from Plotter) overlays the entire Pilot window — sidebar
-        // and detail — so its strokes line up with what Plotter mirrors, which
-        // is the whole window. It's non-interactive, so the UI beneath stays
-        // fully usable.
+        // The merged ink overlay covers the entire Pilot window (sidebar +
+        // detail) so strokes line up with what Plotter mirrors. It shows
+        // whenever there's ink (local or from Plotter) or while drawing is
+        // active. It only captures the mouse in draw mode, so the UI beneath
+        // stays usable otherwise; its undo/trash act on the merged stack.
         .overlay {
-            if remoteInkModel.hasInk {
-                RemoteInkOverlay(model: remoteInkModel)
+            if (inkModel.hasInk || isDrawingActive) && !store.isNotesMode {
+                InkOverlay(model: inkModel, isActive: $isDrawingActive)
                     .ignoresSafeArea()
-            }
-        }
-        // Undo / clear controls for the Plotter-drawn ink. Interactive (unlike
-        // the render-only overlay above); commands round-trip to the iPad.
-        .overlay(alignment: .bottomTrailing) {
-            if remoteInkModel.hasInk {
-                RemoteInkControls(model: remoteInkModel)
-                    .padding(16)
             }
         }
     }
@@ -732,7 +715,7 @@ private enum ContentViewPreviewData {
         peerDeviceStatus: DeviceStatus(),
         localAudioOutput: nil,
         isPlotterConnected: false,
-        remoteInkModel: RemoteInkModel(),
+        inkModel: InkModel(),
         isPeerRecording: false
     )
     .modelContainer(ContentViewPreviewData.container)

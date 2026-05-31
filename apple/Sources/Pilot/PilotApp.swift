@@ -18,7 +18,7 @@ struct PilotApp: App {
     @State private var screenMirror: ScreenMirror
     @State private var plotterClientCount = 0
     @State private var annotationReceiver = AnnotationReceiver()
-    @State private var remoteInkModel = RemoteInkModel()
+    @State private var inkModel = InkModel()
     @State private var recordingTargetPaneID: UUID?
     /// True while a Copilot peer is currently push-to-talking. Flipped
     /// from `.voiceRecord(.start | .stop)` messages so the Mac UI can
@@ -68,7 +68,7 @@ struct PilotApp: App {
                 peerDeviceStatus: peerDeviceStatus,
                 localAudioOutput: headphoneDetector.audioOutput,
                 isPlotterConnected: plotterClientCount > 0,
-                remoteInkModel: remoteInkModel,
+                inkModel: inkModel,
                 isPeerRecording: isPeerRecording
             )
                 .environment(\.uiZoom, uiZoom)
@@ -108,7 +108,7 @@ struct PilotApp: App {
                     }
                     frameSender.onAnnotationMessage = { seq, message in
                         Task { @MainActor in
-                            remoteInkModel.handle(message)
+                            inkModel.handle(message)
                             // Confirm acceptance so Plotter can stop drawing
                             // its now-redundant local copy and defer to the
                             // mirrored render.
@@ -117,7 +117,7 @@ struct PilotApp: App {
                     }
                     annotationReceiver.onMessage = { message in
                         Task { @MainActor in
-                            remoteInkModel.handle(message)
+                            inkModel.handle(message)
                         }
                     }
                     // Advertise the frame channel immediately so a Plotter can
