@@ -457,6 +457,10 @@ public final class FrameReceiver: @unchecked Sendable {
     public var onPacket: ((FrameLink.Packet) -> Void)?
     public var onStatusChanged: ((String) -> Void)?
     public var onFrameCountChanged: ((Int) -> Void)?
+    /// Fired with `true` when the frame connection becomes ready and `false`
+    /// when it tears down, so the UI can match Pilot's appearance only while
+    /// actually connected.
+    public var onConnectedChanged: ((Bool) -> Void)?
 
     public init() {}
 
@@ -635,6 +639,7 @@ public final class FrameReceiver: @unchecked Sendable {
             switch state {
             case .ready:
                 self.updateStatus("Frame stream connected")
+                self.onConnectedChanged?(true)
                 self.flushPendingOutbound()
                 self.receiveNext()
             case .failed, .cancelled:
@@ -723,6 +728,7 @@ public final class FrameReceiver: @unchecked Sendable {
         connection?.cancel()
         connection = nil
         buffer.removeAll(keepingCapacity: true)
+        onConnectedChanged?(false)
         // Browser may still be alive; if not, restart browsing to find a peer.
         if running, browser == nil {
             scheduleBrowserRestart()

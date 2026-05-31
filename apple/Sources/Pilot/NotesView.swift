@@ -8,6 +8,9 @@ struct NotesView: View {
     @Bindable var store: WorkspaceStore
     @State private var showCopiedToast = false
     @State private var toastDismiss: DispatchWorkItem?
+    /// Set when the user closes a note tab that still has content, so we can
+    /// confirm before the (undoable-free) delete. Empty notes close immediately.
+    @State private var noteToClose: Note?
 
     var body: some View {
         let notes = store.notes
@@ -23,6 +26,33 @@ struct NotesView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
                     .allowsHitTesting(false)
             }
+        }
+        .confirmationDialog(
+            "Delete this note?",
+            isPresented: Binding(
+                get: { noteToClose != nil },
+                set: { if !$0 { noteToClose = nil } }
+            ),
+            presenting: noteToClose
+        ) { note in
+            Button("Delete Note", role: .destructive) {
+                store.deleteNote(note)
+                noteToClose = nil
+            }
+            Button("Cancel", role: .cancel) { noteToClose = nil }
+        } message: { note in
+            Text("“\(note.displayTitle)” will be permanently deleted. This can’t be undone.")
+        }
+    }
+
+    /// Closing a note tab deletes the note. Confirm first when there's content
+    /// to lose; close empty notes immediately so creating + dismissing a blank
+    /// note doesn't nag.
+    private func requestClose(_ note: Note) {
+        if note.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            store.deleteNote(note)
+        } else {
+            noteToClose = note
         }
     }
 
@@ -44,7 +74,7 @@ struct NotesView: View {
                         title: note.displayTitle,
                         isSelected: note.id == store.selectedNoteID,
                         onSelect: { store.selectedNoteID = note.id },
-                        onClose: { store.deleteNote(note) }
+                        onClose: { requestClose(note) }
                     )
                 }
 

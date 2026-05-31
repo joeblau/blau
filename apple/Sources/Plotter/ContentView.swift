@@ -32,46 +32,14 @@ private struct SearchingOverlay: View {
 
     var body: some View {
         if mirror.frameCount == 0 {
-            VStack(spacing: 16) {
+            ContentUnavailableView {
+                Label("Searching for Pilot", systemImage: "antenna.radiowaves.left.and.right")
+            } description: {
+                Text("Make sure Pilot is running on your Mac, and that both devices are on the same Wi-Fi network with Local Network access enabled for Plotter.")
+            } actions: {
                 ProgressView()
-                    .controlSize(.large)
-                    .tint(.white)
-                Text("Searching for Pilot…")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(mirror.statusText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Text("Frames received: \(mirror.frameCount)")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-                Text(mirror.annotationStatusText)
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-                Text("If Plotter cannot find Pilot, enable Local Network in Settings on both devices.")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-                Button {
-                    openAppSettings()
-                } label: {
-                    Label("Open Plotter Settings", systemImage: "gearshape")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.white)
-                .foregroundStyle(.black)
             }
-            .padding(.horizontal, 24)
         }
-    }
-
-    private func openAppSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString),
-              UIApplication.shared.canOpenURL(url) else { return }
-        UIApplication.shared.open(url)
     }
 }
 
