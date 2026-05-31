@@ -621,6 +621,7 @@ struct BrowserPaneView: View {
     let onSelect: () -> Void
 
     @State private var hasLoadedAnyURL: Bool = false
+    @State private var openedWithBlankURL: Bool?
 
     var body: some View {
         if shouldShowStartPage {
@@ -631,6 +632,7 @@ struct BrowserPaneView: View {
                 hasLoadedAnyURL = true
             }
             .background(Color(nsColor: .windowBackgroundColor))
+            .onAppear { captureInitialURLState() }
         } else {
             WebViewRepresentable(
                 state: state,
@@ -641,7 +643,10 @@ struct BrowserPaneView: View {
                 isSelected: isSelected,
                 onSelect: onSelect
             )
-            .onAppear { hasLoadedAnyURL = true }
+            .onAppear {
+                captureInitialURLState()
+                hasLoadedAnyURL = true
+            }
         }
     }
 
@@ -649,8 +654,30 @@ struct BrowserPaneView: View {
         // Sticky: once a URL is loaded, never flip back even if the user
         // clears the address bar to type a new one. Persisted panes that
         // already have a `urlText` skip the start page entirely on launch.
+        BrowserStartPageVisibility.shouldShow(
+            hasLoadedAnyURL: hasLoadedAnyURL,
+            openedWithBlankURL: openedWithBlankURL,
+            urlText: state.urlText,
+            hasPendingPageNavigation: state.pendingURL.map { $0.scheme != "blau" } ?? false
+        )
+    }
+
+    private func captureInitialURLState() {
+        guard openedWithBlankURL == nil else { return }
+        openedWithBlankURL = state.urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+enum BrowserStartPageVisibility {
+    static func shouldShow(
+        hasLoadedAnyURL: Bool,
+        openedWithBlankURL: Bool?,
+        urlText: String,
+        hasPendingPageNavigation: Bool
+    ) -> Bool {
         if hasLoadedAnyURL { return false }
-        return state.urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if hasPendingPageNavigation { return false }
+        return openedWithBlankURL ?? urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 

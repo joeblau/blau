@@ -39,6 +39,55 @@ enum SyncMessage: Codable, Sendable {
     case terminalInput(TerminalInput)
 }
 
+public struct AnnotationPoint: Codable, Sendable, Hashable {
+    public let x: Double
+    public let y: Double
+
+    public init(x: Double, y: Double) {
+        self.x = x
+        self.y = y
+    }
+}
+
+public struct AnnotationColor: Codable, Sendable, Hashable {
+    public let red: Double
+    public let green: Double
+    public let blue: Double
+    public let alpha: Double
+
+    public init(red: Double, green: Double, blue: Double, alpha: Double) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+}
+
+public struct AnnotationStroke: Codable, Sendable, Hashable {
+    public let color: AnnotationColor
+    public let width: Double
+    public let points: [AnnotationPoint]
+
+    public init(color: AnnotationColor, width: Double, points: [AnnotationPoint]) {
+        self.color = color
+        self.width = width
+        self.points = points
+    }
+}
+
+public struct AnnotationDrawing: Codable, Sendable, Hashable {
+    public let strokes: [AnnotationStroke]
+
+    public init(strokes: [AnnotationStroke]) {
+        self.strokes = strokes
+    }
+}
+
+public enum AnnotationMessage: Codable, Sendable, Hashable {
+    case replaceDrawing(AnnotationDrawing)
+    case clear
+}
+
 struct MouseMove: Codable, Sendable {
     let dx: Float
     let dy: Float
@@ -66,6 +115,7 @@ enum ConnectedDeviceAppRole: String, Codable, Sendable {
 enum ConnectedDeviceKind: String, Codable, Sendable, Hashable, Identifiable {
     case computer
     case iphone
+    case ipad
     case appleWatch
     case airpods
     case airpodsPro
@@ -83,6 +133,7 @@ enum ConnectedDeviceKind: String, Codable, Sendable, Hashable, Identifiable {
         switch self {
         case .computer: return "laptopcomputer"
         case .iphone: return "iphone"
+        case .ipad: return "ipad"
         case .appleWatch: return "applewatch"
         case .airpods: return "airpods.gen3"
         case .airpodsPro: return "airpods.pro"
@@ -100,6 +151,7 @@ enum ConnectedDeviceKind: String, Codable, Sendable, Hashable, Identifiable {
         switch self {
         case .computer: return "Computer"
         case .iphone: return "iPhone"
+        case .ipad: return "iPad"
         case .appleWatch: return "Apple Watch"
         case .airpods: return "AirPods"
         case .airpodsPro: return "AirPods Pro"
@@ -117,7 +169,7 @@ enum ConnectedDeviceKind: String, Codable, Sendable, Hashable, Identifiable {
         switch self {
         case .computer, .appleWatch, .speaker:
             return true
-        case .iphone, .airpods, .airpodsPro, .airpodsMax, .beats,
+        case .iphone, .ipad, .airpods, .airpodsPro, .airpodsMax, .beats,
              .headphonesWired, .headphonesBluetooth, .usb, .unknown:
             return false
         }
@@ -128,7 +180,7 @@ enum ConnectedDeviceKind: String, Codable, Sendable, Hashable, Identifiable {
         case .airpods, .airpodsPro, .airpodsMax, .beats,
              .headphonesWired, .headphonesBluetooth, .usb:
             return true
-        case .computer, .iphone, .appleWatch, .speaker, .unknown:
+        case .computer, .iphone, .ipad, .appleWatch, .speaker, .unknown:
             return false
         }
     }
