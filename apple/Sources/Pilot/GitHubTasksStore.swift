@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// A GitHub issue surfaced as a "task" in the inspector.
-struct GitHubTask: Identifiable, Decodable {
+struct GitHubTask: Identifiable, Decodable, Equatable {
     let number: Int
     let title: String
     let url: String
@@ -19,29 +19,74 @@ final class GitHubTasksStore {
     private(set) var errorMessage: String?
     private var directory: String?
     private var loadTask: Task<Void, Never>?
+    private var pollTimer: Timer?
 
+    /// How often to re-poll `gh issue list` while the inspector is showing.
+    /// Matches `GitCommitStore`'s commit/Actions cadence.
+    private static let pollInterval: TimeInterval = 30
+
+    /// Point the store at a repo (or `nil` to clear). Fetches immediately and
+    /// keeps the list live via a background poll, so the inspector auto-updates
+    /// without a manual refresh.
     func load(directory: String?) {
-        loadTask?.cancel()
-        guard let directory, !directory.trimmingCharacters(in: .whitespaces).isEmpty else {
+        let trimmed = directory?.trimmingCharacters(in: .whitespaces)
+        guard let trimmed, !trimmed.isEmpty else {
+            stopPolling()
             self.directory = nil
             tasks = []
             errorMessage = nil
             isLoading = false
             return
         }
-        self.directory = directory
-        isLoading = true
-        errorMessage = nil
+
+        let isNewRepo = (trimmed != self.directory)
+        self.directory = trimmed
+
+        if isNewRepo {
+            // Switching repos: drop the previous repo's issues and show the
+            // spinner until the first fetch lands.
+            tasks = []
+            errorMessage = nil
+            startPolling()
+        }
+        // Spinner only when we have nothing to show; background polls update
+        // silently so the list doesn't flash.
+        fetch(showSpinner: tasks.isEmpty)
+    }
+
+    private func startPolling() {
+        pollTimer?.invalidate()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: Self.pollInterval, repeats: true) { _ in
+            Task { @MainActor in
+                self.fetch(showSpinner: false)
+            }
+        }
+    }
+
+    private func stopPolling() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+        loadTask?.cancel()
+        loadTask = nil
+    }
+
+    private func fetch(showSpinner: Bool) {
+        guard let directory else { return }
+        loadTask?.cancel()
+        if showSpinner { isLoading = true }
         loadTask = Task {
             let (issues, error) = await Self.fetch(in: directory)
             if Task.isCancelled { return }
             isLoading = false
-            tasks = issues
             errorMessage = error
+            // Keep the last good list on a transient poll failure; only swap
+            // in new data on success so the inspector doesn't blink to an
+            // error screen mid-poll. Insertions animate in the view layer.
+            if error == nil {
+                tasks = issues
+            }
         }
     }
-
-    func reload() { load(directory: directory) }
 
     nonisolated private static func ghPath() -> String? {
         ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
@@ -104,17 +149,17 @@ struct GitHubTasksView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 6) {
             Text(store.tasks.isEmpty ? "Issues" : "\(store.tasks.count) open")
                 .scaledFont(size: 11, weight: .medium)
                 .foregroundStyle(.secondary)
-            Spacer()
-            Button { store.reload() } label: {
-                Image(systemName: "arrow.clockwise").scaledFont(size: 11)
+            // Subtle activity hint on the initial load. Background polls are
+            // silent — the list just auto-updates, no manual refresh.
+            if store.isLoading && store.tasks.isEmpty {
+                ProgressView()
+                    .controlSize(.mini)
             }
-            .buttonStyle(.plain)
-            .help("Refresh issues")
-            .disabled(store.isLoading)
+            Spacer()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -122,22 +167,27 @@ struct GitHubTasksView: View {
 
     @ViewBuilder
     private var content: some View {
-        if store.isLoading && store.tasks.isEmpty {
+        // Prefer showing data: once we have issues, keep showing them even if
+        // a later poll errors out, so the inspector never blinks to an error
+        // screen mid-poll.
+        if !store.tasks.isEmpty {
+            List(store.tasks) { task in
+                GitHubTaskRow(task: task)
+                    .listRowSeparator(.hidden)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            .listStyle(.inset)
+            .animation(.snappy, value: store.tasks)
+        } else if store.isLoading {
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = store.errorMessage {
             ContentUnavailableView("No Issues", systemImage: "exclamationmark.triangle",
                                    description: Text(error))
-        } else if store.tasks.isEmpty {
+        } else {
             ContentUnavailableView("No Open Issues", systemImage: "checkmark.circle",
                                    description: Text("This repo has no open GitHub issues."))
-        } else {
-            List(store.tasks) { task in
-                GitHubTaskRow(task: task)
-                    .listRowSeparator(.hidden)
-            }
-            .listStyle(.inset)
         }
     }
 }
