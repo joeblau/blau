@@ -49,15 +49,15 @@ targets:
         INFOPLIST_FILE: Sources/Pilot/Info.plist
         OTHER_LDFLAGS: ["-lc++", "-framework", "Metal", "-framework", "MetalKit", "-framework", "QuartzCore", "-framework", "CoreText", "-framework", "IOKit", "-framework", "IOSurface", "-framework", "CoreGraphics", "-framework", "Foundation", "-framework", "Carbon", "-framework", "CoreFoundation", "-framework", "AppKit", "-framework", "CoreServices", "-framework", "AVFoundation", "-framework", "CoreMedia", "-framework", "CoreMediaIO"]
       configs:
-        # Debug builds ad-hoc sign ("-") with manual signing and no team, so
-        # Pilot runs locally even on a machine without an Apple Development
-        # identity for the team. Release keeps the automatic team signing from
-        # the project-level base settings for distribution.
+        # Debug signs with the stable Apple Development identity (team from the
+        # project-level base settings), NOT ad-hoc. macOS keys TCC grants —
+        # notably Screen Recording for the window mirror — to the signing
+        # identity; an ad-hoc signature's hash changes every build, so the
+        # grant is invalidated and the system re-prompts on each run. A stable
+        # identity makes the grant persist across rebuilds.
         Debug:
-          CODE_SIGN_STYLE: Manual
-          CODE_SIGN_IDENTITY: "-"
-          DEVELOPMENT_TEAM: ""
-          PROVISIONING_PROFILE_SPECIFIER: ""
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
 
   Copilot:
     type: application
