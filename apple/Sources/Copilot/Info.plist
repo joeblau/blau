@@ -25,6 +25,7 @@
     <key>NSBonjourServices</key>
     <array>
         <string>_blau-sync._tcp</string>
+        <string>_blau-sync._udp</string>
     </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Copilot uses the local network to sync with Pilot.</string>
