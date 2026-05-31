@@ -13,6 +13,12 @@ struct PilotApp: App {
         role: .advertiser,
         displayName: Host.current().localizedName ?? "Mac"
     )
+    /// High-bandwidth frame channel that live-mirrors Pilot's window to Plotter.
+    @State private var frameSender = FrameSender()
+    @State private var screenMirror: ScreenMirror
+    @State private var plotterClientCount = 0
+    @State private var annotationReceiver = AnnotationReceiver()
+    @State private var remoteInkModel = RemoteInkModel()
     @State private var recordingTargetPaneID: UUID?
     /// True while a Copilot peer is currently push-to-talking. Flipped
     /// from `.voiceRecord(.start | .stop)` messages so the Mac UI can
@@ -28,11 +34,22 @@ struct PilotApp: App {
         let container = try! ModelContainer(for: schema)
         self.modelContainer = container
         self._store = State(initialValue: WorkspaceStore(modelContext: container.mainContext))
+        let sender = FrameSender()
+        self._frameSender = State(initialValue: sender)
+        self._screenMirror = State(initialValue: ScreenMirror(sender: sender))
     }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(store: store, syncService: syncService, peerDeviceStatus: peerDeviceStatus, localAudioOutput: headphoneDetector.audioOutput, isPeerRecording: isPeerRecording)
+            ContentView(
+                store: store,
+                syncService: syncService,
+                peerDeviceStatus: peerDeviceStatus,
+                localAudioOutput: headphoneDetector.audioOutput,
+                isPlotterConnected: plotterClientCount > 0,
+                remoteInkModel: remoteInkModel,
+                isPeerRecording: isPeerRecording
+            )
                 .environment(\.uiZoom, uiZoom)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                 .onChange(of: uiZoom) { _, newValue in
@@ -45,6 +62,31 @@ struct PilotApp: App {
                     _ = MouseBridge.shared.ensurePermissions()
                     headphoneDetector.start()
                     setupSync()
+                    frameSender.onClientCountChanged = { count in
+                        Task { @MainActor in
+                            plotterClientCount = count
+                        }
+                    }
+                    frameSender.onAnnotationMessage = { seq, message in
+                        Task { @MainActor in
+                            remoteInkModel.handle(message)
+                            // Confirm acceptance so Plotter can stop drawing
+                            // its now-redundant local copy and defer to the
+                            // mirrored render.
+                            frameSender.sendAnnotationAck(seq)
+                        }
+                    }
+                    annotationReceiver.onMessage = { message in
+                        Task { @MainActor in
+                            remoteInkModel.handle(message)
+                        }
+                    }
+                    // Always mirror Pilot's window over the high-bandwidth
+                    // frame channel while running; gating on a connected peer
+                    // comes in a later phase.
+                    frameSender.start()
+                    screenMirror.start()
+                    annotationReceiver.start()
                 }
                 .onChange(of: headphoneDetector.audioOutput) {
                     sendLocalDeviceStatus()

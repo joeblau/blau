@@ -7,6 +7,8 @@ struct ContentView: View {
     var syncService: PeerSyncService
     var peerDeviceStatus: DeviceStatus
     var localAudioOutput: AudioOutputDevice?
+    var isPlotterConnected: Bool
+    var remoteInkModel: RemoteInkModel
     /// Reflects whether a Copilot peer is currently push-to-talking. The
     /// transcription itself runs on the iPhone now — Pilot only paints
     /// the "listening" indicator and pastes the finished text.
@@ -138,6 +140,12 @@ struct ContentView: View {
             }
             focusSelectedWorkspaceTerminal()
         }
+        .onChange(of: remoteInkModel.changeID) {
+            guard remoteInkModel.hasInk,
+                  !store.isNotesMode,
+                  !workspaces.isEmpty else { return }
+            isDrawingActive = true
+        }
         .task {
             syncSelectedWorkspaceRootPath()
             syncInspectorRepo(activeInspectorRepoPath)
@@ -259,6 +267,16 @@ struct ContentView: View {
             .keyboardShortcut(.tab, modifiers: [.control, .shift])
             .hidden()
         }
+        // Remote ink (from Plotter) overlays the entire Pilot window — sidebar
+        // and detail — so its strokes line up with what Plotter mirrors, which
+        // is the whole window. It's non-interactive, so the UI beneath stays
+        // fully usable.
+        .overlay {
+            if remoteInkModel.hasInk {
+                RemoteInkOverlay(model: remoteInkModel)
+                    .ignoresSafeArea()
+            }
+        }
     }
 
     /// Bridges the single-typed `List` selection to the store's split state:
@@ -328,6 +346,7 @@ struct ContentView: View {
         )
         return [
             ConnectedDevice(kind: .iphone, isConnected: syncService.isConnected),
+            ConnectedDevice(kind: .ipad, isConnected: isPlotterConnected),
             ConnectedDevice(kind: .appleWatch, isConnected: peerDeviceStatus.isWatchConnected),
             audioDevice
         ]
@@ -704,6 +723,8 @@ private enum ContentViewPreviewData {
         syncService: PeerSyncService(role: .advertiser, displayName: "Preview"),
         peerDeviceStatus: DeviceStatus(),
         localAudioOutput: nil,
+        isPlotterConnected: false,
+        remoteInkModel: RemoteInkModel(),
         isPeerRecording: false
     )
     .modelContainer(ContentViewPreviewData.container)

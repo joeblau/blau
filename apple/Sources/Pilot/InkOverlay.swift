@@ -19,6 +19,46 @@ final class InkModel {
     func clear() { strokes.removeAll() }
 }
 
+struct RemoteInkStroke {
+    var color: NSColor
+    var width: CGFloat
+    var points: [CGPoint]
+}
+
+@MainActor
+@Observable
+final class RemoteInkModel {
+    private(set) var strokes: [RemoteInkStroke] = []
+    private(set) var changeID = 0
+
+    var hasInk: Bool {
+        !strokes.isEmpty
+    }
+
+    func handle(_ message: AnnotationMessage) {
+        switch message {
+        case .replaceDrawing(let drawing):
+            strokes = drawing.strokes.map(Self.makeStroke)
+        case .clear:
+            strokes.removeAll()
+        }
+        changeID += 1
+    }
+
+    private static func makeStroke(from stroke: AnnotationStroke) -> RemoteInkStroke {
+        RemoteInkStroke(
+            color: NSColor(
+                calibratedRed: CGFloat(stroke.color.red),
+                green: CGFloat(stroke.color.green),
+                blue: CGFloat(stroke.color.blue),
+                alpha: CGFloat(stroke.color.alpha)
+            ),
+            width: CGFloat(stroke.width),
+            points: stroke.points.map { CGPoint(x: $0.x, y: $0.y) }
+        )
+    }
+}
+
 /// Freehand annotation layer drawn over the active pane (terminal/browser/
 /// device). Used in place of PencilKit's `PKCanvasView`, which is iOS/Catalyst
 /// only and unavailable in this native macOS app. Strokes clear when dismissed.
@@ -87,6 +127,60 @@ struct InkOverlay: View {
         }
         .buttonStyle(.plain)
         .disabled(disabled)
+    }
+}
+
+struct RemoteInkOverlay: View {
+    var model: RemoteInkModel
+
+    var body: some View {
+        RemoteInkCanvas(model: model)
+            .allowsHitTesting(false)
+    }
+}
+
+private struct RemoteInkCanvas: NSViewRepresentable {
+    var model: RemoteInkModel
+
+    func makeNSView(context: Context) -> RemoteInkCanvasNSView {
+        let view = RemoteInkCanvasNSView()
+        view.model = model
+        return view
+    }
+
+    func updateNSView(_ nsView: RemoteInkCanvasNSView, context: Context) {
+        nsView.model = model
+        nsView.needsDisplay = true
+    }
+}
+
+final class RemoteInkCanvasNSView: NSView {
+    weak var model: RemoteInkModel?
+
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let model else { return }
+
+        for stroke in model.strokes where stroke.points.count > 1 {
+            let path = NSBezierPath()
+            path.lineWidth = max(1.5, stroke.width * min(bounds.width, bounds.height))
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+
+            let first = denormalize(stroke.points[0])
+            path.move(to: first)
+            for point in stroke.points.dropFirst() {
+                path.line(to: denormalize(point))
+            }
+            stroke.color.setStroke()
+            path.stroke()
+        }
+    }
+
+    private func denormalize(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x * bounds.width, y: point.y * bounds.height)
     }
 }
 

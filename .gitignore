@@ -57,3 +57,7 @@ xcuserdata/
 node_modules/
 web/dist/
 web/.astro/
+
+### Build artifacts ###
+build/
+*.profraw

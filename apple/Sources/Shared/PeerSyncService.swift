@@ -6,6 +6,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
     enum Role { case advertiser, browser }
 
     private(set) var isConnected = false
+    private(set) var statusText = "Idle"
 
     var onReceive: (@MainActor (SyncMessage) -> Void)?
 
@@ -53,6 +54,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         stopTransport()
         switch role {
         case .advertiser:
+            updateStatus("Advertising sync service")
             let adv = MCNearbyServiceAdvertiser(
                 peer: peerID,
                 discoveryInfo: nil,
@@ -63,6 +65,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
             advertiser = adv
 
         case .browser:
+            updateStatus("Browsing for Pilot sync service")
             let br = MCNearbyServiceBrowser(peer: peerID, serviceType: Self.serviceType)
             br.delegate = self
             br.startBrowsingForPeers()
@@ -80,6 +83,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         session.disconnect()
         Task { @MainActor [weak self] in
             self?.isConnected = false
+            self?.statusText = "Stopped"
         }
     }
 
@@ -119,6 +123,12 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         guard !session.connectedPeers.isEmpty else { return }
         try? session.send(data, toPeers: session.connectedPeers, with: mode)
     }
+
+    private func updateStatus(_ status: String) {
+        Task { @MainActor [weak self] in
+            self?.statusText = status
+        }
+    }
 }
 
 // MARK: - MCSessionDelegate
@@ -126,9 +136,22 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
 extension PeerSyncService: MCSessionDelegate {
     nonisolated func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
         let connected = !session.connectedPeers.isEmpty
+        let connectedNames = session.connectedPeers.map(\.displayName).joined(separator: ", ")
+        let status: String
+        switch state {
+        case .connecting:
+            status = "Connecting to \(peerID.displayName)"
+        case .connected:
+            status = connectedNames.isEmpty ? "Connected" : "Connected to \(connectedNames)"
+        case .notConnected:
+            status = "Disconnected from \(peerID.displayName)"
+        @unknown default:
+            status = "Unknown sync state"
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.isConnected = connected
+            self.statusText = status
         }
         if state == .notConnected {
             transportQueue.async { [weak self] in
@@ -154,7 +177,12 @@ extension PeerSyncService: MCSessionDelegate {
 extension PeerSyncService: MCNearbyServiceAdvertiserDelegate {
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peerID: MCPeerID, withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
         let sess = self.session
+        updateStatus("Accepted sync invite from \(peerID.displayName)")
         invitationHandler(true, sess)
+    }
+
+    nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
+        updateStatus("Sync advertise failed: \(error.localizedDescription)")
     }
 }
 
@@ -162,11 +190,18 @@ extension PeerSyncService: MCNearbyServiceAdvertiserDelegate {
 
 extension PeerSyncService: MCNearbyServiceBrowserDelegate {
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String: String]?) {
+        updateStatus("Found Pilot sync peer \(peerID.displayName)")
         transportQueue.async { [weak self] in
             guard let self else { return }
             browser.invitePeer(peerID, to: self.session, withContext: nil, timeout: 10)
         }
     }
 
-    nonisolated func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {}
+    nonisolated func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
+        updateStatus("Lost Pilot sync peer \(peerID.displayName)")
+    }
+
+    nonisolated func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
+        updateStatus("Sync browse failed: \(error.localizedDescription)")
+    }
 }

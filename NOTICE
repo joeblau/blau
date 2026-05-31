@@ -1,0 +1,25 @@
+blau
+Copyright (c) 2026 Joe Blau
+
+This product includes software developed at Meta Platforms, Inc.,
+specifically concepts ported from idb (https://github.com/facebook/idb,
+licensed under the Apache License, Version 2.0).
+
+The following files contain structure and lifecycle patterns derived
+from FBSimulatorControl and FBControlCore:
+
+  - apple/Sources/Pilot/Simulator/SimulatorRuntime.swift
+  - apple/Sources/Pilot/Simulator/SimulatorDeviceSet.swift
+  - apple/Sources/Pilot/Simulator/SimulatorDevice.swift
+  - apple/Sources/Pilot/Simulator/SimulatorFramebufferClient.swift
+  - apple/Sources/Pilot/Simulator/SimulatorInputBridge.swift
+
+As the SPI integration matures, additional attributions may be added
+here. The Apache License, Version 2.0 is available at:
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Apache 2.0 compliance notes:
+  - Source files derived from idb carry no copyright notice removal.
+  - Any verbatim code incorporated must preserve its copyright header.
+  - No trademarks of Meta are used beyond this attribution.
