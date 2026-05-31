@@ -194,17 +194,17 @@ struct GitHubTasksView: View {
 
 private struct GitHubTaskRow: View {
     let task: GitHubTask
-    @State private var copied = false
+    @State private var sent = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Button(action: copyNumber) {
+            Button(action: sendImplementPrompt) {
                 Text("#\(task.number)")
                     .scaledFont(size: 12, weight: .semibold, design: .monospaced)
-                    .foregroundStyle(copied ? Color.green : Color.accentColor)
+                    .foregroundStyle(sent ? Color.green : Color.accentColor)
             }
             .buttonStyle(.plain)
-            .help("Copy #\(task.number) to clipboard")
+            .help("Run an \u{201C}implement #\(task.number)\u{201D} task in the active terminal")
 
             Text(task.title)
                 .scaledFont(size: 12)
@@ -217,16 +217,29 @@ private struct GitHubTaskRow: View {
         .padding(.vertical, 3)
     }
 
-    private func copyNumber() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString("#\(task.number)", forType: .string)
-        copied = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { copied = false }
+    /// Click the number to drop an agent-ready prompt into the active terminal:
+    /// fetch the issue from GitHub and build the fix. Pilot does the paste
+    /// (it owns the terminal); we just announce the prompt.
+    private func sendImplementPrompt() {
+        let prompt = "Implement GitHub issue #\(task.number). "
+            + "Read it first with `gh issue view \(task.number)`, then build and apply the fix."
+        NotificationCenter.default.post(
+            name: .pilotSendIssuePrompt,
+            object: nil,
+            userInfo: ["prompt": prompt]
+        )
+        sent = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { sent = false }
     }
 
     private func open() {
         guard let url = URL(string: task.url) else { return }
         NSWorkspace.shared.open(url)
     }
+}
+
+extension Notification.Name {
+    /// Posted by the Issues inspector when the user clicks an issue number;
+    /// `userInfo["prompt"]` carries the text to paste into the active terminal.
+    static let pilotSendIssuePrompt = Notification.Name("pilotSendIssuePrompt")
 }
