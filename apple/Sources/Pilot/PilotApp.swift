@@ -141,6 +141,15 @@ struct PilotApp: App {
                     guard syncService.isConnected else { return }
                     sendLocalDeviceStatus()
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .pilotSendIssuePrompt)) { note in
+                    // Issues inspector → paste an "implement this issue" prompt
+                    // into the selected workspace's active terminal and submit
+                    // it so the agent starts working on the task.
+                    guard let prompt = note.userInfo?["prompt"] as? String,
+                          let terminal = activeTerminalView else { return }
+                    terminal.pasteText(prompt)
+                    terminal.sendEnter()
+                }
         }
         .modelContainer(modelContainer)
         .commands {
