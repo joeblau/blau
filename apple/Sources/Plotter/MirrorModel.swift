@@ -31,6 +31,10 @@ final class MirrorModel {
 
     private var lastSentAnnotationSeq: UInt32 = 0
 
+    /// Pilot's light/dark appearance while connected. `nil` when not connected
+    /// so Plotter falls back to its own system appearance.
+    private(set) var pilotColorScheme: ColorScheme?
+
     private let receiver = FrameReceiver()
     private let renderer = HEVCMirrorRenderer()
 
@@ -56,6 +60,13 @@ final class MirrorModel {
         receiver.onFrameCountChanged = { [weak self] count in
             Task { @MainActor in
                 self?.frameCount = count
+            }
+        }
+        receiver.onConnectedChanged = { [weak self] connected in
+            Task { @MainActor in
+                // Drop Pilot's appearance on disconnect so Plotter returns to
+                // its own system light/dark setting.
+                if !connected { self?.pilotColorScheme = nil }
             }
         }
     }
@@ -198,6 +209,9 @@ final class MirrorModel {
                 self.videoSize = CGSize(width: config.width, height: config.height)
             case .sample(let sample):
                 self.trackForFeedback(sample.frameID)
+            case .appearance(let isDark):
+                self.pilotColorScheme = isDark ? .dark : .light
+                return
             default:
                 break
             }
@@ -336,6 +350,8 @@ private final class HEVCMirrorRenderer {
         case .linkFeedback:
             break
         case .capability:
+            break
+        case .appearance:
             break
         case .jpeg:
             break

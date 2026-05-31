@@ -73,6 +73,14 @@ struct PilotApp: App {
             )
                 .environment(\.uiZoom, uiZoom)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+                // Report Pilot's light/dark appearance to connected Plotters so
+                // they can match it; fires on connect and whenever the Mac's
+                // appearance changes.
+                .background {
+                    AppearanceReporter(isConnected: plotterClientCount > 0) { isDark in
+                        frameSender.send(.appearance(isDark: isDark))
+                    }
+                }
                 .onChange(of: uiZoom) { _, newValue in
                     GhosttyRuntime.shared.userZoomFactor = newValue
                 }
@@ -373,5 +381,25 @@ struct PilotApp: App {
     private func sendLocalDeviceStatus() {
         let status = DeviceStatus(audioOutput: headphoneDetector.audioOutput)
         syncService.send(.deviceStatus(status))
+    }
+}
+
+/// Invisible helper that observes Pilot's effective light/dark appearance and
+/// reports it to connected Plotters. Sends on first connect (via the
+/// `isConnected` transition) and whenever the Mac's appearance changes, so a
+/// connected Plotter mirrors Pilot's mode rather than its own.
+private struct AppearanceReporter: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let isConnected: Bool
+    let send: (Bool) -> Void
+
+    var body: some View {
+        Color.clear
+            .onChange(of: colorScheme) { _, scheme in
+                if isConnected { send(scheme == .dark) }
+            }
+            .onChange(of: isConnected) { _, connected in
+                if connected { send(colorScheme == .dark) }
+            }
     }
 }

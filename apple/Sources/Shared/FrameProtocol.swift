@@ -103,6 +103,9 @@ public enum FrameProtocol {
         case annotation(seq: UInt32, message: AnnotationMessage)
         /// Sender -> client acknowledgement of an accepted annotation.
         case annotationAck(seq: UInt32)
+        /// Sender -> client: Pilot's current appearance, so a connected Plotter
+        /// can match the Mac's light/dark mode instead of its own.
+        case appearance(isDark: Bool)
         /// Legacy JPEG frame. Decoded for backward compatibility only.
         case jpeg(Data)
     }
@@ -117,6 +120,7 @@ public enum FrameProtocol {
         case capability = 5
         case annotation = 6
         case annotationAck = 7
+        case appearance = 8
         // Note: there is no tag for jpeg. A tagless / unknown-tag payload is
         // treated as a legacy raw JPEG by ``decode(_:)``.
     }
@@ -173,6 +177,8 @@ public enum FrameProtocol {
             payload.append(Kind.annotationAck.rawValue)
             appendUInt32(seq, to: &payload)
             return payload
+        case .appearance(let isDark):
+            return Data([Kind.appearance.rawValue, isDark ? 0x1 : 0x0])
         case .jpeg(let jpeg):
             return jpeg
         }
@@ -246,6 +252,9 @@ public enum FrameProtocol {
         case .annotationAck:
             guard payload.count >= 5 else { return nil }
             return .annotationAck(seq: readUInt32(from: payload, offset: 1))
+        case .appearance:
+            guard payload.count >= 2 else { return nil }
+            return .appearance(isDark: payload[payload.startIndex + 1] != 0)
         }
     }
 

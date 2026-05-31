@@ -91,6 +91,15 @@ final class FrameProtocolTests: XCTestCase {
         XCTAssertFalse(no.supports444)
     }
 
+    func testAppearanceRoundtrips() {
+        guard case .appearance(let dark)? = roundtrip(.appearance(isDark: true)),
+              case .appearance(let light)? = roundtrip(.appearance(isDark: false)) else {
+            return XCTFail("expected appearance")
+        }
+        XCTAssertTrue(dark)
+        XCTAssertFalse(light)
+    }
+
     func testAnnotationRoundtrips() {
         let drawing = AnnotationDrawing(strokes: [
             AnnotationStroke(
