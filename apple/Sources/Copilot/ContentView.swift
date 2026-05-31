@@ -13,6 +13,9 @@ struct ContentView: View {
     @State private var recordingWorkspaceID: UUID?
     @State private var preHoldWorkspaceID: UUID?
     @State private var transcription = TranscriptionService()
+    /// Bumped after each recording cycle to re-arm volume observation, since
+    /// `transcription.stop()` deactivates the shared audio session.
+    @State private var rearmTrigger = 0
 
     /// In demo mode we treat the peer as connected so the populated
     /// workspace list and trackpad inset render. The live `isConnected`
@@ -97,6 +100,10 @@ struct ContentView: View {
                 preHoldWorkspaceID = nil
                 Task {
                     await transcription.stop()
+                    // Re-arm volume observation now that stop() has
+                    // deactivated the shared audio session; otherwise the
+                    // hardware buttons stay dead after the first recording.
+                    rearmTrigger += 1
                     syncService.send(.voiceRecord(
                         VoiceRecordCommand(control: .stop, workspaceID: workspaceID)
                     ))
@@ -106,7 +113,8 @@ struct ContentView: View {
                         TranscribedSpeech(workspaceID: workspaceID, text: text)
                     ))
                 }
-            }
+            },
+            rearmToken: rearmTrigger
         ) { workspace, isHighlighted in
             workspaceRow(workspace, isHighlighted: isHighlighted)
         }

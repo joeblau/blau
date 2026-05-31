@@ -16,6 +16,10 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
     var onFirstEvent: (() -> Void)?
     var onVolumeHoldStart: (() -> Void)?
     var onVolumeHoldEnd: (() -> Void)?
+    /// Incrementing this from the parent re-arms volume observation. Used
+    /// after a recording cycle, whose `transcription.stop()` deactivates the
+    /// shared audio session and would otherwise kill button detection.
+    var rearmToken: Int = 0
     @ViewBuilder let rowContent: (Item, Bool) -> RowContent
 
     @State private var volumeObserver = VolumeObserver()
@@ -27,6 +31,7 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
         onFirstEvent: (() -> Void)? = nil,
         onVolumeHoldStart: (() -> Void)? = nil,
         onVolumeHoldEnd: (() -> Void)? = nil,
+        rearmToken: Int = 0,
         @ViewBuilder rowContent: @escaping (Item, Bool) -> RowContent
     ) {
         self.sections = [
@@ -37,6 +42,7 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
         self.onFirstEvent = onFirstEvent
         self.onVolumeHoldStart = onVolumeHoldStart
         self.onVolumeHoldEnd = onVolumeHoldEnd
+        self.rearmToken = rearmToken
         self.rowContent = rowContent
     }
 
@@ -47,6 +53,7 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
         onFirstEvent: (() -> Void)? = nil,
         onVolumeHoldStart: (() -> Void)? = nil,
         onVolumeHoldEnd: (() -> Void)? = nil,
+        rearmToken: Int = 0,
         @ViewBuilder rowContent: @escaping (Item, Bool) -> RowContent
     ) {
         self.sections = sections
@@ -55,6 +62,7 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
         self.onFirstEvent = onFirstEvent
         self.onVolumeHoldStart = onVolumeHoldStart
         self.onVolumeHoldEnd = onVolumeHoldEnd
+        self.rearmToken = rearmToken
         self.rowContent = rowContent
     }
 
@@ -108,6 +116,9 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
             volumeObserver.start()
         }
         .onDisappear { volumeObserver.stop() }
+        .onChange(of: rearmToken) {
+            volumeObserver.rearm()
+        }
     }
 
     @ViewBuilder
@@ -231,6 +242,25 @@ final class VolumeObserver {
                     self?.handleVolumeChange(newVolume)
                 }
             }
+    }
+
+    /// Re-activates the shared audio session for volume observation after
+    /// another subsystem deactivated it. Transcription sets `.playAndRecord`
+    /// then calls `setActive(false)` on stop; without re-arming here the
+    /// hardware volume buttons stop driving `outputVolume` and the observer
+    /// goes silent after the first recording (works-exactly-once bug). The
+    /// KVO subscription itself stays alive — only the session needs re-arming.
+    /// Call once transcription has fully stopped.
+    func rearm() {
+        isVolumeHeld = false
+        isTestingRelease = false
+        eventCount = 0
+        holdDetectTask?.cancel(); holdDetectTask = nil
+        releaseTestTask?.cancel(); releaseTestTask = nil
+        pendingProgrammaticVolume = nil
+        try? session.setActive(true)
+        previousVolume = session.outputVolume
+        setVolumeMidpoint()
     }
 
     private func handleVolumeChange(_ newVolume: Float) {
