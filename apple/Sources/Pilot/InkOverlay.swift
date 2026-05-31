@@ -104,18 +104,95 @@ private struct InkCanvas: NSViewRepresentable {
     func updateNSView(_ nsView: InkCanvasNSView, context: Context) {
         nsView.model = model
         nsView.needsDisplay = true
+        // Recolor the pencil/eraser cursor immediately when the tool/color changes.
+        nsView.refreshCursor()
     }
 }
 
 final class InkCanvasNSView: NSView {
     weak var model: InkModel?
     private var current: InkStroke?
+    private var isMouseInside = false
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
     // Capture every click so the pane underneath stays untouched while drawing.
     override func hitTest(_ point: NSPoint) -> NSView? { self }
+
+    // MARK: - Cursor
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.activeInActiveApp, .inVisibleRect, .cursorUpdate, .mouseEnteredAndExited],
+            owner: self
+        ))
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        currentCursor().set()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isMouseInside = true
+        currentCursor().set()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isMouseInside = false
+    }
+
+    /// Re-apply the cursor immediately (e.g. when the ink color changes) when
+    /// the pointer is over the canvas.
+    func refreshCursor() {
+        if isMouseInside { currentCursor().set() }
+    }
+
+    private func currentCursor() -> NSCursor {
+        guard let model else { return .crosshair }
+        return model.isEraser
+            ? Self.makeCursor(symbol: "eraser.fill", color: .white, centerHotspot: true)
+            : Self.makeCursor(symbol: "pencil", color: model.color, centerHotspot: false)
+    }
+
+    /// Builds an NSCursor from an SF Symbol, tinted to the ink color with a dark
+    /// halo so it stays visible over any pane. The pencil's hot spot is its
+    /// lower-left tip; the eraser's is its center.
+    private static func makeCursor(symbol: String, color: NSColor, centerHotspot: Bool) -> NSCursor {
+        let config = NSImage.SymbolConfiguration(pointSize: 28, weight: .medium)
+        guard let base = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return .crosshair }
+
+        // Tint the template symbol with the ink color.
+        let size = base.size
+        let tinted = NSImage(size: size)
+        tinted.lockFocus()
+        base.draw(in: NSRect(origin: .zero, size: size))
+        color.set()
+        NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
+        tinted.unlockFocus()
+
+        // Composite with a soft dark halo for contrast.
+        let pad: CGFloat = 3
+        let canvasSize = NSSize(width: size.width + pad * 2, height: size.height + pad * 2)
+        let image = NSImage(size: canvasSize)
+        image.lockFocus()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.7)
+        shadow.shadowBlurRadius = 2
+        shadow.shadowOffset = .zero
+        shadow.set()
+        tinted.draw(in: NSRect(x: pad, y: pad, width: size.width, height: size.height))
+        image.unlockFocus()
+
+        let hotSpot = centerHotspot
+            ? NSPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+            : NSPoint(x: pad + 1, y: canvasSize.height - pad - 1)
+        return NSCursor(image: image, hotSpot: hotSpot)
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard let model else { return }
@@ -126,6 +203,7 @@ final class InkCanvasNSView: NSView {
             current = InkStroke(color: model.color, width: model.width, points: [point])
         }
         needsDisplay = true
+        currentCursor().set()
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -137,6 +215,7 @@ final class InkCanvasNSView: NSView {
             current?.points.append(point)
         }
         needsDisplay = true
+        currentCursor().set()
     }
 
     override func mouseUp(with event: NSEvent) {
