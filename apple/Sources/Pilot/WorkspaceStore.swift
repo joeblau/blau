@@ -143,7 +143,32 @@ final class WorkspaceStore {
     }
 
     var summaries: [WorkspaceSummary] {
-        workspaces.map { WorkspaceSummary(id: $0.id, name: $0.name, isPinned: $0.isPinned, badgeCount: $0.badgeCount) }
+        workspaces.map { workspace in
+            WorkspaceSummary(
+                id: workspace.id,
+                name: workspace.name,
+                isPinned: workspace.isPinned,
+                badgeCount: workspace.badgeCount,
+                tabs: Self.tabSummaries(for: workspace),
+                selectedTabID: workspace.selectedPaneID
+            )
+        }
+    }
+
+    /// Map a workspace's panes to Copilot tab summaries, numbering panes of
+    /// the same kind ("Terminal 1", "Terminal 2") so duplicates are tellable
+    /// apart on the phone.
+    private static func tabSummaries(for workspace: Workspace) -> [TabSummary] {
+        let panes = workspace.sortedPanes
+        let totals = Dictionary(grouping: panes, by: \.kind).mapValues(\.count)
+        var seen: [PaneKind: Int] = [:]
+        return panes.map { pane in
+            seen[pane.kind, default: 0] += 1
+            let title = (totals[pane.kind] ?? 1) > 1
+                ? "\(pane.kind.displayName) \(seen[pane.kind]!)"
+                : pane.kind.displayName
+            return TabSummary(id: pane.id, title: title, systemImageName: pane.kind.systemImageName)
+        }
     }
 
     init(modelContext: ModelContext) {

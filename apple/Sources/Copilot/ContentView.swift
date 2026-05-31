@@ -184,8 +184,20 @@ struct ContentView: View {
     @ViewBuilder
     private var trackpadInset: some View {
         if isPeerConnected {
-            TrackpadView(syncService: syncService)
+            VStack(spacing: 10) {
+                // Always rendered (fixed height) so the bottom doesn't flash
+                // in/out as workspace state syncs each second; degrades to a
+                // disabled state when the selection has no tabs.
+                TabSwitcherBar(workspace: selectedWorkspace) { workspaceID, tabID in
+                    syncService.send(.selectTab(SelectTab(workspaceID: workspaceID, tabID: tabID)))
+                }
+                TrackpadView(syncService: syncService)
+            }
         }
+    }
+
+    private var selectedWorkspace: WorkspaceSummary? {
+        workspaces.first { $0.id == selectedID }
     }
 
     private var localDeviceStatus: DeviceStatus {
@@ -208,7 +220,7 @@ struct ContentView: View {
             case .workspaceState(let state):
                 workspaces = state.workspaces
                 selectedID = state.selectedWorkspaceID
-            case .selectWorkspace, .deviceStatus, .mouseMove, .mouseClick,
+            case .selectWorkspace, .selectTab, .deviceStatus, .mouseMove, .mouseClick,
                  .voiceRecord, .transcribedSpeech, .terminalInput:
                 break
             }
@@ -223,8 +235,14 @@ struct ContentView: View {
     /// Populates the workspace list with representative fixture content
     /// for screenshots/UITests. No network, no transcription model load.
     private func seedDemoState() {
+        let demoTabs: [TabSummary] = [
+            TabSummary(id: UUID(), title: "Terminal 1", systemImageName: "terminal"),
+            TabSummary(id: UUID(), title: "Terminal 2", systemImageName: "terminal"),
+            TabSummary(id: UUID(), title: "Browser", systemImageName: "safari")
+        ]
         let demo: [WorkspaceSummary] = [
-            WorkspaceSummary(id: UUID(), name: "blau", isPinned: true, badgeCount: 0),
+            WorkspaceSummary(id: UUID(), name: "blau", isPinned: true, badgeCount: 0,
+                             tabs: demoTabs, selectedTabID: demoTabs.first?.id),
             WorkspaceSummary(id: UUID(), name: "web", badgeCount: 2),
             WorkspaceSummary(id: UUID(), name: "infra", badgeCount: 0),
             WorkspaceSummary(id: UUID(), name: "api", badgeCount: 5)
@@ -236,6 +254,96 @@ struct ContentView: View {
     private func sendDeviceStatus() {
         guard !demoMode else { return }
         syncService.send(.deviceStatus(localDeviceStatus))
+    }
+}
+
+/// Tab switcher above the trackpad: the left half is "previous", the right
+/// half is "next" (big tap targets), with the active tab's name floating in
+/// the middle. Tracks Pilot's selection as state syncs back.
+private struct TabSwitcherBar: View {
+    let workspace: WorkspaceSummary?
+    /// (workspaceID, tabID)
+    let onSelectTab: (UUID, UUID) -> Void
+
+    /// Same feel as volume up/down list navigation (VolumeObserver.tapHaptic).
+    private let selectHaptic = UIImpactFeedbackGenerator(style: .medium)
+
+    private var tabs: [TabSummary] { workspace?.tabs ?? [] }
+
+    private var currentIndex: Int {
+        if let id = workspace?.selectedTabID,
+           let i = tabs.firstIndex(where: { $0.id == id }) {
+            return i
+        }
+        return 0
+    }
+
+    private var current: TabSummary? {
+        tabs.indices.contains(currentIndex) ? tabs[currentIndex] : tabs.first
+    }
+
+    var body: some View {
+        ZStack {
+            // Two full-height tap halves drive prev/next.
+            HStack(spacing: 0) {
+                half(systemImage: "chevron.left", delta: -1, alignment: .leading)
+                half(systemImage: "chevron.right", delta: 1, alignment: .trailing)
+            }
+            // Centered label sits on top but passes touches through to the
+            // halves below.
+            centerLabel
+                .padding(.horizontal, 56)
+                .allowsHitTesting(false)
+        }
+        .frame(height: 64)
+        // Match the trackpad's material, border and horizontal insets so the
+        // two controls line up as a pair.
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(.secondary, lineWidth: 1)
+        )
+        .padding(.horizontal)
+    }
+
+    @ViewBuilder
+    private var centerLabel: some View {
+        if let current {
+            HStack(spacing: 6) {
+                Image(systemName: current.systemImageName)
+                    .font(.system(size: 15))
+                Text(current.title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .lineLimit(1)
+            }
+        } else {
+            Text("No tabs")
+                .font(.system(size: 16))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func half(systemImage: String, delta: Int, alignment: Alignment) -> some View {
+        let target = currentIndex + delta
+        let enabled = tabs.indices.contains(target)
+        Button {
+            guard let workspace, tabs.indices.contains(target) else { return }
+            selectHaptic.impactOccurred()
+            onSelectTab(workspace.id, tabs[target].id)
+        } label: {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: alignment) {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 17, weight: .semibold))
+                        .padding(.horizontal, 22)
+                        .foregroundStyle(enabled ? Color.accentColor : Color.secondary.opacity(0.4))
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
     }
 }
 
