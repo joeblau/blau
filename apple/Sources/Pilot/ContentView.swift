@@ -277,6 +277,14 @@ struct ContentView: View {
                     .ignoresSafeArea()
             }
         }
+        // Undo / clear controls for the Plotter-drawn ink. Interactive (unlike
+        // the render-only overlay above); commands round-trip to the iPad.
+        .overlay(alignment: .bottomTrailing) {
+            if remoteInkModel.hasInk {
+                RemoteInkControls(model: remoteInkModel)
+                    .padding(16)
+            }
+        }
     }
 
     /// Bridges the single-typed `List` selection to the store's split state:

@@ -53,7 +53,14 @@ private struct ZoomableMirrorView: UIViewRepresentable {
     func makeUIView(context: Context) -> ZoomableMirrorUIView {
         let view = ZoomableMirrorUIView()
         mirror.attach(view.sampleBufferDisplayLayer)
-        view.onDrawingChanged = { drawing, contentRect in
+        view.onStrokeAdded = { stroke, contentRect in
+            guard let s = Self.annotationStroke(from: stroke, contentRect: contentRect) else { return }
+            mirror.sendAnnotation(.addStroke(s))
+        }
+        view.onUndo = {
+            mirror.sendAnnotation(.undo)
+        }
+        view.onResync = { drawing, contentRect in
             mirror.sendAnnotation(.replaceDrawing(Self.annotationDrawing(
                 from: drawing,
                 contentRect: contentRect
@@ -61,6 +68,11 @@ private struct ZoomableMirrorView: UIViewRepresentable {
         }
         view.onClear = {
             mirror.sendAnnotation(.clear)
+        }
+        // Apply undo/clear commands that originate on Pilot to this canvas (the
+        // authoritative drawing); the resulting change echoes back to Pilot.
+        mirror.onRemoteAnnotation = { [weak view] message in
+            view?.applyRemoteCommand(message)
         }
         view.videoSize = mirror.videoSize
         // Demo mode: show a representative still in place of the live video
@@ -90,35 +102,35 @@ private struct ZoomableMirrorView: UIViewRepresentable {
         from drawing: PKDrawing,
         contentRect: CGRect
     ) -> AnnotationDrawing {
+        AnnotationDrawing(strokes: drawing.strokes.compactMap {
+            annotationStroke(from: $0, contentRect: contentRect)
+        })
+    }
+
+    /// Normalizes a single PencilKit stroke to the video content rect, or nil if
+    /// it has too few in-bounds points to be meaningful.
+    static func annotationStroke(from stroke: PKStroke, contentRect: CGRect) -> AnnotationStroke? {
         let drawRect = contentRect
         let scaleBase = max(1, min(drawRect.width, drawRect.height))
-        let strokes = drawing.strokes.compactMap { stroke -> AnnotationStroke? in
-            let points = stroke.path.compactMap { point -> AnnotationPoint? in
-                guard drawRect.contains(point.location) else { return nil }
-                return AnnotationPoint(
-                    x: min(1, max(0, (point.location.x - drawRect.minX) / drawRect.width)),
-                    y: min(1, max(0, (point.location.y - drawRect.minY) / drawRect.height))
-                )
-            }
-            guard points.count > 1 else { return nil }
-
-            let rgba = stroke.ink.color.rgbaComponents
-            let averageWidth = stroke.path.reduce(CGFloat(0)) { partial, point in
-                partial + max(point.size.width, point.size.height)
-            } / CGFloat(max(1, stroke.path.count))
-
-            return AnnotationStroke(
-                color: AnnotationColor(
-                    red: rgba.red,
-                    green: rgba.green,
-                    blue: rgba.blue,
-                    alpha: rgba.alpha
-                ),
-                width: max(1.5, averageWidth) / scaleBase,
-                points: points
+        let points = stroke.path.compactMap { point -> AnnotationPoint? in
+            guard drawRect.contains(point.location) else { return nil }
+            return AnnotationPoint(
+                x: min(1, max(0, (point.location.x - drawRect.minX) / drawRect.width)),
+                y: min(1, max(0, (point.location.y - drawRect.minY) / drawRect.height))
             )
         }
-        return AnnotationDrawing(strokes: strokes)
+        guard points.count > 1 else { return nil }
+
+        let rgba = stroke.ink.color.rgbaComponents
+        let averageWidth = stroke.path.reduce(CGFloat(0)) { partial, point in
+            partial + max(point.size.width, point.size.height)
+        } / CGFloat(max(1, stroke.path.count))
+
+        return AnnotationStroke(
+            color: AnnotationColor(red: rgba.red, green: rgba.green, blue: rgba.blue, alpha: rgba.alpha),
+            width: max(1.5, averageWidth) / scaleBase,
+            points: points
+        )
     }
 }
 
@@ -141,14 +153,35 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
 
     private var toolPicker: PKToolPicker?
 
-    var onDrawingChanged: ((PKDrawing, CGRect) -> Void)?
+    /// One completed stroke was added — sent incrementally so each line is a
+    /// discrete entry on Pilot's undo stack.
+    var onStrokeAdded: ((PKStroke, CGRect) -> Void)?
+    /// The last stroke was removed (undo).
+    var onUndo: (() -> Void)?
+    /// Non-incremental change (multi-stroke, resize re-anchor) — resend the full
+    /// drawing so Pilot resyncs.
+    var onResync: ((PKDrawing, CGRect) -> Void)?
     var onClear: (() -> Void)?
 
+    /// Stroke count at the last delivered change, to classify the next one as an
+    /// add / undo / resync.
+    private var lastStrokeCount = 0
+
     /// Native size of the mirrored window; used to compute the aspect-fit
-    /// content rect that annotations normalize against.
+    /// content rect that annotations normalize against. When it changes (Pilot
+    /// resized its window) we re-anchor existing strokes to the new content rect
+    /// so they stay on the same spot over the mirrored image.
     var videoSize: CGSize = .zero {
-        didSet { if videoSize != oldValue { reportDrawing() } }
+        didSet {
+            guard videoSize != oldValue else { return }
+            reanchorDrawing(from: oldValue, to: videoSize)
+            reportResync()
+        }
     }
+
+    /// True while we mutate `canvasView.drawing` programmatically (resize
+    /// re-anchor) so the delegate doesn't echo a redundant update.
+    private var isApplyingRemote = false
 
     // Pinch/pan transform state.
     private var scale: CGFloat = 1.0
@@ -292,7 +325,12 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
         }
         let clearButton = button(systemName: "trash") { [weak self] in
             guard let self else { return }
+            // Suppress the diff handler so we send a single `.clear` rather than
+            // an empty resync as well.
+            self.isApplyingRemote = true
             self.canvasView.drawing = PKDrawing()
+            self.lastStrokeCount = 0
+            self.isApplyingRemote = false
             self.onClear?()
         }
         let resetZoomButton = button(systemName: "arrow.up.left.and.arrow.down.right") { [weak self] in
@@ -408,16 +446,78 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
     // MARK: Drawing -> normalized annotation
 
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-        reportDrawing()
+        let count = canvasView.drawing.strokes.count
+        guard !isApplyingRemote else {
+            // Programmatic change (remote command / resize re-anchor): keep the
+            // count in sync but don't echo a message back.
+            lastStrokeCount = count
+            return
+        }
+        let contentRect = Self.aspectFitRect(contentSize: videoSize, in: canvasView.bounds)
+        if count == lastStrokeCount + 1, let stroke = canvasView.drawing.strokes.last {
+            // One new line: send it incrementally so Pilot stacks it for undo.
+            onStrokeAdded?(stroke, contentRect)
+        } else if count == lastStrokeCount - 1 {
+            onUndo?()
+        } else {
+            // Multi-stroke change / unexpected: resync the whole drawing.
+            onResync?(canvasView.drawing, contentRect)
+        }
+        lastStrokeCount = count
     }
 
-    private func reportDrawing() {
-        // Report in the canvas's OWN (un-zoomed) coordinate space. The content
-        // rect is the aspect-fit video rect within the un-transformed bounds —
-        // independent of the local zoom/pan transform — so normalized coords
-        // remain stable for Pilot.
+    /// Applies an annotation command sent by Pilot to this (authoritative)
+    /// canvas. Suppressed from echoing back, since Pilot already applied it.
+    func applyRemoteCommand(_ message: AnnotationMessage) {
+        isApplyingRemote = true
+        defer {
+            lastStrokeCount = canvasView.drawing.strokes.count
+            isApplyingRemote = false
+        }
+        switch message {
+        case .undo:
+            canvasView.undoManager?.undo()
+        case .clear:
+            canvasView.drawing = PKDrawing()
+        case .addStroke, .replaceDrawing:
+            break // Pilot only sends undo / clear commands to the canvas.
+        }
+    }
+
+    /// Re-anchors existing strokes when the mirrored window's size changes, so
+    /// they keep their position relative to the video content rect (otherwise a
+    /// resize would re-normalize the same canvas points against a different
+    /// content rect and the annotations would visibly drift).
+    private func reanchorDrawing(from oldSize: CGSize, to newSize: CGSize) {
+        guard !canvasView.drawing.strokes.isEmpty,
+              oldSize.width > 0, oldSize.height > 0,
+              newSize.width > 0, newSize.height > 0,
+              canvasView.bounds.width > 0, canvasView.bounds.height > 0 else { return }
+
+        let old = Self.aspectFitRect(contentSize: oldSize, in: canvasView.bounds)
+        let new = Self.aspectFitRect(contentSize: newSize, in: canvasView.bounds)
+        guard old.width > 0, old.height > 0 else { return }
+
+        // Map the old content rect onto the new one.
+        let transform = CGAffineTransform(translationX: new.minX, y: new.minY)
+            .scaledBy(x: new.width / old.width, y: new.height / old.height)
+            .translatedBy(x: -old.minX, y: -old.minY)
+
+        isApplyingRemote = true
+        // Don't pollute the undo stack with this non-user transform.
+        canvasView.undoManager?.disableUndoRegistration()
+        canvasView.drawing = canvasView.drawing.transformed(using: transform)
+        canvasView.undoManager?.enableUndoRegistration()
+        isApplyingRemote = false
+    }
+
+    /// Resyncs the entire drawing to Pilot (used after a resize re-anchor or any
+    /// non-incremental change). Coordinates are in the canvas's own un-zoomed
+    /// space relative to the content rect, so they stay stable for Pilot.
+    private func reportResync() {
         let contentRect = Self.aspectFitRect(contentSize: videoSize, in: canvasView.bounds)
-        onDrawingChanged?(canvasView.drawing, contentRect)
+        onResync?(canvasView.drawing, contentRect)
+        lastStrokeCount = canvasView.drawing.strokes.count
     }
 
     private static func aspectFitRect(contentSize: CGSize, in bounds: CGRect) -> CGRect {

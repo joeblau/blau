@@ -31,6 +31,11 @@ final class RemoteInkModel {
     private(set) var strokes: [RemoteInkStroke] = []
     private(set) var changeID = 0
 
+    /// Called when Pilot edits the remote ink (undo/clear) so the change can be
+    /// forwarded to the iPad, which owns the authoritative PencilKit drawing and
+    /// echoes the corrected drawing back via `.replaceDrawing`.
+    var onLocalEdit: ((AnnotationMessage) -> Void)?
+
     var hasInk: Bool {
         !strokes.isEmpty
     }
@@ -39,10 +44,33 @@ final class RemoteInkModel {
         switch message {
         case .replaceDrawing(let drawing):
             strokes = drawing.strokes.map(Self.makeStroke)
+        case .addStroke(let stroke):
+            // Each incoming line is its own undo-stack entry.
+            strokes.append(Self.makeStroke(from: stroke))
         case .clear:
             strokes.removeAll()
+        case .undo:
+            if !strokes.isEmpty { strokes.removeLast() }
         }
         changeID += 1
+    }
+
+    /// Undo the last remote stroke. Optimistically drops it locally for instant
+    /// feedback and asks the iPad to undo too; the iPad's echoed drawing
+    /// reconciles any mismatch.
+    func undo() {
+        guard !strokes.isEmpty else { return }
+        strokes.removeLast()
+        changeID += 1
+        onLocalEdit?(.undo)
+    }
+
+    /// Clear all remote ink on both Pilot and the iPad.
+    func clear() {
+        guard !strokes.isEmpty else { return }
+        strokes.removeAll()
+        changeID += 1
+        onLocalEdit?(.clear)
     }
 
     private static func makeStroke(from stroke: AnnotationStroke) -> RemoteInkStroke {
@@ -136,6 +164,37 @@ struct RemoteInkOverlay: View {
     var body: some View {
         RemoteInkCanvas(model: model)
             .allowsHitTesting(false)
+    }
+}
+
+/// Floating undo + clear controls for the Plotter-drawn ink. Shown on Pilot
+/// while remote ink is present; actions round-trip to the iPad so both stay in
+/// sync (see ``RemoteInkModel/onLocalEdit``).
+struct RemoteInkControls: View {
+    var model: RemoteInkModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            button("arrow.uturn.backward", help: "Undo last Plotter stroke") { model.undo() }
+            Divider().frame(height: 18)
+            button("trash", help: "Clear Plotter annotations") { model.clear() }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.separator.opacity(0.4), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+    }
+
+    private func button(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .scaledFont(size: 13, weight: .medium)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 }
 

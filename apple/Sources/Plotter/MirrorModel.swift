@@ -35,6 +35,11 @@ final class MirrorModel {
     /// so Plotter falls back to its own system appearance.
     private(set) var pilotColorScheme: ColorScheme?
 
+    /// Invoked on the main actor for annotation commands sent BY Pilot (undo /
+    /// clear). The view applies them to its authoritative PencilKit canvas,
+    /// which then echoes the corrected drawing back to Pilot.
+    var onRemoteAnnotation: ((AnnotationMessage) -> Void)?
+
     private let receiver = FrameReceiver()
     private let renderer = HEVCMirrorRenderer()
 
@@ -211,6 +216,10 @@ final class MirrorModel {
                 self.trackForFeedback(sample.frameID)
             case .appearance(let isDark):
                 self.pilotColorScheme = isDark ? .dark : .light
+                return
+            case .annotation(_, let message):
+                // A command from Pilot (undo/clear) — apply to the local canvas.
+                self.onRemoteAnnotation?(message)
                 return
             default:
                 break

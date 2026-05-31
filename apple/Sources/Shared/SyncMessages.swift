@@ -84,8 +84,15 @@ public struct AnnotationDrawing: Codable, Sendable, Hashable {
 }
 
 public enum AnnotationMessage: Codable, Sendable, Hashable {
+    /// Full-drawing resync (used on connect / non-incremental changes).
     case replaceDrawing(AnnotationDrawing)
+    /// One completed stroke appended incrementally, so each Plotter line is a
+    /// discrete entry on Pilot's undo stack.
+    case addStroke(AnnotationStroke)
     case clear
+    /// Undo the most recent stroke. Flows either direction: when one side undoes
+    /// it tells the other to pop too, keeping both in sync.
+    case undo
 }
 
 struct MouseMove: Codable, Sendable {
