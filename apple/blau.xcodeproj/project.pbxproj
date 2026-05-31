@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0D500EBE09A6E38A272B0733 /* BrowserStartPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76CFD688C6FEFB4356EDBF2 /* BrowserStartPageView.swift */; };
+		0E9EAAAA53C75022BA7F2B52 /* PlotterUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA0D0B9E48653778D28F00CA /* PlotterUITests.swift */; };
 		1229285BE969EB6EE4F9791C /* PlotterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41E92ECD46F1C55A41F9D826 /* PlotterApp.swift */; };
 		18FED2F1C7DFB765BE7F8A53 /* DevicePaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7B90338AE3A8F5EE0CA12C6 /* DevicePaneView.swift */; };
 		1A974E3908CCE01E060E0EAB /* MirrorModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA9E73F04BF651090F9D625 /* MirrorModel.swift */; };
@@ -15,6 +16,7 @@
 		1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 132CB022A0BDFF0DE96316EF /* ContentView.swift */; };
 		1E52F4B58A701BDEFF78E2D0 /* Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC9BB0F198A6D5E8298B3E1 /* Note.swift */; };
 		1F253D4F3DCD296F823A2E74 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7D00A3F70E212149A88CCD63 /* Assets.xcassets */; };
+		224F34F95C680F2F2962C733 /* SnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0512C0240EE6A1F6AC5063 /* SnapshotHelper.swift */; };
 		255E48A2365C7AA480C081DC /* LocalServerProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB128E7236AC4C65E97A2041 /* LocalServerProbe.swift */; };
 		2D467D25E5DB354DC43D8451 /* LocalServerScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A912031A64F684013037FBB /* LocalServerScanner.swift */; };
 		339F5BBB351B82A12074E4DB /* PeerSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */; };
@@ -43,6 +45,7 @@
 		870295EC4EDA044F54CE9E6D /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0057932203C8B246C76D50DC /* GhosttyKit.xcframework */; };
 		873845340784690BC3748654 /* ScreenMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB7A71E179389DD6C888CCD /* ScreenMirror.swift */; };
 		8A94170AE83036EEA8FD2924 /* IDELauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = C158EABC62B1A1985C1F548E /* IDELauncher.swift */; };
+		8E40BD57F90EBBCBC354C356 /* CopilotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F06639323C2B403D53DEBC7 /* CopilotUITests.swift */; };
 		91698151B8722ED0E14C60E9 /* SyncMessagesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A71DC4B75C15342693E47C /* SyncMessagesTests.swift */; };
 		97CCEC7CB74BCC87DC23E339 /* PaneInitRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7297FC9076A3EEE92FA359FD /* PaneInitRegressionTests.swift */; };
 		9CCB3AE0ECFF1D2D7C809867 /* HeadphoneDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEF294C6D54F08AFA7316B33 /* HeadphoneDetector.swift */; };
@@ -61,6 +64,7 @@
 		CF0427ED034B7A71489D82F9 /* PeerSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */; };
 		CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F684D74A8F12B03954CC49B3 /* PilotApp.swift */; };
 		D0614091089D4F0F461285ED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1D8AC628F3F55D563872C7 /* ContentView.swift */; };
+		DA86DAE82E6503F4950D487A /* SnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64D18628BFB58D751B964957 /* SnapshotHelper.swift */; };
 		E57F6CDE4BED1E1E9489FE9E /* GitHubTasksStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09CBC9A2EAF71B52D91F96DB /* GitHubTasksStore.swift */; };
 		E974BEB84F83FBDAD2A14AB3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E42AFD4B9A8EB5AE10637F0C /* Assets.xcassets */; };
 		EA6044046223AE65A20D870B /* MarkdownStyler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3773008E360B991866932E4A /* MarkdownStyler.swift */; };
@@ -71,6 +75,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		4036B280B5531733D0D7F708 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 82D0EC6B4C927437585C0414 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1FB5B4A55B06C22A02EB122A;
+			remoteInfo = Copilot;
+		};
 		45FAC0FE492C89EC95D428CB /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 82D0EC6B4C927437585C0414 /* Project object */;
@@ -84,6 +95,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 1FB5B4A55B06C22A02EB122A;
 			remoteInfo = Copilot;
+		};
+		B7786C25B35D4ECA60C138C9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 82D0EC6B4C927437585C0414 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CC57B2B4EA9EE254E479EEAC;
+			remoteInfo = Plotter;
 		};
 		FA29AA030FC6C19055EF989E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -122,17 +140,21 @@
 		26E21596BD1590738CF89498 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		32D547158D65899195FA3359 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3773008E360B991866932E4A /* MarkdownStyler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownStyler.swift; sourceTree = "<group>"; };
+		37AF3DF097D535DA68029E46 /* CopilotUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CopilotUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3BA97D476477BE66A97A9D77 /* MouseBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MouseBridge.swift; sourceTree = "<group>"; };
 		3C68475BF8E1475FC00ABFE0 /* PaneCyclingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneCyclingTests.swift; sourceTree = "<group>"; };
 		40448E5B9EBBD91D642FC080 /* DeviceCaptureRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCaptureRegistry.swift; sourceTree = "<group>"; };
 		41E92ECD46F1C55A41F9D826 /* PlotterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotterApp.swift; sourceTree = "<group>"; };
 		46C4196429C52AD7709CA4CF /* Plotter.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Plotter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A912031A64F684013037FBB /* LocalServerScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalServerScanner.swift; sourceTree = "<group>"; };
+		4F06639323C2B403D53DEBC7 /* CopilotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotUITests.swift; sourceTree = "<group>"; };
 		51953FE31BA534927A942C96 /* FrameProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameProtocol.swift; sourceTree = "<group>"; };
 		52A71DC4B75C15342693E47C /* SyncMessagesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMessagesTests.swift; sourceTree = "<group>"; };
 		52D5914A6EBA1115A33AE425 /* PilotTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PilotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5A2C2E1B521C51A4B0B660B1 /* UIZoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIZoom.swift; sourceTree = "<group>"; };
 		5B068834105F375479ADF423 /* InspectorHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorHelper.swift; sourceTree = "<group>"; };
+		6470DA7198630EEEED1F83E5 /* PlotterUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PlotterUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		64D18628BFB58D751B964957 /* SnapshotHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotHelper.swift; sourceTree = "<group>"; };
 		67FAA18AA33DB039B0026206 /* SyncMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMessages.swift; sourceTree = "<group>"; };
 		6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotApp.swift; sourceTree = "<group>"; };
 		6FA9E73F04BF651090F9D625 /* MirrorModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorModel.swift; sourceTree = "<group>"; };
@@ -154,6 +176,8 @@
 		AEF294C6D54F08AFA7316B33 /* HeadphoneDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeadphoneDetector.swift; sourceTree = "<group>"; };
 		AFEA082D543FE38BE6F626A3 /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
 		B028DA279E32AB30A1A75942 /* CommitListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitListView.swift; sourceTree = "<group>"; };
+		BA0D0B9E48653778D28F00CA /* PlotterUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotterUITests.swift; sourceTree = "<group>"; };
+		BB0512C0240EE6A1F6AC5063 /* SnapshotHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotHelper.swift; sourceTree = "<group>"; };
 		C158EABC62B1A1985C1F548E /* IDELauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IDELauncher.swift; sourceTree = "<group>"; };
 		CB128E7236AC4C65E97A2041 /* LocalServerProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalServerProbe.swift; sourceTree = "<group>"; };
 		CDB98CD0F5BCD145C5B14904 /* TrackpadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadView.swift; sourceTree = "<group>"; };
@@ -247,6 +271,16 @@
 			path = Sources/Copilot;
 			sourceTree = "<group>";
 		};
+		72E7E272A076DD32552CFE89 /* CopilotUITests */ = {
+			isa = PBXGroup;
+			children = (
+				4F06639323C2B403D53DEBC7 /* CopilotUITests.swift */,
+				64D18628BFB58D751B964957 /* SnapshotHelper.swift */,
+			);
+			name = CopilotUITests;
+			path = Tests/CopilotUITests;
+			sourceTree = "<group>";
+		};
 		86DDEDCE771126217BE93BF1 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
@@ -281,6 +315,16 @@
 				4A912031A64F684013037FBB /* LocalServerScanner.swift */,
 			);
 			path = Browser;
+			sourceTree = "<group>";
+		};
+		D704B31559A28EF52D8FA902 /* PlotterUITests */ = {
+			isa = PBXGroup;
+			children = (
+				BA0D0B9E48653778D28F00CA /* PlotterUITests.swift */,
+				BB0512C0240EE6A1F6AC5063 /* SnapshotHelper.swift */,
+			);
+			name = PlotterUITests;
+			path = Tests/PlotterUITests;
 			sourceTree = "<group>";
 		};
 		DE30D289D5BAF3D3994A8791 /* Pilot */ = {
@@ -320,9 +364,11 @@
 			isa = PBXGroup;
 			children = (
 				68A6AFD0CF88B5D0D03A00E1 /* Copilot */,
+				72E7E272A076DD32552CFE89 /* CopilotUITests */,
 				DE30D289D5BAF3D3994A8791 /* Pilot */,
 				552E741828639BF19E6BC0CA /* PilotTests */,
 				CC28789075F43F1B67EE26A6 /* Plotter */,
+				D704B31559A28EF52D8FA902 /* PlotterUITests */,
 				86DDEDCE771126217BE93BF1 /* Shared */,
 				63DF1FFF0A3F9443839E1557 /* SharedTests */,
 				488AE8285CB6D6627B1BCABE /* Wingman Watch App */,
@@ -335,9 +381,11 @@
 			isa = PBXGroup;
 			children = (
 				F430B621891B5DED12E1CF39 /* Copilot.app */,
+				37AF3DF097D535DA68029E46 /* CopilotUITests.xctest */,
 				1C98BD914066A308C6C6C1C9 /* Pilot.app */,
 				52D5914A6EBA1115A33AE425 /* PilotTests.xctest */,
 				46C4196429C52AD7709CA4CF /* Plotter.app */,
+				6470DA7198630EEEED1F83E5 /* PlotterUITests.xctest */,
 				97052041CFD5C5F3CAFA379C /* SharedTests.xctest */,
 				89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */,
 			);
@@ -378,6 +426,22 @@
 			productName = Copilot;
 			productReference = F430B621891B5DED12E1CF39 /* Copilot.app */;
 			productType = "com.apple.product-type.application";
+		};
+		3839F8E090ECA91BF1F21F50 /* PlotterUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 59D6E98AE08F409F66E31B35 /* Build configuration list for PBXNativeTarget "PlotterUITests" */;
+			buildPhases = (
+				68C4CB7B63AA03840C9164E0 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8833109D0027DBF808B774DA /* PBXTargetDependency */,
+			);
+			name = PlotterUITests;
+			productName = PlotterUITests;
+			productReference = 6470DA7198630EEEED1F83E5 /* PlotterUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		474C5A4305C5C5138E36D5C1 /* Pilot */ = {
 			isa = PBXNativeTarget;
@@ -428,6 +492,22 @@
 			productReference = 89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */;
 			productType = "com.apple.product-type.application";
 		};
+		838060CAD5876A5C3793A1E5 /* CopilotUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 169C8BA52B63E2C1002263EF /* Build configuration list for PBXNativeTarget "CopilotUITests" */;
+			buildPhases = (
+				B3385BFF8FA9DB6DE43493BE /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D6FAD4960B623690EFB1F633 /* PBXTargetDependency */,
+			);
+			name = CopilotUITests;
+			productName = CopilotUITests;
+			productReference = 37AF3DF097D535DA68029E46 /* CopilotUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		CC57B2B4EA9EE254E479EEAC /* Plotter */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 4E549A8B7091A8BABF0A73E9 /* Build configuration list for PBXNativeTarget "Plotter" */;
@@ -472,6 +552,10 @@
 					1FB5B4A55B06C22A02EB122A = {
 						DevelopmentTeam = K78G42H4U2;
 					};
+					3839F8E090ECA91BF1F21F50 = {
+						DevelopmentTeam = K78G42H4U2;
+						TestTargetID = CC57B2B4EA9EE254E479EEAC;
+					};
 					474C5A4305C5C5138E36D5C1 = {
 						DevelopmentTeam = K78G42H4U2;
 					};
@@ -480,6 +564,10 @@
 					};
 					79C8ECE1F0D9D02EDE7D57AC = {
 						DevelopmentTeam = K78G42H4U2;
+					};
+					838060CAD5876A5C3793A1E5 = {
+						DevelopmentTeam = K78G42H4U2;
+						TestTargetID = 1FB5B4A55B06C22A02EB122A;
 					};
 					CC57B2B4EA9EE254E479EEAC = {
 						DevelopmentTeam = K78G42H4U2;
@@ -505,9 +593,11 @@
 			projectRoot = "";
 			targets = (
 				1FB5B4A55B06C22A02EB122A /* Copilot */,
+				838060CAD5876A5C3793A1E5 /* CopilotUITests */,
 				474C5A4305C5C5138E36D5C1 /* Pilot */,
 				478609A031F3B4AB51EDD75F /* PilotTests */,
 				CC57B2B4EA9EE254E479EEAC /* Plotter */,
+				3839F8E090ECA91BF1F21F50 /* PlotterUITests */,
 				E2B7E3418BCFFEC2F64892C1 /* SharedTests */,
 				79C8ECE1F0D9D02EDE7D57AC /* Wingman Watch App */,
 			);
@@ -575,6 +665,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		68C4CB7B63AA03840C9164E0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0E9EAAAA53C75022BA7F2B52 /* PlotterUITests.swift in Sources */,
+				224F34F95C680F2F2962C733 /* SnapshotHelper.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6AB7A62555445F2B2CD0B3C8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -635,6 +734,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B3385BFF8FA9DB6DE43493BE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8E40BD57F90EBBCBC354C356 /* CopilotUITests.swift in Sources */,
+				DA86DAE82E6503F4950D487A /* SnapshotHelper.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C2CD0F7FE549B2DF1D736307 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -654,6 +762,11 @@
 			target = 474C5A4305C5C5138E36D5C1 /* Pilot */;
 			targetProxy = FA29AA030FC6C19055EF989E /* PBXContainerItemProxy */;
 		};
+		8833109D0027DBF808B774DA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CC57B2B4EA9EE254E479EEAC /* Plotter */;
+			targetProxy = B7786C25B35D4ECA60C138C9 /* PBXContainerItemProxy */;
+		};
 		9E22AEE7C35FB537E6F4FF17 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 1FB5B4A55B06C22A02EB122A /* Copilot */;
@@ -663,6 +776,11 @@
 			isa = PBXTargetDependency;
 			target = 79C8ECE1F0D9D02EDE7D57AC /* Wingman Watch App */;
 			targetProxy = 45FAC0FE492C89EC95D428CB /* PBXContainerItemProxy */;
+		};
+		D6FAD4960B623690EFB1F633 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1FB5B4A55B06C22A02EB122A /* Copilot */;
+			targetProxy = 4036B280B5531733D0D7F708 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -721,6 +839,23 @@
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot;
 				PRODUCT_NAME = Pilot;
 				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		13EA9FFE5718923E710AC664 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.blau.copilot.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Copilot;
 			};
 			name = Release;
 		};
@@ -848,6 +983,23 @@
 			};
 			name = Debug;
 		};
+		422660FA33E4C743103B582A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.blau.plotter.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Plotter;
+			};
+			name = Release;
+		};
 		59AA1E6D15205B64D9A86068 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -862,6 +1014,23 @@
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Copilot.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Copilot";
+			};
+			name = Debug;
+		};
+		888DA371700DF1358EFB86DC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.blau.copilot.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Copilot;
 			};
 			name = Debug;
 		};
@@ -882,6 +1051,23 @@
 				PRODUCT_NAME = Copilot;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		9781C7AAB7D3517DD6B6D1DF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.blau.plotter.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Plotter;
 			};
 			name = Debug;
 		};
@@ -1110,11 +1296,29 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		169C8BA52B63E2C1002263EF /* Build configuration list for PBXNativeTarget "CopilotUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				888DA371700DF1358EFB86DC /* Debug */,
+				13EA9FFE5718923E710AC664 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		4E549A8B7091A8BABF0A73E9 /* Build configuration list for PBXNativeTarget "Plotter" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3A395BC3BD924EF764DE7422 /* Debug */,
 				A708C88465979E95AA9868E1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		59D6E98AE08F409F66E31B35 /* Build configuration list for PBXNativeTarget "PlotterUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9781C7AAB7D3517DD6B6D1DF /* Debug */,
+				422660FA33E4C743103B582A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

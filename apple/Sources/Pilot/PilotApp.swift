@@ -31,12 +31,33 @@ struct PilotApp: App {
 
     init() {
         let schema = Schema([Workspace.self, Pane.self, BrowserState.self, Note.self])
-        let container = try! ModelContainer(for: schema)
+        let configuration = ModelConfiguration(schema: schema, url: Self.persistentStoreURL())
+        let container = try! ModelContainer(for: schema, configurations: configuration)
         self.modelContainer = container
-        self._store = State(initialValue: WorkspaceStore(modelContext: container.mainContext))
+        let store = WorkspaceStore(modelContext: container.mainContext)
+        // Demo mode (screenshots/UITests): launch arg pair ["-demoMode", "YES"]
+        // sets the "demoMode" UserDefaults bool. When on, seed representative
+        // workspaces so the sidebar/layout looks intentional with no live peer.
+        // Guarded so a normal launch (no arg) is completely unchanged — the
+        // seed is also a no-op whenever real workspaces already exist.
+        if UserDefaults.standard.bool(forKey: "demoMode") {
+            store.seedDemoWorkspacesIfNeeded()
+        }
+        self._store = State(initialValue: store)
         let sender = FrameSender()
         self._frameSender = State(initialValue: sender)
         self._screenMirror = State(initialValue: ScreenMirror(sender: sender))
+    }
+
+    /// Pilot runs unsandboxed so Ghostty can launch real shell processes, but
+    /// older builds wrote SwiftData into the app container. Keep using that
+    /// stable location so notes/workspaces survive the sandbox change.
+    private static func persistentStoreURL() -> URL {
+        let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        let directory = home
+            .appendingPathComponent("Library/Containers/app.blau.pilot/Data/Library/Application Support", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("default.store")
     }
 
     var body: some Scene {

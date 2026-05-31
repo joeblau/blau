@@ -39,6 +39,23 @@ schemes:
     test:
       targets:
         - PilotTests
+  # App schemes wired to run their fastlane snapshot UI-test bundles.
+  Copilot:
+    build:
+      targets:
+        Copilot: [run, test, profile, analyze, archive]
+        CopilotUITests: [test]
+    test:
+      targets:
+        - CopilotUITests
+  Plotter:
+    build:
+      targets:
+        Plotter: [run, test, profile, analyze, archive]
+        PlotterUITests: [test]
+    test:
+      targets:
+        - PlotterUITests
 
 targets:
   Pilot:
@@ -158,3 +175,29 @@ targets:
         GENERATE_INFOPLIST_FILE: true
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Pilot.app/Contents/MacOS/Pilot"
         BUNDLE_LOADER: "$(TEST_HOST)"
+
+  CopilotUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - Tests/CopilotUITests
+    dependencies:
+      - target: Copilot
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.blau.copilot.uitests
+        GENERATE_INFOPLIST_FILE: true
+        TEST_TARGET_NAME: Copilot
+
+  PlotterUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - Tests/PlotterUITests
+    dependencies:
+      - target: Plotter
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.blau.plotter.uitests
+        GENERATE_INFOPLIST_FILE: true
+        TEST_TARGET_NAME: Plotter

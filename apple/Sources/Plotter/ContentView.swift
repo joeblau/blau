@@ -95,10 +95,21 @@ private struct ZoomableMirrorView: UIViewRepresentable {
             mirror.sendAnnotation(.clear)
         }
         view.videoSize = mirror.videoSize
+        // Demo mode: show a representative still in place of the live video
+        // layer and seed a couple of annotation strokes so the feature reads in
+        // screenshots. A normal launch leaves the live decode path untouched.
+        if mirror.isDemoMode {
+            view.applyDemoContent(image: mirror.demoImage)
+        }
         return view
     }
 
     func updateUIView(_ uiView: ZoomableMirrorUIView, context: Context) {
+        if mirror.isDemoMode {
+            uiView.videoSize = mirror.videoSize
+            uiView.applyDemoContent(image: mirror.demoImage)
+            return
+        }
         mirror.attach(uiView.sampleBufferDisplayLayer)
         uiView.videoSize = mirror.videoSize
     }
@@ -154,6 +165,12 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
     let canvasView = PKCanvasView()
     private let toolbar = UIStackView()
 
+    /// Shown above the (empty) video layer only in demo mode; rides the same
+    /// zoom/pan transform so seeded annotation strokes stay aligned.
+    private let demoImageView = UIImageView()
+    private var isDemoMode = false
+    private var hasSeededDemoStrokes = false
+
     private var toolPicker: PKToolPicker?
 
     var onDrawingChanged: ((PKDrawing, CGRect) -> Void)?
@@ -195,15 +212,79 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
         // The content view fills us; the affine transform handles zoom/pan.
         contentView.frame = bounds
         videoView.frame = contentView.bounds
+        demoImageView.frame = contentView.bounds
         canvasView.frame = contentView.bounds
         applyTransform()
+        // Seed demo strokes once we actually have a non-zero canvas to map
+        // them into (layout has run and videoSize is known).
+        if isDemoMode, !hasSeededDemoStrokes, videoSize != .zero,
+           canvasView.bounds.width > 0 {
+            seedDemoStrokes()
+            hasSeededDemoStrokes = true
+        }
     }
 
     private func setupContent() {
         addSubview(contentView)
         contentView.backgroundColor = .clear
         contentView.addSubview(videoView)
+        demoImageView.contentMode = .scaleAspectFit
+        demoImageView.isHidden = true
+        contentView.addSubview(demoImageView)
         contentView.addSubview(canvasView)
+    }
+
+    // MARK: Demo mode
+
+    /// Renders the representative still in place of the live video layer.
+    /// Idempotent so it is safe to call from `updateUIView`.
+    func applyDemoContent(image: UIImage?) {
+        isDemoMode = true
+        demoImageView.image = image
+        demoImageView.isHidden = (image == nil)
+        setNeedsLayout()
+    }
+
+    /// Draws a couple of representative PencilKit strokes over the demo still so
+    /// the annotation feature is visible in screenshots.
+    private func seedDemoStrokes() {
+        let rect = Self.aspectFitRect(contentSize: videoSize, in: canvasView.bounds)
+        guard rect.width > 0, rect.height > 0 else { return }
+
+        func point(_ nx: CGFloat, _ ny: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + nx * rect.width, y: rect.minY + ny * rect.height)
+        }
+
+        var strokes: [PKStroke] = []
+
+        // A red circle-ish loop highlighting a region.
+        let loop = stride(from: 0.0, through: 1.0, by: 0.04).map { t -> PKStrokePoint in
+            let angle = t * 2 * .pi
+            let p = point(0.62 + 0.10 * CGFloat(cos(angle)),
+                          0.40 + 0.14 * CGFloat(sin(angle)))
+            return PKStrokePoint(
+                location: p, timeOffset: t * 0.5, size: CGSize(width: 8, height: 8),
+                opacity: 1, force: 1, azimuth: 0, altitude: 0
+            )
+        }
+        strokes.append(PKStroke(
+            ink: PKInk(.pen, color: .systemRed),
+            path: PKStrokePath(controlPoints: loop, creationDate: Date())
+        ))
+
+        // An underline beneath a line of "code".
+        let underline = [point(0.38, 0.62), point(0.66, 0.62)].enumerated().map { idx, p in
+            PKStrokePoint(
+                location: p, timeOffset: Double(idx) * 0.1, size: CGSize(width: 7, height: 7),
+                opacity: 1, force: 1, azimuth: 0, altitude: 0
+            )
+        }
+        strokes.append(PKStroke(
+            ink: PKInk(.pen, color: .systemYellow),
+            path: PKStrokePath(controlPoints: underline, creationDate: Date())
+        ))
+
+        canvasView.drawing = PKDrawing(strokes: strokes)
     }
 
     private func setupCanvas() {

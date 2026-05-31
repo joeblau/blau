@@ -19,6 +19,16 @@ final class MirrorModel {
     private(set) var frameCount = 0
     private(set) var videoSize: CGSize = .zero
 
+    /// True when launched with `-demoMode YES`. In demo mode the live decode /
+    /// receive path is short-circuited and the view renders a representative
+    /// still frame plus seeded annotation strokes, with NO network peer.
+    let isDemoMode = UserDefaults.standard.bool(forKey: "demoMode")
+
+    /// A representative still frame shown in place of the live video layer when
+    /// ``isDemoMode`` is on. Generated programmatically so no PNG asset is
+    /// required to author.
+    private(set) var demoImage: UIImage?
+
     private var lastSentAnnotationSeq: UInt32 = 0
 
     private let receiver = FrameReceiver()
@@ -51,6 +61,13 @@ final class MirrorModel {
     }
 
     func start() {
+        // Demo mode: skip the live receiver/decode path entirely and inject a
+        // representative still frame so screenshots show real-looking content
+        // with no peer on the network. A normal launch never enters here.
+        if isDemoMode {
+            startDemoMode()
+            return
+        }
         receiver.start()
         // Advertise decode capability to the sender so it can choose chroma.
         receiver.sendCapability(supports444: Self.supportsHEVC444Decode())
@@ -58,9 +75,97 @@ final class MirrorModel {
     }
 
     func stop() {
+        if isDemoMode { return }
         receiver.stop()
         feedbackTask?.cancel()
         feedbackTask = nil
+    }
+
+    /// Seeds representative state for screenshots: a 16:10 dark still, a
+    /// matching `videoSize` so the annotation aspect-fit math is correct, and a
+    /// non-zero frame count so the "Searching…" overlay is hidden.
+    private func startDemoMode() {
+        let size = CGSize(width: 1600, height: 1000)
+        videoSize = size
+        demoImage = Self.makeDemoFrame(size: size)
+        statusText = "Connected to Pilot (demo)"
+        annotationStatusText = "Pilot received your annotations"
+        // Any non-zero value hides the SearchingOverlay (gated on == 0).
+        frameCount = 1
+    }
+
+    /// Draws a dark, screenshot-like still resembling a mirrored editor window:
+    /// a window chrome bar, a sidebar, and a few code-like lines. Used only in
+    /// demo mode.
+    private static func makeDemoFrame(size: CGSize) -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            let cg = ctx.cgContext
+
+            // Background gradient (deep slate -> near-black).
+            let colors = [
+                UIColor(red: 0.09, green: 0.10, blue: 0.13, alpha: 1).cgColor,
+                UIColor(red: 0.04, green: 0.05, blue: 0.07, alpha: 1).cgColor
+            ] as CFArray
+            if let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: colors,
+                locations: [0, 1]
+            ) {
+                cg.drawLinearGradient(
+                    gradient,
+                    start: CGPoint(x: 0, y: 0),
+                    end: CGPoint(x: 0, y: size.height),
+                    options: []
+                )
+            }
+
+            // Title bar.
+            let barHeight: CGFloat = 60
+            UIColor(red: 0.13, green: 0.14, blue: 0.18, alpha: 1).setFill()
+            cg.fill(CGRect(x: 0, y: 0, width: size.width, height: barHeight))
+
+            // Traffic-light dots.
+            let dotColors = [
+                UIColor(red: 0.99, green: 0.36, blue: 0.34, alpha: 1),
+                UIColor(red: 1.00, green: 0.74, blue: 0.18, alpha: 1),
+                UIColor(red: 0.24, green: 0.79, blue: 0.30, alpha: 1)
+            ]
+            for (i, color) in dotColors.enumerated() {
+                color.setFill()
+                let x = 24 + CGFloat(i) * 26
+                cg.fillEllipse(in: CGRect(x: x, y: barHeight / 2 - 8, width: 16, height: 16))
+            }
+
+            // Sidebar.
+            let sidebarWidth: CGFloat = 260
+            UIColor(red: 0.11, green: 0.12, blue: 0.16, alpha: 1).setFill()
+            cg.fill(CGRect(x: 0, y: barHeight, width: sidebarWidth, height: size.height - barHeight))
+
+            // Sidebar rows.
+            UIColor(white: 1, alpha: 0.14).setFill()
+            for row in 0..<10 {
+                let y = barHeight + 28 + CGFloat(row) * 40
+                let w = CGFloat(120 + (row * 37) % 110)
+                cg.fill(CGRect(x: 24, y: y, width: w, height: 12))
+            }
+
+            // Editor "code" lines with syntax-ish accent colors.
+            let lineColors = [
+                UIColor(red: 0.78, green: 0.57, blue: 0.96, alpha: 1),
+                UIColor(red: 0.40, green: 0.78, blue: 0.96, alpha: 1),
+                UIColor(red: 0.55, green: 0.86, blue: 0.55, alpha: 1),
+                UIColor(white: 0.75, alpha: 1)
+            ]
+            let editorX = sidebarWidth + 48
+            for row in 0..<18 {
+                let y = barHeight + 40 + CGFloat(row) * 44
+                let indent = CGFloat((row % 4) * 28)
+                let w = CGFloat(180 + (row * 53) % 520)
+                lineColors[row % lineColors.count].withAlphaComponent(0.55).setFill()
+                cg.fill(CGRect(x: editorX + indent, y: y, width: w, height: 14))
+            }
+        }
     }
 
     func attach(_ displayLayer: AVSampleBufferDisplayLayer) {

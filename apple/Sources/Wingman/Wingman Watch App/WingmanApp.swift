@@ -97,7 +97,12 @@ struct WingmanApp: App {
     init() {
         let delegate = WatchSessionDelegate()
         _sessionDelegate = State(initialValue: delegate)
-        if WCSession.isSupported() {
+
+        // Demo mode: skip activating the live WatchConnectivity session
+        // so the app renders fixture content with no real peer. Guarded
+        // so a normal launch (no arg) activates the session as before.
+        let isDemoMode = UserDefaults.standard.bool(forKey: "demoMode")
+        if !isDemoMode, WCSession.isSupported() {
             WCSession.default.delegate = delegate
             WCSession.default.activate()
         }
