@@ -12,13 +12,8 @@ final class MirrorModel {
     private(set) var annotationStatusText = "Annotation idle"
     private(set) var frameCount = 0
     private(set) var videoSize: CGSize = .zero
-    /// True once Pilot has acknowledged the latest annotation update. While
-    /// set, Plotter hides its local PencilKit strokes and lets the mirrored
-    /// video be the single source of truth, avoiding a doubled-ink look.
-    private(set) var localInkHidden = false
 
     private var lastSentAnnotationSeq: UInt32 = 0
-    private var lastAckedAnnotationSeq: UInt32 = 0
 
     private let receiver = FrameReceiver()
     private let renderer = H264MirrorRenderer()
@@ -56,28 +51,12 @@ final class MirrorModel {
 
     func sendAnnotation(_ message: AnnotationMessage) {
         lastSentAnnotationSeq &+= 1
-        // A fresh update is unconfirmed, so show the local copy again until
-        // Pilot acknowledges this sequence number.
-        localInkHidden = false
         annotationStatusText = "Sending annotations over frame stream"
         receiver.sendAnnotation(message, seq: lastSentAnnotationSeq)
     }
 
-    /// Called when the user begins a new stroke — reveals the local copy
-    /// immediately so there's no gap before the next `sendAnnotation`.
-    func beginLocalAnnotation() {
-        localInkHidden = false
-    }
-
     private func acknowledgeAnnotation(_ seq: UInt32) {
-        guard seq > lastAckedAnnotationSeq else { return }
-        lastAckedAnnotationSeq = seq
-        // Only hide once Pilot has caught up to the most recent update we
-        // sent; a stale ack for an older drawing must not hide newer strokes.
-        if lastAckedAnnotationSeq >= lastSentAnnotationSeq {
-            localInkHidden = true
-            annotationStatusText = "Pilot is rendering your annotations"
-        }
+        annotationStatusText = "Pilot received your annotations"
     }
 
     /// Called on the receiver's internal queue.

@@ -16,7 +16,6 @@ struct ContentView: View {
 
             PencilAnnotationView(
                 videoSize: mirror.videoSize,
-                hideLocalInk: mirror.localInkHidden,
                 onDrawingChanged: { drawing, bounds in
                     mirror.sendAnnotation(.replaceDrawing(Self.annotationDrawing(
                         from: drawing,
@@ -26,55 +25,14 @@ struct ContentView: View {
                 },
                 onClear: {
                     mirror.sendAnnotation(.clear)
-                },
-                onBeginDrawing: {
-                    mirror.beginLocalAnnotation()
                 }
             )
             .ignoresSafeArea()
 
-            if mirror.frameCount == 0 {
-                VStack(spacing: 16) {
-                    ProgressView()
-                        .controlSize(.large)
-                        .tint(.white)
-                    Text("Searching for Pilot…")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(mirror.statusText)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Text("Frames received: \(mirror.frameCount)")
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                    Text(mirror.annotationStatusText)
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                    Text("If Plotter cannot find Pilot, enable Local Network in Settings on both devices.")
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                    Button {
-                        openAppSettings()
-                    } label: {
-                        Label("Open Plotter Settings", systemImage: "gearshape")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.white)
-                    .foregroundStyle(.black)
-                }
-                .padding(.horizontal, 24)
-            }
+            // Frame-count / status reads live in their own view so the 30fps
+            // diagnostic ticks don't re-render the canvas or video reps.
+            SearchingOverlay(mirror: mirror)
         }
-    }
-
-    private func openAppSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString),
-              UIApplication.shared.canOpenURL(url) else { return }
-        UIApplication.shared.open(url)
     }
 
     private static func annotationDrawing(
@@ -133,18 +91,64 @@ struct ContentView: View {
     }
 }
 
+/// The "searching for Pilot" placeholder. Isolated into its own view so the
+/// per-frame `frameCount` updates only re-render this text — not the video or
+/// PencilKit canvas siblings.
+private struct SearchingOverlay: View {
+    var mirror: MirrorModel
+
+    var body: some View {
+        if mirror.frameCount == 0 {
+            VStack(spacing: 16) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.white)
+                Text("Searching for Pilot…")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(mirror.statusText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Text("Frames received: \(mirror.frameCount)")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                Text(mirror.annotationStatusText)
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                Text("If Plotter cannot find Pilot, enable Local Network in Settings on both devices.")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                Button {
+                    openAppSettings()
+                } label: {
+                    Label("Open Plotter Settings", systemImage: "gearshape")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.white)
+                .foregroundStyle(.black)
+            }
+            .padding(.horizontal, 24)
+        }
+    }
+
+    private func openAppSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString),
+              UIApplication.shared.canOpenURL(url) else { return }
+        UIApplication.shared.open(url)
+    }
+}
+
 private struct PencilAnnotationView: UIViewRepresentable {
     var videoSize: CGSize
-    /// When true, the local strokes are hidden (Pilot is already rendering
-    /// them in the mirror). The canvas stays interactive — `layer.opacity`
-    /// hides the ink without blocking touches the way `alpha`/`isHidden` would.
-    var hideLocalInk: Bool
     var onDrawingChanged: (PKDrawing, CGRect) -> Void
     var onClear: () -> Void
-    var onBeginDrawing: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onDrawingChanged: onDrawingChanged, onClear: onClear, onBeginDrawing: onBeginDrawing)
+        Coordinator(onDrawingChanged: onDrawingChanged, onClear: onClear)
     }
 
     func makeUIView(context: Context) -> PencilAnnotationUIView {
@@ -174,32 +178,21 @@ private struct PencilAnnotationView: UIViewRepresentable {
     func updateUIView(_ uiView: PencilAnnotationUIView, context: Context) {
         context.coordinator.onDrawingChanged = onDrawingChanged
         context.coordinator.onClear = onClear
-        context.coordinator.onBeginDrawing = onBeginDrawing
-        // Hide the ink layer (not the view) so the canvas keeps receiving
-        // Pencil/touch input even while the strokes are invisible.
-        uiView.canvasView.layer.opacity = hideLocalInk ? 0 : 1
     }
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         weak var canvasView: PKCanvasView?
         var onDrawingChanged: (PKDrawing, CGRect) -> Void
         var onClear: () -> Void
-        var onBeginDrawing: () -> Void
         var onBoundsChanged: (() -> Void)?
         private var toolPicker: PKToolPicker?
 
         init(
             onDrawingChanged: @escaping (PKDrawing, CGRect) -> Void,
-            onClear: @escaping () -> Void,
-            onBeginDrawing: @escaping () -> Void
+            onClear: @escaping () -> Void
         ) {
             self.onDrawingChanged = onDrawingChanged
             self.onClear = onClear
-            self.onBeginDrawing = onBeginDrawing
-        }
-
-        func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
-            onBeginDrawing()
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
