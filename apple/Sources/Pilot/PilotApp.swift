@@ -85,7 +85,17 @@ struct PilotApp: App {
                     setupSync()
                     frameSender.onClientCountChanged = { count in
                         Task { @MainActor in
+                            let wasConnected = plotterClientCount > 0
                             plotterClientCount = count
+                            // Only capture the screen — which lights up the macOS
+                            // "your screen is being shared" indicator — while a
+                            // Plotter is actually connected. Start on the first
+                            // client, stop when the last one disconnects.
+                            if count > 0 && !wasConnected {
+                                screenMirror.start()
+                            } else if count == 0 && wasConnected {
+                                screenMirror.stop()
+                            }
                         }
                     }
                     frameSender.onAnnotationMessage = { seq, message in
@@ -102,11 +112,12 @@ struct PilotApp: App {
                             remoteInkModel.handle(message)
                         }
                     }
-                    // Always mirror Pilot's window over the high-bandwidth
-                    // frame channel while running; gating on a connected peer
-                    // comes in a later phase.
+                    // Advertise the frame channel immediately so a Plotter can
+                    // discover and connect, but DON'T start screen capture yet —
+                    // capture begins on the first connected client (see
+                    // onClientCountChanged) so the macOS screen-sharing indicator
+                    // isn't lit whenever Pilot is merely running.
                     frameSender.start()
-                    screenMirror.start()
                     annotationReceiver.start()
                 }
                 .onChange(of: headphoneDetector.audioOutput) {
