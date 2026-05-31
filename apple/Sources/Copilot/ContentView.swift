@@ -83,18 +83,30 @@ struct ContentView: View {
             onFirstEvent: {
                 preHoldWorkspaceID = selectedID
             },
-            onVolumeHoldStart: {
-                let workspaceID = preHoldWorkspaceID ?? selectedID
-                recordingWorkspaceID = workspaceID
-                // Tell Pilot to focus that workspace immediately and
-                // show the listening indicator — the actual mic/Whisper
-                // run on this device.
-                syncService.send(.voiceRecord(
-                    VoiceRecordCommand(control: .start, workspaceID: workspaceID)
-                ))
-                Task { await transcription.start() }
+            onVolumeHoldStart: { direction in
+                switch direction {
+                case .down:
+                    // Hold volume DOWN to record into the selected workspace.
+                    let workspaceID = preHoldWorkspaceID ?? selectedID
+                    recordingWorkspaceID = workspaceID
+                    // Tell Pilot to focus that workspace immediately and
+                    // show the listening indicator — the actual mic/Whisper
+                    // run on this device.
+                    syncService.send(.voiceRecord(
+                        VoiceRecordCommand(control: .start, workspaceID: workspaceID)
+                    ))
+                    Task { await transcription.start() }
+                case .up:
+                    // Hold volume UP to press Enter in the selected terminal.
+                    syncService.send(.terminalInput(.enter))
+                case .none:
+                    break
+                }
             },
-            onVolumeHoldEnd: {
+            onVolumeHoldEnd: { direction in
+                // Only the record gesture (hold-down) has work to finish on
+                // release; hold-up (Enter) already fired on hold-start.
+                guard direction == .down else { return }
                 let workspaceID = recordingWorkspaceID ?? selectedID
                 recordingWorkspaceID = nil
                 preHoldWorkspaceID = nil
