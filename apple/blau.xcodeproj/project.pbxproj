@@ -464,6 +464,9 @@
 					1FB5B4A55B06C22A02EB122A = {
 						DevelopmentTeam = K78G42H4U2;
 					};
+					474C5A4305C5C5138E36D5C1 = {
+						DevelopmentTeam = K78G42H4U2;
+					};
 					478609A031F3B4AB51EDD75F = {
 						DevelopmentTeam = K78G42H4U2;
 					};
@@ -929,11 +932,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Sources/Pilot/Pilot.entitlements;
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"Frameworks\"",
@@ -980,7 +982,6 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot;
 				PRODUCT_NAME = Pilot;
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 			};
 			name = Debug;
