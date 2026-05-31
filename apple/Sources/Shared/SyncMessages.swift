@@ -5,6 +5,17 @@ struct WorkspaceSummary: Identifiable, Codable, Sendable, Hashable {
     var name: String
     var isPinned: Bool = false
     var badgeCount: Int = 0
+    /// The workspace's panes, surfaced to Copilot as selectable tabs.
+    var tabs: [TabSummary] = []
+    /// The pane currently focused in Pilot for this workspace.
+    var selectedTabID: UUID? = nil
+}
+
+/// One pane within a workspace, shown as a tab in Copilot's tab selector.
+struct TabSummary: Identifiable, Codable, Sendable, Hashable {
+    let id: UUID
+    var title: String
+    var systemImageName: String
 }
 
 enum VoiceRecordControl: String, Codable, Sendable {
@@ -28,9 +39,15 @@ enum TerminalInput: String, Codable, Sendable {
     case enter
 }
 
+struct SelectTab: Codable, Sendable {
+    let workspaceID: UUID
+    let tabID: UUID
+}
+
 enum SyncMessage: Codable, Sendable {
     case workspaceState(WorkspaceState)
     case selectWorkspace(SelectWorkspace)
+    case selectTab(SelectTab)
     case deviceStatus(DeviceStatus)
     case mouseMove(MouseMove)
     case mouseClick(MouseClick)

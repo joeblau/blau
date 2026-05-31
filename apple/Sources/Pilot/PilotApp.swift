@@ -333,6 +333,19 @@ struct PilotApp: App {
                         _ = GhosttyMetalView.focus(paneID: terminalPane.id)
                     }
                 }
+            case .selectTab(let sel):
+                // Copilot tab selector picked a pane: focus that workspace and
+                // make the chosen pane its active tab.
+                store.isNotesMode = false
+                store.selectedWorkspaceID = sel.workspaceID
+                if let workspace = store.workspaces.first(where: { $0.id == sel.workspaceID }) {
+                    workspace.selectedPaneID = sel.tabID
+                    // Only terminal panes are focusable in the Ghostty registry;
+                    // harmless no-op for browser/device panes.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        _ = GhosttyMetalView.focus(paneID: sel.tabID)
+                    }
+                }
             case .workspaceState:
                 break
             case .deviceStatus(let status):
