@@ -44,6 +44,9 @@ final class RemoteInkModel {
         switch message {
         case .replaceDrawing(let drawing):
             strokes = drawing.strokes.map(Self.makeStroke)
+        case .addStroke(let stroke):
+            // Each incoming line is its own undo-stack entry.
+            strokes.append(Self.makeStroke(from: stroke))
         case .clear:
             strokes.removeAll()
         case .undo:
