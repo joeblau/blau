@@ -146,11 +146,18 @@ struct CopilotApp: App {
             copilotConnectivityLogger.error("WCSession is not supported on this device.")
         }
 
-        notificationCenter.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error {
-                copilotConnectivityLogger.error("Notification authorization failed: \(error.localizedDescription, privacy: .public)")
-            } else {
-                copilotConnectivityLogger.info("Notification authorization granted=\(granted, privacy: .public)")
+        // Skip the permission prompt in demo mode so it doesn't cover the UI in
+        // captured screenshots. Check the launch arguments directly too, since
+        // the UserDefaults argument domain may not be applied yet this early.
+        let demoMode = UserDefaults.standard.bool(forKey: "demoMode")
+            || ProcessInfo.processInfo.arguments.contains("-demoMode")
+        if !demoMode {
+            notificationCenter.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                if let error {
+                    copilotConnectivityLogger.error("Notification authorization failed: \(error.localizedDescription, privacy: .public)")
+                } else {
+                    copilotConnectivityLogger.info("Notification authorization granted=\(granted, privacy: .public)")
+                }
             }
         }
     }

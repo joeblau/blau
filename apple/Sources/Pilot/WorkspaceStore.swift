@@ -170,6 +170,28 @@ final class WorkspaceStore {
         }
     }
 
+    /// Demo-mode only: seed a couple of representative workspaces so the
+    /// sidebar/layout looks intentional for a screenshot when there is no live
+    /// peer and no real data. Guarded by the caller on the `demoMode`
+    /// UserDefaults bool; additionally a no-op if any workspaces already exist
+    /// so a normal launch (with real saved workspaces) is never touched.
+    func seedDemoWorkspacesIfNeeded() {
+        guard workspaces.isEmpty else { return }
+
+        let names = ["blau", "web", "infra"]
+        for (index, name) in names.enumerated() {
+            let workspace = Workspace(name: name)
+            workspace.workspaceSortOrder = index
+            if index == 0 {
+                workspace.isPinned = true
+            }
+            modelContext.insert(workspace)
+        }
+        try? modelContext.save()
+        changeCount += 1
+        selectedWorkspaceID = workspaces.first?.id
+    }
+
     func addWorkspace() {
         let workspace = Workspace(name: "Workspace \(workspaces.count + 1)")
         workspace.workspaceSortOrder = workspaces.count

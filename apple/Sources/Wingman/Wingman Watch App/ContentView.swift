@@ -2,8 +2,20 @@ import SwiftUI
 
 struct ContentView: View {
     let sessionDelegate: WatchSessionDelegate
+
+    // Demo mode: when launched with ["-demoMode", "YES"] the app
+    // short-circuits live connectivity and renders representative
+    // fixture content so screenshots show a healthy connected state
+    // with no live peer. A normal launch (no arg) leaves this false
+    // and the regular path is completely unchanged.
+    private let isDemoMode = UserDefaults.standard.bool(forKey: "demoMode")
+
     @State private var currentGesture: String = "Waiting..."
     @State private var currentIcon: String = "hand.raised"
+
+    private var isConnected: Bool {
+        isDemoMode || sessionDelegate.isReachable
+    }
 
     var body: some View {
         NavigationStack {
@@ -15,14 +27,20 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(sessionDelegate.isReachable ? .green : .red)
+                        .fill(isConnected ? .green : .red)
                         .frame(width: 10, height: 10)
-                    Text(sessionDelegate.isReachable ? "Copilot Connected" : "Copilot Disconnected")
+                    Text(isConnected ? "Copilot Connected" : "Copilot Disconnected")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
+            }
+            .onAppear {
+                if isDemoMode {
+                    currentGesture = "Double Pinch"
+                    currentIcon = "hand.pinch.fill"
+                }
             }
         }
     }

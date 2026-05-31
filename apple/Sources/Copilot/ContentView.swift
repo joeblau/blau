@@ -3,12 +3,23 @@ import SwiftUI
 struct ContentView: View {
     let syncService: PeerSyncService
     let watchDelegate: PhoneSessionDelegate
+    /// When true, the view seeds representative fixture content and skips
+    /// the live sync/transcription setup so screenshots render without a
+    /// Pilot peer. Defaults to the launch-arg-driven UserDefaults flag.
+    var demoMode: Bool = UserDefaults.standard.bool(forKey: "demoMode")
 
     @State private var workspaces: [WorkspaceSummary] = []
     @State private var selectedID: UUID?
     @State private var recordingWorkspaceID: UUID?
     @State private var preHoldWorkspaceID: UUID?
     @State private var transcription = TranscriptionService()
+
+    /// In demo mode we treat the peer as connected so the populated
+    /// workspace list and trackpad inset render. The live `isConnected`
+    /// is untouched on the normal path.
+    private var isPeerConnected: Bool {
+        demoMode || syncService.isConnected
+    }
 
     var body: some View {
         NavigationStack {
@@ -22,7 +33,13 @@ struct ContentView: View {
                 trackpadInset
             }
         }
-        .task { setupSync() }
+        .task {
+            guard !demoMode else {
+                seedDemoState()
+                return
+            }
+            setupSync()
+        }
         .onChange(of: watchDelegate.isWatchReachable) {
             sendDeviceStatus()
         }
@@ -34,7 +51,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var mainContent: some View {
-        if !syncService.isConnected && workspaces.isEmpty {
+        if !isPeerConnected && workspaces.isEmpty {
             ContentUnavailableView {
                 Label("Looking for Pilot...", systemImage: "antenna.radiowaves.left.and.right")
             } description: {
@@ -146,21 +163,21 @@ struct ContentView: View {
 
     @ViewBuilder
     private var trackpadInset: some View {
-        if syncService.isConnected {
+        if isPeerConnected {
             TrackpadView(syncService: syncService)
         }
     }
 
     private var localDeviceStatus: DeviceStatus {
         DeviceStatus(
-            isWatchConnected: watchDelegate.isWatchReachable
+            isWatchConnected: demoMode ? true : watchDelegate.isWatchReachable
         )
     }
 
     private var connectedDevices: [ConnectedDevice] {
         ConnectedDeviceCatalog.devices(
             for: .copilot,
-            peerConnected: syncService.isConnected,
+            peerConnected: isPeerConnected,
             deviceStatus: localDeviceStatus
         )
     }
@@ -183,7 +200,21 @@ struct ContentView: View {
         Task { await transcription.loadModel() }
     }
 
+    /// Populates the workspace list with representative fixture content
+    /// for screenshots/UITests. No network, no transcription model load.
+    private func seedDemoState() {
+        let demo: [WorkspaceSummary] = [
+            WorkspaceSummary(id: UUID(), name: "blau", isPinned: true, badgeCount: 0),
+            WorkspaceSummary(id: UUID(), name: "web", badgeCount: 2),
+            WorkspaceSummary(id: UUID(), name: "infra", badgeCount: 0),
+            WorkspaceSummary(id: UUID(), name: "api", badgeCount: 5)
+        ]
+        workspaces = demo
+        selectedID = demo.first?.id
+    }
+
     private func sendDeviceStatus() {
+        guard !demoMode else { return }
         syncService.send(.deviceStatus(localDeviceStatus))
     }
 }
