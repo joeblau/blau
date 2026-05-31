@@ -24,6 +24,22 @@ packages:
     url: https://github.com/argmaxinc/WhisperKit.git
     from: "0.18.0"
 
+schemes:
+  SharedTests:
+    build:
+      targets:
+        SharedTests: [test]
+    test:
+      targets:
+        - SharedTests
+  PilotTests:
+    build:
+      targets:
+        PilotTests: [test]
+    test:
+      targets:
+        - PilotTests
+
 targets:
   Pilot:
     type: application
