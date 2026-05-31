@@ -30,6 +30,10 @@ final class MirrorModel {
     private(set) var demoImage: UIImage?
 
     private var lastSentAnnotationSeq: UInt32 = 0
+    /// Seqs of strokes sent to the Mac but not yet acked, in send order.
+    private var pendingStrokeSeqs: [UInt32] = []
+    /// Fired when the Mac acks a stroke, so the view can retire the local copy.
+    var onStrokeAcked: (() -> Void)?
 
     /// Pilot's light/dark appearance while connected. `nil` when not connected
     /// so Plotter falls back to its own system appearance.
@@ -195,11 +199,22 @@ final class MirrorModel {
     func sendAnnotation(_ message: AnnotationMessage) {
         lastSentAnnotationSeq &+= 1
         annotationStatusText = "Sending annotations over frame stream"
+        // Track stroke sends in order so a matching ack can retire the local
+        // copy (the Mac owns the committed drawing once it acks).
+        if case .addStroke = message {
+            pendingStrokeSeqs.append(lastSentAnnotationSeq)
+        }
         receiver.sendAnnotation(message, seq: lastSentAnnotationSeq)
     }
 
     private func acknowledgeAnnotation(_ seq: UInt32) {
         annotationStatusText = "Pilot received your annotations"
+        // The Mac confirmed a stroke; drop the iPad's local copy so it isn't
+        // drawn twice (it now shows via the mirror). Acks for a given stroke
+        // arrive in send order over TCP, so retire the oldest pending stroke.
+        guard pendingStrokeSeqs.first == seq else { return }
+        pendingStrokeSeqs.removeFirst()
+        onStrokeAcked?()
     }
 
     /// Called on the receiver's internal queue.

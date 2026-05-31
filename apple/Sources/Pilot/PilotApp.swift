@@ -115,12 +115,6 @@ struct PilotApp: App {
                             frameSender.sendAnnotationAck(seq)
                         }
                     }
-                    // Undo/clear performed on Pilot are forwarded to the iPad,
-                    // which owns the authoritative PencilKit drawing and echoes
-                    // the corrected drawing back via onAnnotationMessage.
-                    remoteInkModel.onLocalEdit = { message in
-                        frameSender.sendAnnotation(message)
-                    }
                     annotationReceiver.onMessage = { message in
                         Task { @MainActor in
                             remoteInkModel.handle(message)

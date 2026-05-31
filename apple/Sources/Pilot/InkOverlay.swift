@@ -31,11 +31,6 @@ final class RemoteInkModel {
     private(set) var strokes: [RemoteInkStroke] = []
     private(set) var changeID = 0
 
-    /// Called when Pilot edits the remote ink (undo/clear) so the change can be
-    /// forwarded to the iPad, which owns the authoritative PencilKit drawing and
-    /// echoes the corrected drawing back via `.replaceDrawing`.
-    var onLocalEdit: ((AnnotationMessage) -> Void)?
-
     var hasInk: Bool {
         !strokes.isEmpty
     }
@@ -55,22 +50,20 @@ final class RemoteInkModel {
         changeID += 1
     }
 
-    /// Undo the last remote stroke. Optimistically drops it locally for instant
-    /// feedback and asks the iPad to undo too; the iPad's echoed drawing
-    /// reconciles any mismatch.
+    /// Undo the last remote stroke (pops Pilot's stack). The iPad already
+    /// retired its local copy when the stroke was acked, so the mirror simply
+    /// re-renders without it — no command back to the iPad is needed.
     func undo() {
         guard !strokes.isEmpty else { return }
         strokes.removeLast()
         changeID += 1
-        onLocalEdit?(.undo)
     }
 
-    /// Clear all remote ink on both Pilot and the iPad.
+    /// Clear all remote ink on Pilot; the mirror updates and the iPad follows.
     func clear() {
         guard !strokes.isEmpty else { return }
         strokes.removeAll()
         changeID += 1
-        onLocalEdit?(.clear)
     }
 
     private static func makeStroke(from stroke: AnnotationStroke) -> RemoteInkStroke {
