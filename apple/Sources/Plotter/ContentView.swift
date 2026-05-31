@@ -62,6 +62,11 @@ private struct ZoomableMirrorView: UIViewRepresentable {
         view.onClear = {
             mirror.sendAnnotation(.clear)
         }
+        // Apply undo/clear commands that originate on Pilot to this canvas (the
+        // authoritative drawing); the resulting change echoes back to Pilot.
+        mirror.onRemoteAnnotation = { [weak view] message in
+            view?.applyRemoteCommand(message)
+        }
         view.videoSize = mirror.videoSize
         // Demo mode: show a representative still in place of the live video
         // layer and seed a couple of annotation strokes so the feature reads in
@@ -145,10 +150,20 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
     var onClear: (() -> Void)?
 
     /// Native size of the mirrored window; used to compute the aspect-fit
-    /// content rect that annotations normalize against.
+    /// content rect that annotations normalize against. When it changes (Pilot
+    /// resized its window) we re-anchor existing strokes to the new content rect
+    /// so they stay on the same spot over the mirrored image.
     var videoSize: CGSize = .zero {
-        didSet { if videoSize != oldValue { reportDrawing() } }
+        didSet {
+            guard videoSize != oldValue else { return }
+            reanchorDrawing(from: oldValue, to: videoSize)
+            reportDrawing()
+        }
     }
+
+    /// True while we mutate `canvasView.drawing` programmatically (resize
+    /// re-anchor) so the delegate doesn't echo a redundant update.
+    private var isApplyingRemote = false
 
     // Pinch/pan transform state.
     private var scale: CGFloat = 1.0
@@ -408,7 +423,49 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
     // MARK: Drawing -> normalized annotation
 
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+        guard !isApplyingRemote else { return }
         reportDrawing()
+    }
+
+    /// Applies an annotation command sent by Pilot to this (authoritative)
+    /// canvas. The resulting drawing change echoes back to Pilot via the normal
+    /// `onDrawingChanged` path, keeping both sides consistent.
+    func applyRemoteCommand(_ message: AnnotationMessage) {
+        switch message {
+        case .undo:
+            canvasView.undoManager?.undo()
+        case .clear:
+            canvasView.drawing = PKDrawing()
+        case .replaceDrawing:
+            break // Pilot only sends undo/clear commands, never full drawings.
+        }
+    }
+
+    /// Re-anchors existing strokes when the mirrored window's size changes, so
+    /// they keep their position relative to the video content rect (otherwise a
+    /// resize would re-normalize the same canvas points against a different
+    /// content rect and the annotations would visibly drift).
+    private func reanchorDrawing(from oldSize: CGSize, to newSize: CGSize) {
+        guard !canvasView.drawing.strokes.isEmpty,
+              oldSize.width > 0, oldSize.height > 0,
+              newSize.width > 0, newSize.height > 0,
+              canvasView.bounds.width > 0, canvasView.bounds.height > 0 else { return }
+
+        let old = Self.aspectFitRect(contentSize: oldSize, in: canvasView.bounds)
+        let new = Self.aspectFitRect(contentSize: newSize, in: canvasView.bounds)
+        guard old.width > 0, old.height > 0 else { return }
+
+        // Map the old content rect onto the new one.
+        let transform = CGAffineTransform(translationX: new.minX, y: new.minY)
+            .scaledBy(x: new.width / old.width, y: new.height / old.height)
+            .translatedBy(x: -old.minX, y: -old.minY)
+
+        isApplyingRemote = true
+        // Don't pollute the undo stack with this non-user transform.
+        canvasView.undoManager?.disableUndoRegistration()
+        canvasView.drawing = canvasView.drawing.transformed(using: transform)
+        canvasView.undoManager?.enableUndoRegistration()
+        isApplyingRemote = false
     }
 
     private func reportDrawing() {

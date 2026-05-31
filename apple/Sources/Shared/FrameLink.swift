@@ -172,6 +172,17 @@ public final class FrameSender: @unchecked Sendable {
         }
     }
 
+    /// Sends an annotation command/update from Pilot to every connected client
+    /// (e.g. undo/clear). Off the frame-counter path. The seq is unused by the
+    /// client (no ack expected for sender-originated commands).
+    public func sendAnnotation(_ message: AnnotationMessage) {
+        let packet = FrameLink.encode(.annotation(seq: 0, message: message))
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.broadcastTCP(packet)
+        }
+    }
+
     // MARK: Private (always called on `queue`)
 
     private func sendOverTCP(_ mediaPacket: FrameLink.Packet) {
@@ -794,8 +805,9 @@ public final class FrameReceiver: @unchecked Sendable {
                 countReceivedFrame()
                 onFrame?(frame)
             case .annotation:
-                // Annotations only flow client -> sender; ignore on receiver.
-                continue
+                // Sender -> client annotation commands (undo/clear). Forward to
+                // onPacket so the client can apply them to its source canvas.
+                break
             default:
                 break
             }

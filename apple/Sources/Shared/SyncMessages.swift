@@ -86,6 +86,10 @@ public struct AnnotationDrawing: Codable, Sendable, Hashable {
 public enum AnnotationMessage: Codable, Sendable, Hashable {
     case replaceDrawing(AnnotationDrawing)
     case clear
+    /// Pilot -> Plotter command: undo the last stroke on the source canvas.
+    /// The iPad executes it on its PencilKit undo stack and echoes the updated
+    /// drawing back via `replaceDrawing`, so both sides stay consistent.
+    case undo
 }
 
 struct MouseMove: Codable, Sendable {
