@@ -260,6 +260,13 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
     private let lockSize: CGFloat = 16
     private var isReordering = false
     private var gutterButtons: [NSButton] = []
+    /// Signature of the gutter buttons currently installed. `layout()` runs on
+    /// every display pass; rebuilding the gutter subviews each time
+    /// (removeFromSuperview + addSubview) re-dirties Auto Layout and makes the
+    /// window perpetually "need another Update Constraints pass", which AppKit
+    /// eventually aborts with an NSGenericException. We only touch the subview
+    /// tree when this signature actually changes.
+    private var gutterSignature = ""
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -333,36 +340,64 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
     /// fenced code block, positioned in the left gutter. They live in the text
     /// view's flipped coordinate space, so they scroll with the content.
     private func layoutGutterIcons() {
-        gutterButtons.forEach { $0.removeFromSuperview() }
-        gutterButtons.removeAll()
+        // Build the desired button specs first, derive a signature, and bail
+        // before touching the subview tree if nothing changed since the last
+        // pass. Mutating subviews inside `layout()` on every pass is what trips
+        // the window's Update-Constraints budget (see `gutterSignature`).
+        struct Spec {
+            let symbol: String
+            let tint: NSColor
+            let frame: NSRect
+            let help: String
+            let key: String
+            let action: () -> Void
+        }
+        var specs: [Spec] = []
 
         if let maskController {
             for secret in maskController.secrets {
                 guard let rect = lockRect(for: secret) else { continue }
                 let revealed = maskController.isRevealed(secret.key)
                 let key = secret.key
-                addGutterButton(
+                specs.append(Spec(
                     symbol: revealed ? "lock.open.fill" : "lock.fill",
                     tint: revealed ? .controlAccentColor : .secondaryLabelColor,
                     frame: rect,
-                    help: revealed ? "Hide value" : "Reveal value"
+                    help: revealed ? "Hide value" : "Reveal value",
+                    key: "S|\(key)|\(revealed)"
                 ) { [weak self] in
                     self?.maskController?.toggleReveal(key)
-                    self?.layoutGutterIcons()
-                }
+                })
             }
         }
 
         for block in fencedBlocks() {
             guard let rect = copyIconRect(for: block.range) else { continue }
             let content = block.content
-            addGutterButton(symbol: "doc.on.doc", tint: .secondaryLabelColor,
-                            frame: rect, help: "Copy code block") { [weak self] in
+            specs.append(Spec(
+                symbol: "doc.on.doc",
+                tint: .secondaryLabelColor,
+                frame: rect,
+                help: "Copy code block",
+                key: "C|\(content.hashValue)"
+            ) { [weak self] in
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
                 pasteboard.setString(content, forType: .string)
                 self?.onCopySecret?()
-            }
+            })
+        }
+
+        let signature = specs.map { "\($0.key)@\(NSStringFromRect($0.frame))" }
+            .joined(separator: ";")
+        guard signature != gutterSignature else { return }
+        gutterSignature = signature
+
+        gutterButtons.forEach { $0.removeFromSuperview() }
+        gutterButtons.removeAll()
+        for spec in specs {
+            addGutterButton(symbol: spec.symbol, tint: spec.tint, frame: spec.frame,
+                            help: spec.help, action: spec.action)
         }
     }
 
