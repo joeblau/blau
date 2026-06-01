@@ -1,5 +1,6 @@
 import Foundation
 import ScreenCaptureKit
+import CoreImage
 import CoreMedia
 import CoreVideo
 import VideoToolbox
@@ -245,6 +246,16 @@ fileprivate final class StreamOutput: NSObject, SCStreamDelegate, SCStreamOutput
     /// Invoked when the stream stops unexpectedly so the owner can recover.
     var onStop: (() -> Void)?
 
+    // MARK: - Snapshot (low-rate JPEG still for Plotter's widget/Live Activity)
+    /// Reused CoreImage context for downscale + JPEG encode.
+    private let ciContext = CIContext(options: [.cacheIntermediates: false])
+    /// PTS of the last snapshot we emitted, to throttle to one every few seconds.
+    private var lastSnapshotPTS: CMTime = .invalid
+    /// Seconds between snapshots — a widget only needs a recent still.
+    private let snapshotInterval: Double = 7
+    /// Downscaled width for the snapshot JPEG (aspect preserved).
+    private let snapshotWidth: CGFloat = 720
+
     init(sender: FrameSender) {
         self.sender = sender
         super.init()
@@ -303,7 +314,33 @@ fileprivate final class StreamOutput: NSObject, SCStreamDelegate, SCStreamOutput
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         stateQueue.async { [weak self] in
             self?.encodeLocked(pixelBuffer, presentationTimeStamp: pts)
+            self?.maybeCaptureSnapshot(pixelBuffer, pts: pts)
         }
+    }
+
+    /// Every `snapshotInterval` seconds, downscale the captured frame to a small
+    /// JPEG and send it over the legacy `.jpeg` channel. Plotter stashes it in
+    /// the shared App Group container for its widget + Live Activity. This is
+    /// independent of the HEVC video stream.
+    private func maybeCaptureSnapshot(_ pixelBuffer: CVPixelBuffer, pts: CMTime) {
+        if lastSnapshotPTS.isValid {
+            let elapsed = (pts - lastSnapshotPTS).seconds
+            guard elapsed.isFinite, elapsed >= snapshotInterval else { return }
+        }
+        lastSnapshotPTS = pts
+
+        var image = CIImage(cvPixelBuffer: pixelBuffer)
+        let width = image.extent.width
+        if width > snapshotWidth, width > 0 {
+            let scale = snapshotWidth / width
+            image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        }
+        guard let jpeg = ciContext.jpegRepresentation(
+            of: image,
+            colorSpace: CGColorSpaceCreateDeviceRGB(),
+            options: [:]
+        ) else { return }
+        sender.send(jpeg)
     }
 
     // MARK: - Encode (always on `stateQueue`)

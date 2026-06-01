@@ -4,6 +4,7 @@ import os
 import SwiftUI
 import UIKit
 import VideoToolbox
+import WidgetKit
 
 /// Diagnostic logger for the iPad decode/display path. Filter Console on
 /// subsystem `app.blau.plotter`.
@@ -72,6 +73,12 @@ final class MirrorModel {
                 // Drop Pilot's appearance on disconnect so Plotter returns to
                 // its own system light/dark setting.
                 if !connected { self?.pilotColorScheme = nil }
+                // Drive the widget + Live Activity off connection state.
+                PlotterSnapshotStore.writeStatus(
+                    PlotterSnapshotStore.Status(isConnected: connected, title: "Pilot", updatedAt: Date())
+                )
+                WidgetCenter.shared.reloadAllTimelines()
+                PlotterActivityController.shared.setConnected(connected, title: "Pilot")
             }
         }
     }
@@ -281,9 +288,17 @@ final class MirrorModel {
     /// Compatibility with the original JPEG stream. New Pilot builds send
     /// HEVC packets, so this path only updates diagnostics.
     private nonisolated func handleLegacyJPEG(_ data: Data) {
-        Task { @MainActor [weak self] in
+        Task { @MainActor in
             guard UIImage(data: data) != nil else { return }
-            self?.statusText = "Receiving legacy JPEG frames"
+            // Pilot now sends a periodic downscaled JPEG of its screen here.
+            // Stash it in the App Group so the widget + Live Activity can show
+            // a recent still, and nudge them to refresh.
+            PlotterSnapshotStore.writeSnapshot(
+                jpeg: data,
+                status: PlotterSnapshotStore.Status(isConnected: true, title: "Pilot", updatedAt: Date())
+            )
+            WidgetCenter.shared.reloadAllTimelines()
+            PlotterActivityController.shared.touch(title: "Pilot")
         }
     }
 }
