@@ -152,6 +152,35 @@ final class WorkspaceStore {
         }
     }
 
+    /// Drag-to-reorder a note tab (issue #67): place the dragged note just
+    /// before the drop-target note and renumber every note's `sortOrder` so the
+    /// new order persists across launches.
+    func moveNote(_ draggedID: UUID, before targetID: UUID) {
+        guard draggedID != targetID else { return }
+        var ordered = notes
+        guard let from = ordered.firstIndex(where: { $0.id == draggedID }),
+              let to = ordered.firstIndex(where: { $0.id == targetID }) else { return }
+        ordered.move(fromOffsets: IndexSet(integer: from), toOffset: to)
+        normalizeNoteSortOrder(ordered)
+    }
+
+    /// Drop a dragged note past the last tab to send it to the end.
+    func moveNoteToEnd(_ draggedID: UUID) {
+        var ordered = notes
+        guard let from = ordered.firstIndex(where: { $0.id == draggedID }),
+              from != ordered.count - 1 else { return }
+        ordered.move(fromOffsets: IndexSet(integer: from), toOffset: ordered.count)
+        normalizeNoteSortOrder(ordered)
+    }
+
+    private func normalizeNoteSortOrder(_ ordered: [Note]) {
+        for (index, note) in ordered.enumerated() {
+            note.sortOrder = index
+        }
+        try? modelContext.save()
+        changeCount += 1
+    }
+
     private func ensureAtLeastOneNote() {
         if notes.isEmpty {
             addNote()

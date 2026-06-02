@@ -76,6 +76,16 @@ struct NotesView: View {
                         onSelect: { store.selectedNoteID = note.id },
                         onClose: { requestClose(note) }
                     )
+                    // Drag-to-reorder (issue #67). The note's id rides along as
+                    // the dragged payload; dropping onto another tab inserts the
+                    // dragged note just before it and persists the new order.
+                    .draggable(note.id.uuidString)
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let raw = items.first,
+                              let draggedID = UUID(uuidString: raw) else { return false }
+                        store.moveNote(draggedID, before: note.id)
+                        return true
+                    }
                 }
 
                 Button {
@@ -89,6 +99,13 @@ struct NotesView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help("New Note")
+                // Dropping a tab on (or past) the + button sends it to the end.
+                .dropDestination(for: String.self) { items, _ in
+                    guard let raw = items.first,
+                          let draggedID = UUID(uuidString: raw) else { return false }
+                    store.moveNoteToEnd(draggedID)
+                    return true
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
