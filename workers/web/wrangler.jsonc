@@ -9,12 +9,10 @@
     // Serve Astro's generated 404.html for unknown paths (falls back to a
     // default 404 if the site has no 404 page).
     "not_found_handling": "404-page"
-  }
+  },
 
-  // First deploy lands on https://blau-web.<account>.workers.dev — safe to test there.
-  //
-  // Uncommenting the route below CUTS blau.app OVER from GitHub Pages to this
-  // Worker on the next deploy (the zone is already on Cloudflare, since
-  // rendezvous.blau.app is). Flip it when you're ready to retire GitHub Pages:
-  // "routes": [{ "pattern": "blau.app", "custom_domain": true }]
+  // blau.app is served by this Worker (cut over from GitHub Pages). The apex's
+  // old GitHub Pages A records (185.199.x.153) must be removed from the
+  // Cloudflare zone for the custom-domain bind to take the apex.
+  "routes": [{ "pattern": "blau.app", "custom_domain": true }]
 }
