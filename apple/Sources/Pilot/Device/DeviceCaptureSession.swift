@@ -44,10 +44,16 @@ final class DeviceCaptureSession: NSObject {
     @ObservationIgnored private let sessionQueue = DispatchQueue(label: "app.blau.pilot.device.capture")
     @ObservationIgnored private let recordingDelegate = MovieRecordingDelegate()
 
+    /// Native pixel dimensions of the `activeFormat` we pin the device to,
+    /// captured when we lock the highest-resolution format. Used after a
+    /// recording finishes to confirm the on-disk file kept the device's real
+    /// aspect ratio rather than a letterboxed 16:9 (issue #56).
+    @ObservationIgnored private var nativeDimensions: CMVideoDimensions?
+
     override init() {
         super.init()
         Self.enableScreenCaptureDevices()
-        applyHighestAvailableSessionPreset()
+        useDeviceNativeFormat()
         audioPreview.volume = 1.0
         videoDataOutput.alwaysDiscardsLateVideoFrames = true
         videoDataOutput.setSampleBufferDelegate(frameDelegate, queue: frameQueue)
@@ -109,7 +115,9 @@ final class DeviceCaptureSession: NSObject {
         if let error {
             lastError = "Recording failed: \(error.localizedDescription)"
             logger.error("recording failed: \(error.localizedDescription)")
+            return
         }
+        verifyNativeAspectRatio(of: url)
     }
 
     // MARK: - Screenshot
@@ -299,14 +307,18 @@ final class DeviceCaptureSession: NSObject {
         for input in session.inputs { session.removeInput(input) }
         for output in session.outputs { session.removeOutput(output) }
 
-        applyHighestAvailableSessionPreset()
-        configureHighestResolutionFormat(for: device)
+        useDeviceNativeFormat()
 
         do {
             let videoInput = try AVCaptureDeviceInput(device: device)
             if session.canAddInput(videoInput) {
                 session.addInput(videoInput)
             }
+            // Pin the device to its highest-res native format only after the
+            // input is live, so the `.inputPriority` session keeps the device's
+            // real aspect ratio instead of having it overridden when the input
+            // is added.
+            configureHighestResolutionFormat(for: device)
         } catch {
             logger.error("video input failed: \(error.localizedDescription)")
             status = .failed(error.localizedDescription)
@@ -382,12 +394,15 @@ final class DeviceCaptureSession: NSObject {
         return candidates.first { $0.localizedName == video.localizedName }
     }
 
-    private func applyHighestAvailableSessionPreset() {
-        for preset in [AVCaptureSession.Preset.hd4K3840x2160, .hd1920x1080, .high] {
-            if session.canSetSessionPreset(preset) {
-                session.sessionPreset = preset
-                return
-            }
+    /// Use the input device's own format instead of a fixed preset. A fixed
+    /// resolution preset (e.g. `.hd1920x1080`) forces 16:9, which letterboxes a
+    /// phone's taller screen in the recording. (`.inputPriority` would be ideal
+    /// but is iOS-only.) `.high` adapts to the device's native format, and we
+    /// then pin `activeFormat` via `configureHighestResolutionFormat`, so we
+    /// record at the device's real resolution and aspect ratio.
+    private func useDeviceNativeFormat() {
+        if session.canSetSessionPreset(.high) {
+            session.sessionPreset = .high
         }
     }
 
@@ -409,8 +424,42 @@ final class DeviceCaptureSession: NSObject {
             try device.lockForConfiguration()
             device.activeFormat = bestFormat
             device.unlockForConfiguration()
+            // Remember the format we pinned so we can verify the recorded file
+            // came out at these exact dimensions (issue #56).
+            nativeDimensions = CMVideoFormatDescriptionGetDimensions(bestFormat.formatDescription)
         } catch {
             logger.warning("screen capture format selection failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Confirm the on-disk recording matches the device's native aspect ratio
+    /// rather than a letterboxed 16:9 — checked independently of the live
+    /// preview. On macOS an `AVCaptureConnection` exposes no scale/crop factor
+    /// (that API is iOS-only), so the recorded dimensions follow the pinned
+    /// `activeFormat`; rather than trusting that, we read the finished file and
+    /// compare the saved video track's `naturalSize` against the format we
+    /// pinned (orientation-agnostic), logging a warning on mismatch so a
+    /// regression is caught (issue #56).
+    private func verifyNativeAspectRatio(of url: URL) {
+        guard let dims = nativeDimensions else { return }
+        let expectedW = Int(dims.width)
+        let expectedH = Int(dims.height)
+        let logger = self.logger
+        Task.detached(priority: .utility) {
+            let asset = AVURLAsset(url: url)
+            guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+                  let size = try? await track.load(.naturalSize) else { return }
+            let recordedW = Int(size.width.rounded())
+            let recordedH = Int(size.height.rounded())
+            func ratio(_ a: Int, _ b: Int) -> Double {
+                let lo = Double(min(a, b)), hi = Double(max(a, b))
+                return hi > 0 ? lo / hi : 0
+            }
+            if abs(ratio(expectedW, expectedH) - ratio(recordedW, recordedH)) > 0.01 {
+                logger.warning("recorded \(recordedW)x\(recordedH) aspect differs from device-native \(expectedW)x\(expectedH) — possible letterboxing")
+            } else {
+                logger.info("recording honors native aspect: \(recordedW)x\(recordedH) (native \(expectedW)x\(expectedH))")
+            }
         }
     }
 }
