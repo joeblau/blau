@@ -1,0 +1,39 @@
+name: Bind blau.app apex to blau-web (one-time)
+
+# One-shot cutover helper. Attaches blau.app as a custom domain on the
+# blau-web Worker, replacing the old GitHub Pages A records atomically
+# (override_existing_dns_record), so there's effectively no downtime.
+# Dispatch once, then delete this workflow/branch.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Attach blau.app -> blau-web (override GitHub Pages DNS)
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          api() { curl -sS -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" "$@"; }
+
+          ZONE_ID=$(api "https://api.cloudflare.com/client/v4/zones?name=blau.app" | jq -r '.result[0].id')
+          echo "zone_id=$ZONE_ID"
+          if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" = "null" ]; then
+            echo "::error::Could not resolve the blau.app zone (token missing Zone:Read?)"; exit 1
+          fi
+
+          echo "Attaching blau.app to blau-web, overriding existing A records..."
+          RESP=$(api -X PUT "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/domains" \
+            --data "{\"environment\":\"production\",\"hostname\":\"blau.app\",\"service\":\"blau-web\",\"zone_id\":\"$ZONE_ID\",\"override_existing_dns_record\":true}")
+          echo "$RESP" | jq .
+
+          if [ "$(echo "$RESP" | jq -r '.success')" != "true" ]; then
+            echo "::error::Custom-domain attach failed (see API response above)"; exit 1
+          fi
+          echo "✅ blau.app is now bound to the blau-web Worker"
