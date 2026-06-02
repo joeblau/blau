@@ -166,10 +166,10 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var deviceToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
+        // Settings gear + device connection status, top-left. Leading items
+        // stay visible in both the large and collapsed title states.
+        ToolbarItemGroup(placement: .topBarLeading) {
             SettingsButton()
-        }
-        ToolbarItemGroup(placement: .topBarTrailing) {
             ForEach(connectedDevices) { device in
                 deviceIcon(device)
             }

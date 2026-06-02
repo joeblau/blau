@@ -21,14 +21,36 @@ struct ContentView: View {
             // diagnostic ticks don't re-render the canvas or video reps.
             SearchingOverlay(mirror: mirror)
         }
-        // Settings entry point. Top-leading so it clears the annotation
-        // toolbar (undo/clear/reset), which sits top-trailing.
+        // Settings gear + Pilot (Mac) connection status, top-left. Clears the
+        // annotation toolbar (undo/clear/reset), which sits top-trailing.
         .overlay(alignment: .topLeading) {
-            SettingsButton()
-                .font(.title2)
-                .tint(.white)
-                .padding()
+            HStack(spacing: 10) {
+                SettingsButton()
+                    .font(.title2)
+                    .tint(.white)
+                ConnectionStatusBadge(mirror: mirror)
+            }
+            .padding()
         }
+    }
+}
+
+/// Laptop (Pilot/Mac) connection indicator: green once we're receiving the
+/// mirror, dim otherwise. Isolated into its own view so the per-frame
+/// `frameCount` updates only re-render this small badge — not the video or
+/// PencilKit canvas siblings.
+private struct ConnectionStatusBadge: View {
+    var mirror: MirrorModel
+
+    var body: some View {
+        let connected = mirror.frameCount > 0
+        Image(systemName: "laptopcomputer")
+            .font(.title2)
+            .foregroundStyle(connected ? Color.green : Color.white.opacity(0.5))
+            .padding(8)
+            .background(.black.opacity(0.42), in: Capsule())
+            .help(connected ? "Connected to Pilot" : "Searching for Pilot")
+            .accessibilityLabel(connected ? "Connected to Pilot" : "Not connected to Pilot")
     }
 }
 
