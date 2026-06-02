@@ -122,7 +122,11 @@ public final class FrameSender: @unchecked Sendable {
         queue.async { [weak self] in
             self?.running = true
             self?.startListenerLocked()
-            self?.startUDPListenerLocked()
+            // The UDP media path is unused — all frames go over TCP (see
+            // send(_:)). Starting the UDP listener here only spun in a
+            // restart loop, spamming the log and burning energy, so it's not
+            // started. sendOverUDP/startUDPListenerLocked are kept for if/when
+            // the hybrid path is revived.
         }
     }
 
@@ -481,7 +485,9 @@ public final class FrameReceiver: @unchecked Sendable {
         queue.async { [weak self] in
             self?.running = true
             self?.startBrowserLocked()
-            self?.startUDPBrowserLocked()
+            // UDP media path is unused (all frames arrive over TCP). Browsing
+            // for the UDP service only failed in a loop (NoAuth without Local
+            // Network), so it's not started. Kept for a future hybrid revival.
         }
     }
 
