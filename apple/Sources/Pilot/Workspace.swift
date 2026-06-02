@@ -273,6 +273,10 @@ final class Workspace {
     var workspaceSortOrder: Int = 0
     var rootPath: String = ""
     var rootPathSourceRaw: String? = RootPathSource.automatic.rawValue
+    /// Count of GitHub Action runs that completed for this workspace's repo
+    /// while it was in the background. Cleared when the workspace is selected.
+    /// Added to the terminal bell count to form `badgeCount`.
+    var actionBadgeCount: Int = 0
 
     @Relationship(deleteRule: .cascade, inverse: \Pane.workspace)
     var panes: [Pane] = []
@@ -320,7 +324,17 @@ final class Workspace {
     }
 
     var badgeCount: Int {
-        panes.filter { $0.kind == .terminal }.reduce(0) { $0 + $1.bellCount }
+        let bells = panes.filter { $0.kind == .terminal }.reduce(0) { $0 + $1.bellCount }
+        return bells + actionBadgeCount
+    }
+
+    func incrementActionBadge() {
+        actionBadgeCount += 1
+    }
+
+    func resetActionBadge() {
+        guard actionBadgeCount != 0 else { return }
+        actionBadgeCount = 0
     }
 
     var axis: PaneAxis {
