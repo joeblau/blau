@@ -1,9 +1,5 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { Image } from 'astro:assets';
-import pilotImg from '../assets/screenshots/pilot.png';
-import copilotImg from '../assets/screenshots/copilot.png';
-import wingmanImg from '../assets/screenshots/wingman.png';
 ---
 
 <Layout
@@ -93,7 +89,7 @@ import wingmanImg from '../assets/screenshots/wingman.png';
             <span class="pane__title">Pilot &mdash; macOS</span>
           </div>
           <div class="hero__shot">
-            <Image src={pilotImg} alt="Pilot for macOS: a command-center showing live Ghostty terminals, a WebKit browser pane, and a git inspector side by side." loading="eager" decoding="async" />
+            <img src="/mockups/pilot.svg" alt="Pilot for macOS: a command-center showing live Ghostty terminals, a WebKit browser pane, and a git inspector side by side." loading="eager" decoding="async" />
           </div>
         </div>
       </figure>
@@ -125,7 +121,7 @@ import wingmanImg from '../assets/screenshots/wingman.png';
                 <span class="pane__title">pilot — ~/dev</span>
               </div>
               <div class="apps__paneimg">
-                <Image src={pilotImg} alt="Pilot on macOS: split terminal, browser, and device-mirror panes." loading="lazy" decoding="async" />
+                <img src="/mockups/pilot.svg" alt="Pilot on macOS: split terminal, browser, and device-mirror panes." loading="lazy" decoding="async" />
               </div>
             </div>
           </div>
@@ -139,7 +135,7 @@ import wingmanImg from '../assets/screenshots/wingman.png';
           </div>
           <p class="apps__body muted">Mirrors Pilot's workspace list, drives the Mac cursor from a touch trackpad, switches panes, and transcribes your voice on-device to paste into the active terminal.</p>
           <div class="apps__phone" aria-hidden="true">
-            <Image src={copilotImg} alt="Copilot on iPhone: workspace list and touch trackpad." loading="lazy" decoding="async" />
+            <img src="/mockups/copilot.svg" alt="Copilot on iPhone: workspace list and touch trackpad." loading="lazy" decoding="async" />
           </div>
         </article>
 
@@ -151,7 +147,7 @@ import wingmanImg from '../assets/screenshots/wingman.png';
           </div>
           <p class="apps__body muted">A double-pinch on your wrist becomes an Enter keypress on the Mac. One gesture, one job, with haptic confirmation.</p>
           <div class="apps__watch" aria-hidden="true">
-            <Image src={wingmanImg} alt="Wingman on Apple Watch." loading="lazy" decoding="async" />
+            <img src="/mockups/wingman.svg" alt="Wingman on Apple Watch." loading="lazy" decoding="async" />
           </div>
         </article>
 
@@ -164,7 +160,7 @@ import wingmanImg from '../assets/screenshots/wingman.png';
           <p class="apps__body muted">Receives Pilot's screen as a live HEVC stream and lets you mark it up with Apple Pencil &mdash; strokes round-trip back onto the Mac. Includes a widget and Live Activity.</p>
           <div class="apps__ipad" aria-hidden="true">
             <div class="apps__bezel">
-              <img src="/screenshots/plotter/01-mirror.png" alt="Plotter on iPad: live mirror of the Mac screen with Apple Pencil markup." loading="lazy" decoding="async" />
+              <img src="/mockups/plotter.svg" alt="Plotter on iPad: live mirror of the Mac screen with Apple Pencil markup." loading="lazy" decoding="async" />
             </div>
           </div>
         </article>
@@ -197,7 +193,7 @@ import wingmanImg from '../assets/screenshots/wingman.png';
             <span class="pane__dot"></span>
             <span class="pane__title">pilot — workspace · ~/dev/blau</span>
           </div>
-          <Image src={pilotImg} alt="Pilot for macOS showing terminal, browser, device mirror and git panes side by side" loading="lazy" decoding="async" />
+          <img src="/mockups/pilot.svg" alt="Pilot for macOS showing terminal, browser, device mirror and git panes side by side" loading="lazy" decoding="async" />
         </div>
         <figcaption class="cockpit__cap mono">
           <span class="cockpit__cap-led" aria-hidden="true"></span>
@@ -328,7 +324,7 @@ import wingmanImg from '../assets/screenshots/wingman.png';
 
       <div class="mirror__col mirror__media" data-reveal style="--delay:120ms">
         <figure class="mirror__frame">
-          <img src="/screenshots/plotter/01-mirror.png" alt="Pilot's macOS window mirrored live onto an iPad with Apple Pencil annotation" class="mirror__img" loading="lazy" decoding="async" width="1600" height="1200" />
+          <img src="/mockups/plotter.svg" alt="Pilot's macOS window mirrored live onto an iPad with Apple Pencil annotation" class="mirror__img" loading="lazy" decoding="async" width="1400" height="1000" />
           <figcaption class="chip mirror__chip">
             <span class="chip__led" aria-hidden="true"></span>
             HEVC · 60fps · link-up
@@ -348,12 +344,12 @@ import wingmanImg from '../assets/screenshots/wingman.png';
           <div class="voice__notch" aria-hidden="true"></div>
           <img
             class="voice__shot"
-            src="/screenshots/copilot/01-workspaces.png"
+            src="/mockups/copilot.svg"
             alt="Copilot workspaces list on iPhone with an on-screen trackpad"
             loading="lazy"
             decoding="async"
-            width="603"
-            height="1305"
+            width="430"
+            height="910"
           />
         </div>
         <span class="chip voice__chip">
