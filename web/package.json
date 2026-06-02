@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "og": "node scripts/gen-og.mjs"
   },
   "dependencies": {
     "astro": "^6.3.8"
