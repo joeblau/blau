@@ -4,6 +4,40 @@
       <stop offset="0" stop-color="#3DDC84" stop-opacity="0.22"/>
       <stop offset="1" stop-color="#3DDC84" stop-opacity="0"/>
     </linearGradient>
+
+    <!-- ===== LIQUID GLASS KIT ===== -->
+    <linearGradient id="lg-surface" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.015"/>
+    </linearGradient>
+    <linearGradient id="lg-edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="0.12" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="0.9" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.12"/>
+    </linearGradient>
+    <linearGradient id="lg-sheen" x1="0" y1="0" x2="0.5" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.42"/>
+      <stop offset="0.18" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="lg-amberglass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFB877" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#FF7A1A" stop-opacity="0.12"/>
+    </linearGradient>
+    <radialGradient id="lg-amberglow" cx="50%" cy="50%" r="60%">
+      <stop offset="0" stop-color="#FF7A1A" stop-opacity="0.55"/><stop offset="1" stop-color="#FF7A1A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="lg-greenglow" cx="50%" cy="60%" r="65%">
+      <stop offset="0" stop-color="#3DDC84" stop-opacity="0.5"/><stop offset="1" stop-color="#3DDC84" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="lg-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="14" stdDeviation="22" flood-color="#000000" flood-opacity="0.55"/></filter>
+    <filter id="lg-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="16"/></filter>
+    <radialGradient id="lg-gloss" cx="35%" cy="28%" r="65%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/><stop offset="0.5" stop-color="#ffffff" stop-opacity="0.12"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
     <style>
       .b0{fill:#0A0A0D}.b1{fill:#0C0C11}.b2{fill:#101016}.bar{fill:#141419}
       .hair{stroke:#ffffff;stroke-opacity:.08;stroke-width:1}
@@ -20,12 +54,19 @@
 
   <!-- ============ SIDEBAR ============ -->
   <rect class="b1" width="252" height="1000"/>
+  <!-- frosted glass overlay -->
+  <rect width="252" height="1000" fill="url(#lg-surface)"/>
+  <!-- bright right-edge hairline -->
+  <rect x="250" y="0" width="2" height="1000" fill="#ffffff" fill-opacity="0.12"/>
   <line class="hair" x1="252" y1="0" x2="252" y2="1000"/>
   <text class="lbld" x="24" y="46" font-size="11" letter-spacing="1.5">PINNED</text>
   <text class="lbl" x="24" y="80" font-size="14">Excalidraw</text>
   <text class="lbl" x="24" y="110" font-size="14">joeblau.com</text>
   <text class="lbld" x="24" y="160" font-size="11" letter-spacing="1.5">WORKSPACES</text>
-  <rect x="12" y="176" width="228" height="32" rx="8" fill="#FF7A1A" fill-opacity="0.12"/>
+  <!-- amber liquid-glass selection pill: glow bloom behind, glass fill, top edge -->
+  <ellipse cx="126" cy="192" rx="118" ry="22" fill="url(#lg-amberglow)" filter="url(#lg-glow)"/>
+  <rect x="12" y="176" width="228" height="32" rx="10" fill="url(#lg-amberglass)"/>
+  <rect x="12" y="176" width="228" height="1.5" rx="0.75" fill="#FFB877" fill-opacity="0.5"/>
   <rect x="12" y="176" width="2.5" height="32" rx="1" fill="#FF7A1A"/>
   <text class="amber" x="26" y="198" font-size="14">bloxwap.com</text>
   <text class="lbl" x="26" y="240" font-size="14">blau.app</text>
@@ -33,6 +74,7 @@
   <text class="lbl" x="26" y="312" font-size="14">veblenhype.com</text>
   <text class="lbl" x="26" y="348" font-size="14">TalkText</text>
   <circle cx="24" cy="960" r="4" class="green"/>
+  <circle cx="22.5" cy="958.5" r="1.4" fill="#ffffff" fill-opacity="0.75"/>
   <text class="lbl" x="40" y="965" font-size="12">Mic Idle</text>
   <rect x="196" y="956" width="10" height="8" rx="2" class="green" fill-opacity="0.7"/>
   <rect x="212" y="956" width="10" height="8" rx="2" class="green" fill-opacity="0.7"/>
@@ -40,6 +82,13 @@
 
   <!-- ============ HEADER STRIP ============ -->
   <rect class="bar" x="252" y="0" width="1348" height="44"/>
+  <!-- glass bar overlay -->
+  <rect x="252" y="0" width="1348" height="44" fill="url(#lg-surface)"/>
+  <!-- top sheen, clipped to strip -->
+  <clipPath id="pl-clip-hdr"><rect x="252" y="0" width="1348" height="44"/></clipPath>
+  <rect x="252" y="0" width="1348" height="44" fill="url(#lg-sheen)" clip-path="url(#pl-clip-hdr)"/>
+  <!-- 1px top highlight -->
+  <rect x="252" y="0" width="1348" height="1" fill="#ffffff" fill-opacity="0.18"/>
   <line class="hair" x1="252" y1="44" x2="1600" y2="44"/>
   <text class="lbl" x="482" y="28" font-size="13" text-anchor="middle">⌨ Terminal</text>
   <text class="lbl" x="876" y="28" font-size="13" text-anchor="middle">Browser</text>
@@ -59,68 +108,70 @@
     <!-- diff: removed (red) -->
     <rect x="270" y="70" width="424" height="24" fill="#E5675F" fill-opacity="0.10"/>
     <text class="lbl" x="284" y="87" font-size="12" fill="#55555f">310</text>
-    <rect class="red" x="328" y="78" width="300" height="8" rx="2" fill-opacity="0.55"/>
+    <text x="328" y="89" font-size="11.5" font-family="ui-monospace,'SF Mono',monospace" fill="#E5675F">-  delegate_lp_delta_sync(ctx, validator_id)</text>
     <rect x="270" y="96" width="424" height="24" fill="#E5675F" fill-opacity="0.10"/>
     <text class="lbl" x="284" y="113" font-size="12" fill="#55555f">308</text>
-    <rect class="red" x="328" y="104" width="270" height="8" rx="2" fill-opacity="0.55"/>
+    <text x="328" y="115" font-size="11.5" font-family="ui-monospace,'SF Mono',monospace" fill="#E5675F">-  delegate_lp_delta_sync(ctx)</text>
     <!-- context -->
     <text class="lbl" x="284" y="139" font-size="12" fill="#55555f">309</text>
-    <rect class="tx" x="328" y="130" width="120" height="8" rx="2"/>
+    <text x="328" y="141" font-size="11.5" font-family="ui-monospace,'SF Mono',monospace" fill="#8a8a95">   }</text>
     <text class="lbl" x="284" y="165" font-size="12" fill="#55555f">311</text>
-    <rect class="txd" x="328" y="156" width="320" height="8" rx="2"/>
+    <text x="328" y="167" font-size="11.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6b7689">   /// Apply pending LP delta to VaultState</text>
     <text class="lbl" x="284" y="191" font-size="12" fill="#55555f">312</text>
-    <rect class="amber" x="328" y="182" width="34" height="8" rx="2" fill-opacity="0.8"/>
-    <rect class="tx" x="372" y="182" width="210" height="8" rx="2"/>
+    <text x="328" y="193" font-size="11.5" font-family="ui-monospace,'SF Mono',monospace" fill="#8a8a95">   <tspan fill="#FF9A4D">pub fn</tspan> apply_pending_lp_delta(</text>
     <text class="lbl" x="284" y="217" font-size="12" fill="#55555f">313</text>
-    <rect class="tx" x="350" y="208" width="240" height="8" rx="2"/>
+    <text x="328" y="219" font-size="11.5" font-family="ui-monospace,'SF Mono',monospace" fill="#8a8a95">       ctx: Context&lt;ApplyPendingLpDelta&gt;,</text>
     <!-- removed -->
     <rect x="270" y="226" width="424" height="24" fill="#E5675F" fill-opacity="0.10"/>
     <text class="lbl" x="284" y="243" font-size="12" fill="#55555f">316</text>
-    <rect class="red" x="350" y="234" width="180" height="8" rx="2" fill-opacity="0.55"/>
+    <text x="328" y="245" font-size="11.5" font-family="ui-monospace,'SF Mono',monospace" fill="#E5675F">-      validator_identity: Pubkey,</text>
     <rect x="270" y="252" width="424" height="24" fill="#E5675F" fill-opacity="0.10"/>
     <text class="lbl" x="284" y="269" font-size="12" fill="#55555f">318</text>
-    <rect class="red" x="350" y="260" width="320" height="8" rx="2" fill-opacity="0.55"/>
+    <text x="328" y="271" font-size="11.5" font-family="ui-monospace,'SF Mono',monospace" fill="#E5675F">-  apply_pending_lp_delta(ctx, validator_id)</text>
     <!-- added (green) -->
     <rect x="270" y="278" width="424" height="24" fill="#3DDC84" fill-opacity="0.10"/>
     <text class="lbl" x="284" y="295" font-size="12" fill="#55555f">315</text>
-    <rect class="green" x="350" y="286" width="320" height="8" rx="2" fill-opacity="0.5"/>
+    <text x="328" y="297" font-size="11.5" font-family="ui-monospace,'SF Mono',monospace" fill="#3DDC84">+  apply_pending_lp_delta(ctx)</text>
 
     <!-- agent narration -->
     <circle cx="278" cy="356" r="4" class="green"/>
-    <rect class="tx" x="296" y="346" width="384" height="8" rx="2"/>
-    <rect class="tx" x="296" y="364" width="300" height="8" rx="2"/>
+    <circle cx="276.5" cy="354.5" r="1.4" fill="#ffffff" fill-opacity="0.75"/>
+    <text x="296" y="360" font-size="12" font-family="ui-sans-serif,system-ui" fill="#9a9aa6">Now the big task — updating all ~25 instruction</text>
+    <text x="296" y="378" font-size="12" font-family="ui-sans-serif,system-ui" fill="#9a9aa6">files. Reading them in batches and editing each.</text>
     <circle cx="278" cy="416" r="4" class="green"/>
-    <rect class="tx" x="296" y="406" width="370" height="8" rx="2"/>
-    <rect class="tx" x="296" y="424" width="250" height="8" rx="2"/>
+    <circle cx="276.5" cy="414.5" r="1.4" fill="#ffffff" fill-opacity="0.75"/>
+    <text x="296" y="420" font-size="12" font-family="ui-sans-serif,system-ui" fill="#9a9aa6">Grepping for refs to validator_identity to find</text>
+    <text x="296" y="438" font-size="12" font-family="ui-sans-serif,system-ui" fill="#9a9aa6">exactly which files still need changes.</text>
     <circle cx="278" cy="476" r="4" class="green"/>
-    <rect class="tx" x="296" y="466" width="384" height="8" rx="2"/>
-    <rect class="tx" x="296" y="484" width="330" height="8" rx="2"/>
+    <circle cx="276.5" cy="474.5" r="1.4" fill="#ffffff" fill-opacity="0.75"/>
+    <text x="296" y="480" font-size="12" font-family="ui-sans-serif,system-ui" fill="#9a9aa6">28 files to update — the labor-intensive part.</text>
+    <text x="296" y="498" font-size="12" font-family="ui-sans-serif,system-ui" fill="#9a9aa6">Running 3 agents in parallel over the batches.</text>
 
     <!-- agents running -->
-    <rect class="txd" x="296" y="536" width="200" height="7" rx="2"/>
-    <rect class="txd" x="320" y="556" width="320" height="7" rx="2"/>
-    <rect class="txd" x="320" y="574" width="300" height="7" rx="2"/>
-    <rect class="txd" x="320" y="592" width="310" height="7" rx="2"/>
+    <text x="296" y="542" font-size="10" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">Running 3 agents… (ctrl+o to expand)</text>
+    <text x="320" y="562" font-size="10" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">  ⎿ instruction files batch 1 · 35 tool uses</text>
+    <text x="320" y="580" font-size="10" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">  ⎿ instruction files batch 2 · 20 tool uses</text>
+    <text x="320" y="598" font-size="10" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">  ⎿ instruction files batch 3 · 23 tool uses</text>
 
     <!-- checklist -->
     <path d="M280 648 l5 5 l9 -11" stroke="#3DDC84" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="304" y="644" width="220" height="7" rx="2" fill="#ffffff" fill-opacity="0.18"/>
+    <text x="304" y="650" font-size="12.5" font-family="ui-sans-serif,system-ui" fill="#6a6a74">Remove validator_identity from structs</text>
     <line x1="304" y1="648" x2="524" y2="648" class="hair" stroke-opacity="0.25"/>
     <path d="M280 676 l5 5 l9 -11" stroke="#3DDC84" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="304" y="672" width="190" height="7" rx="2" fill="#ffffff" fill-opacity="0.18"/>
+    <text x="304" y="678" font-size="12.5" font-family="ui-sans-serif,system-ui" fill="#6a6a74">Delete multi-region instructions</text>
     <line x1="304" y1="676" x2="494" y2="676" class="hair" stroke-opacity="0.25"/>
     <rect x="278" y="700" width="11" height="11" rx="2" fill="#FF7A1A"/>
-    <rect class="tx" x="304" y="701" width="300" height="8" rx="2" fill-opacity="0.22"/>
+    <text x="304" y="708" font-size="12.5" font-family="ui-sans-serif,system-ui" fill="#d9d9df">Update all instruction files</text>
     <rect x="278" y="728" width="11" height="11" rx="2" fill="none" class="hair"/>
-    <rect class="txd" x="304" y="729" width="220" height="8" rx="2"/>
+    <text x="304" y="736" font-size="12.5" font-family="ui-sans-serif,system-ui" fill="#8a8a95">Update Rust unit tests and helpers</text>
     <rect x="278" y="754" width="11" height="11" rx="2" fill="none" class="hair"/>
-    <rect class="txd" x="304" y="755" width="250" height="8" rx="2"/>
+    <text x="304" y="762" font-size="12.5" font-family="ui-sans-serif,system-ui" fill="#8a8a95">Update TypeScript integration tests</text>
     <rect x="278" y="780" width="11" height="11" rx="2" fill="none" class="hair"/>
-    <rect class="txd" x="304" y="781" width="200" height="8" rx="2"/>
+    <text x="304" y="788" font-size="12.5" font-family="ui-sans-serif,system-ui" fill="#8a8a95">Build and verify</text>
 
     <!-- prompt -->
     <text class="amber" x="270" y="965" font-size="13">▶▶</text>
-    <rect class="txd" x="304" y="958" width="280" height="7" rx="2"/>
+    <text x="304" y="964" font-size="11" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">bypass permissions on · esc to interrupt</text>
   </g>
 
   <!-- ============ PANE 2 — browser chart ============ -->
@@ -132,6 +183,8 @@
       <line class="hair" x1="780" y1="44" x2="780" y2="1000" stroke-opacity="0.05"/>
       <line class="hair" x1="860" y1="44" x2="860" y2="1000" stroke-opacity="0.05"/>
       <line class="hair" x1="940" y1="44" x2="940" y2="1000" stroke-opacity="0.05"/>
+      <!-- green glow bloom behind the rising line -->
+      <ellipse cx="990" cy="560" rx="120" ry="150" fill="url(#lg-greenglow)" filter="url(#lg-glow)"/>
       <!-- area + line -->
       <path d="M712 760 L760 720 L800 740 L850 660 L900 690 L950 600 L1000 560 L1040 520 L1040 1000 L712 1000 Z" fill="url(#pl-chart)"/>
       <path d="M712 760 L760 720 L800 740 L850 660 L900 690 L950 600 L1000 560 L1040 520" fill="none" stroke="#3DDC84" stroke-width="2.5" stroke-linejoin="round"/>
@@ -145,24 +198,54 @@
       <text class="lbl" x="1030" y="510" font-size="10" text-anchor="end" fill="#4c4c56">$67,370.00</text>
       <text class="lbl" x="1030" y="710" font-size="10" text-anchor="end" fill="#4c4c56">$67,330.00</text>
     </g>
-    <!-- BTC pill -->
-    <rect x="728" y="132" width="170" height="40" rx="20" fill="#0E0E13" stroke="#ffffff" stroke-opacity="0.1"/>
+    <!-- BTC pill (glass) -->
+    <g filter="url(#lg-shadow)">
+      <rect x="728" y="132" width="170" height="40" rx="20" fill="#0E0E13"/>
+      <rect x="728" y="132" width="170" height="40" rx="20" fill="url(#lg-surface)"/>
+      <rect x="728" y="132" width="170" height="40" rx="20" fill="none" stroke="url(#lg-edge)" stroke-width="1"/>
+      <rect x="742" y="135" width="142" height="9" rx="4.5" fill="#ffffff" fill-opacity="0.12"/>
+    </g>
     <circle cx="750" cy="152" r="13" fill="#F7931A"/>
+    <ellipse cx="745" cy="147" rx="6" ry="5" fill="url(#lg-gloss)"/>
     <text x="750" y="158" font-size="14" font-family="ui-sans-serif,system-ui" font-weight="700" fill="#1a1003" text-anchor="middle">₿</text>
     <text x="772" y="158" font-size="15" font-family="ui-sans-serif,system-ui" font-weight="600" fill="#EDEDF2">$67,348.82</text>
-    <!-- $0 pill -->
-    <rect x="940" y="132" width="86" height="40" rx="20" fill="#0E0E13" stroke="#ffffff" stroke-opacity="0.1"/>
+    <!-- $0 pill (glass) -->
+    <g filter="url(#lg-shadow)">
+      <rect x="940" y="132" width="86" height="40" rx="20" fill="#0E0E13"/>
+      <rect x="940" y="132" width="86" height="40" rx="20" fill="url(#lg-surface)"/>
+      <rect x="940" y="132" width="86" height="40" rx="20" fill="none" stroke="url(#lg-edge)" stroke-width="1"/>
+      <rect x="954" y="135" width="58" height="9" rx="4.5" fill="#ffffff" fill-opacity="0.12"/>
+    </g>
     <text x="958" y="158" font-size="15" font-family="ui-sans-serif,system-ui" font-weight="600" fill="#EDEDF2">$0</text>
     <circle cx="1006" cy="152" r="12" class="green"/>
-    <!-- highlighted price tag on the line -->
-    <rect x="958" y="598" width="92" height="26" rx="6" fill="#3DDC84" fill-opacity="0.16" stroke="#3DDC84" stroke-opacity="0.5"/>
+    <ellipse cx="1001.5" cy="147.5" rx="5" ry="4" fill="url(#lg-gloss)"/>
+    <!-- highlighted price tag on the line (glass) -->
+    <rect x="958" y="598" width="92" height="26" rx="8" fill="#0E0E13" fill-opacity="0.5"/>
+    <rect x="958" y="598" width="92" height="26" rx="8" fill="#3DDC84" fill-opacity="0.16"/>
+    <rect x="958" y="598" width="92" height="26" rx="8" fill="none" stroke="url(#lg-edge)" stroke-width="1"/>
+    <rect x="966" y="600" width="76" height="6" rx="3" fill="#ffffff" fill-opacity="0.14"/>
     <text class="green" x="1004" y="616" font-size="13" font-family="ui-monospace,monospace" font-weight="600" text-anchor="middle">$67,348.82</text>
-    <!-- bottom controls -->
-    <circle cx="760" cy="950" r="22" fill="#0E0E13" stroke="#ffffff" stroke-opacity="0.1"/>
+    <!-- bottom controls (glass buttons) -->
+    <g filter="url(#lg-shadow)">
+      <circle cx="760" cy="950" r="22" fill="#0E0E13"/>
+      <circle cx="760" cy="950" r="22" fill="url(#lg-surface)"/>
+      <circle cx="760" cy="950" r="22" fill="none" stroke="url(#lg-edge)" stroke-width="1"/>
+      <ellipse cx="760" cy="935" rx="14" ry="5" fill="#ffffff" fill-opacity="0.12"/>
+    </g>
     <text class="green" x="760" y="955" font-size="12" text-anchor="middle" font-family="ui-monospace,monospace">10%</text>
-    <circle cx="876" cy="950" r="22" fill="#0E0E13" stroke="#ffffff" stroke-opacity="0.1"/>
+    <g filter="url(#lg-shadow)">
+      <circle cx="876" cy="950" r="22" fill="#0E0E13"/>
+      <circle cx="876" cy="950" r="22" fill="url(#lg-surface)"/>
+      <circle cx="876" cy="950" r="22" fill="none" stroke="url(#lg-edge)" stroke-width="1"/>
+      <ellipse cx="876" cy="935" rx="14" ry="5" fill="#ffffff" fill-opacity="0.12"/>
+    </g>
     <text class="lbl" x="876" y="955" font-size="13" text-anchor="middle">&lt;/&gt;</text>
-    <circle cx="940" cy="950" r="22" fill="#0E0E13" stroke="#ffffff" stroke-opacity="0.1"/>
+    <g filter="url(#lg-shadow)">
+      <circle cx="940" cy="950" r="22" fill="#0E0E13"/>
+      <circle cx="940" cy="950" r="22" fill="url(#lg-surface)"/>
+      <circle cx="940" cy="950" r="22" fill="none" stroke="url(#lg-edge)" stroke-width="1"/>
+      <ellipse cx="940" cy="935" rx="14" ry="5" fill="#ffffff" fill-opacity="0.12"/>
+    </g>
     <rect x="930" y="942" width="20" height="16" rx="3" fill="none" class="hair" stroke-opacity="0.4"/>
   </g>
 
@@ -171,84 +254,88 @@
     <!-- tasks gutter -->
     <text class="lbl" x="1052" y="72" font-size="11" fill="#5a5a64">Tasks</text>
     <g>
-      <rect class="txd" x="1052" y="92" width="44" height="6" rx="2"/>
-      <rect class="txd" x="1052" y="112" width="44" height="6" rx="2"/>
-      <rect class="txd" x="1052" y="132" width="44" height="6" rx="2"/>
-      <rect class="txd" x="1052" y="152" width="44" height="6" rx="2"/>
+      <text x="1052" y="98" font-size="9.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">uptime</text>
+      <text x="1052" y="118" font-size="9.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">tap#dev</text>
+      <text x="1052" y="138" font-size="9.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">deck#dev</text>
+      <text x="1052" y="158" font-size="9.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">price-feed</text>
       <path d="M1054 196 l4 4 l7 -9" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect class="txd" x="1070" y="194" width="26" height="6" rx="2"/>
+      <text x="1070" y="200" font-size="9.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">lazer</text>
       <path d="M1054 216 l4 4 l7 -9" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect class="txd" x="1070" y="214" width="26" height="6" rx="2"/>
+      <text x="1070" y="220" font-size="9.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">solana</text>
     </g>
     <line class="hair" x1="1108" y1="60" x2="1108" y2="520" stroke-opacity="0.06"/>
     <!-- terminal output -->
     <text class="lbl" x="1122" y="74" font-size="12" fill="#8a8a95">links#dev &gt; cache bypass</text>
-    <rect class="amber" x="1122" y="92" width="180" height="7" rx="2" fill-opacity="0.7"/>
-    <rect class="txd" x="1122" y="116" width="150" height="7" rx="2"/>
+    <text x="1122" y="98" font-size="10.5" font-family="ui-monospace,'SF Mono',monospace" fill="#FF9A4D">$ next dev --turbopack -p 3002</text>
+    <text x="1122" y="122" font-size="10.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">Using vars from .dev.vars</text>
     <text class="amber" x="1122" y="150" font-size="11" font-family="ui-monospace,monospace">▲ Next.js 15.3.4</text>
-    <rect class="txd" x="1122" y="170" width="120" height="7" rx="2"/>
-    <rect class="txd" x="1122" y="190" width="170" height="7" rx="2"/>
-    <rect class="txd" x="1122" y="210" width="140" height="7" rx="2"/>
+    <text x="1122" y="176" font-size="10.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">- Local:   localhost:3002</text>
+    <text x="1122" y="196" font-size="10.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">- Network: 10.0.7.44:3002</text>
+    <text x="1122" y="216" font-size="10.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">✓ Starting...</text>
     <path d="M1124 248 l4 4 l7 -9" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect class="txd" x="1140" y="246" width="90" height="7" rx="2"/>
-    <rect class="txd" x="1122" y="270" width="150" height="7" rx="2"/>
+    <text x="1140" y="252" font-size="10.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">Compiled / in 1.2s</text>
+    <text x="1122" y="276" font-size="10.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">GET / 200 in 38ms</text>
     <path d="M1124 308 l4 4 l7 -9" stroke="#3DDC84" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     <text class="green" x="1142" y="313" font-size="12" font-family="ui-monospace,monospace">Ready in 3.7s</text>
-    <rect class="txd" x="1122" y="334" width="150" height="7" rx="2"/>
+    <text x="1122" y="340" font-size="10.5" font-family="ui-monospace,'SF Mono',monospace" fill="#6a6a74">○ Compiling /api/quote</text>
     <rect x="1122" y="356" width="8" height="14" fill="#ffffff" fill-opacity="0.5"/>
   </g>
 
   <!-- ============ RAIL — Actions feed ============ -->
   <g>
     <rect class="b1" x="1306" y="44" width="294" height="956"/>
+    <!-- frosted glass panel overlay -->
+    <rect x="1306" y="44" width="294" height="956" fill="url(#lg-surface)"/>
+    <!-- left-edge highlight -->
+    <rect x="1306" y="44" width="2" height="956" fill="#ffffff" fill-opacity="0.12"/>
     <g font-family="ui-monospace,monospace">
       <!-- 8 entries -->
       <g>
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.18"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect class="tx" x="1344" y="74" width="220" height="7" rx="2"/><rect class="tx" x="1344" y="88" width="170" height="7" rx="2"/>
-        <rect class="amber" x="1344" y="108" width="120" height="6" rx="2" fill-opacity="0.45"/><rect class="txd" x="1344" y="124" width="60" height="6" rx="2"/>
+        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">fix: remove orphan accounts from</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">initialize, use per-region PDAs</text>
+        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Production · main</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">f1c4d87</text>
         <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
       </g>
       <g transform="translate(0,108)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.18"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect class="tx" x="1344" y="74" width="200" height="7" rx="2"/><rect class="tx" x="1344" y="88" width="150" height="7" rx="2"/>
-        <rect class="amber" x="1344" y="108" width="140" height="6" rx="2" fill-opacity="0.45"/><rect class="txd" x="1344" y="124" width="60" height="6" rx="2"/>
+        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">feat: zero-downtime LP deposits</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">and withdrawals via rollup</text>
+        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Preview · feat/zero-downtime-lp</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">29b755a</text>
         <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
       </g>
       <g transform="translate(0,216)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.18"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect class="tx" x="1344" y="74" width="220" height="7" rx="2"/><rect class="tx" x="1344" y="88" width="180" height="7" rx="2"/>
-        <rect class="amber" x="1344" y="108" width="110" height="6" rx="2" fill-opacity="0.45"/><rect class="txd" x="1344" y="124" width="60" height="6" rx="2"/>
+        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">refactor: simplify to single-region</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">deployment, fix price oracle</text>
+        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Production · main</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">142cce1</text>
         <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
       </g>
       <g transform="translate(0,324)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.18"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect class="tx" x="1344" y="74" width="190" height="7" rx="2"/><rect class="tx" x="1344" y="88" width="160" height="7" rx="2"/>
-        <rect class="amber" x="1344" y="108" width="130" height="6" rx="2" fill-opacity="0.45"/><rect class="txd" x="1344" y="124" width="60" height="6" rx="2"/>
+        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">feat: initialize all 3 regions</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">(US, EU, AS) in deploy tooling</text>
+        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Preview · feat/multi-region-init</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">82b0b56</text>
         <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
       </g>
       <g transform="translate(0,432)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.18"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect class="tx" x="1344" y="74" width="210" height="7" rx="2"/><rect class="tx" x="1344" y="88" width="150" height="7" rx="2"/>
-        <rect class="amber" x="1344" y="108" width="120" height="6" rx="2" fill-opacity="0.45"/><rect class="txd" x="1344" y="124" width="60" height="6" rx="2"/>
+        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">chore: bump anchor-lang to 0.30.1</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">and solana-program 1.18</text>
+        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Production · main</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">4567fab</text>
         <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
       </g>
       <g transform="translate(0,540)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.18"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect class="tx" x="1344" y="74" width="200" height="7" rx="2"/><rect class="tx" x="1344" y="88" width="170" height="7" rx="2"/>
-        <rect class="amber" x="1344" y="108" width="140" height="6" rx="2" fill-opacity="0.45"/><rect class="txd" x="1344" y="124" width="60" height="6" rx="2"/>
+        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">test: cover apply_pending_lp_delta</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">integration paths</text>
+        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Preview · test/lp-delta</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">2982da0</text>
         <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
       </g>
       <g transform="translate(0,648)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.18"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect class="tx" x="1344" y="74" width="220" height="7" rx="2"/><rect class="tx" x="1344" y="88" width="160" height="7" rx="2"/>
-        <rect class="amber" x="1344" y="108" width="110" height="6" rx="2" fill-opacity="0.45"/><rect class="txd" x="1344" y="124" width="60" height="6" rx="2"/>
+        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">fix: guard stale ephemeral rollup</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">commits on resume</text>
+        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Production · main</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">7efef16</text>
         <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
       </g>
       <g transform="translate(0,756)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.18"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect class="tx" x="1344" y="74" width="190" height="7" rx="2"/><rect class="tx" x="1344" y="88" width="150" height="7" rx="2"/>
-        <rect class="amber" x="1344" y="108" width="130" height="6" rx="2" fill-opacity="0.45"/><rect class="txd" x="1344" y="124" width="60" height="6" rx="2"/>
+        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">docs: update REQUIREMENTS for the</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">single-region vault model</text>
+        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Preview · docs/requirements</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">c3c55c2</text>
       </g>
     </g>
   </g>

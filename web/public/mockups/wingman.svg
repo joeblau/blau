@@ -6,6 +6,38 @@
     <linearGradient id="wg-case" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#23232a"/><stop offset="1" stop-color="#101015"/>
     </linearGradient>
+
+    <!-- LIQUID GLASS KIT -->
+    <linearGradient id="lg-surface" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.015"/>
+    </linearGradient>
+    <linearGradient id="lg-edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.6"/>
+      <stop offset="0.12" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="0.9" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.14"/>
+    </linearGradient>
+    <linearGradient id="lg-sheen" x1="0" y1="0" x2="0.5" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="0.2" stop-color="#ffffff" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lg-amberglow" cx="50%" cy="50%" r="60%">
+      <stop offset="0" stop-color="#FF7A1A" stop-opacity="0.6"/><stop offset="1" stop-color="#FF7A1A" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="lg-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="20" flood-color="#000000" flood-opacity="0.6"/></filter>
+    <filter id="lg-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="12"/></filter>
+    <radialGradient id="lg-gloss" cx="35%" cy="25%" r="70%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.9"/><stop offset="0.5" stop-color="#ffffff" stop-opacity="0.12"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- clip for screen glass treatments -->
+    <clipPath id="wg-screen-clip">
+      <rect x="96" y="108" width="168" height="244" rx="46"/>
+    </clipPath>
+
     <style>
       .t{font-family:ui-sans-serif,system-ui,sans-serif}
       .amber{fill:#FF9A4D}.green{fill:#3DDC84}.sec{fill:#8a8a95}.dim{fill:#5a5a64}
@@ -15,31 +47,51 @@
   <!-- bands -->
   <path d="M118 70 q62 -26 124 0 l-8 70 q-54 -18 -108 0 z" fill="url(#wg-band)" opacity="0.92"/>
   <path d="M110 392 q70 26 140 0 l-10 -70 q-60 18 -120 0 z" fill="url(#wg-band)" opacity="0.92"/>
+  <!-- band sheen highlights -->
+  <path d="M118 70 q62 -26 124 0 l-3 26 q-58 -22 -118 0 z" fill="url(#lg-sheen)" opacity="0.5"/>
+  <path d="M132 320 q48 14 96 0 l-3 22 q-44 13 -90 0 z" fill="url(#lg-sheen)" opacity="0.35"/>
 
   <!-- case -->
-  <rect x="78" y="92" width="204" height="276" rx="58" fill="url(#wg-case)" stroke="#000" stroke-opacity="0.5"/>
-  <rect x="78" y="92" width="204" height="276" rx="58" fill="none" stroke="#ffffff" stroke-opacity="0.08"/>
+  <g filter="url(#lg-shadow)">
+    <rect x="78" y="92" width="204" height="276" rx="58" fill="url(#wg-case)" stroke="#000" stroke-opacity="0.5"/>
+  </g>
+  <!-- polished glass surface overlay -->
+  <rect x="78" y="92" width="204" height="276" rx="58" fill="url(#lg-surface)"/>
+  <!-- crisp specular rim -->
+  <rect x="78.7" y="92.7" width="202.6" height="274.6" rx="57.3" fill="none" stroke="url(#lg-edge)" stroke-width="1.4"/>
   <!-- digital crown + button -->
   <rect x="280" y="168" width="11" height="40" rx="5" fill="#2a2a31"/>
+  <rect x="280" y="168" width="11" height="40" rx="5" fill="url(#lg-surface)"/>
   <rect x="281" y="222" width="9" height="30" rx="4" fill="#2a2a31"/>
+  <rect x="281" y="222" width="9" height="30" rx="4" fill="url(#lg-surface)"/>
 
   <!-- screen -->
   <rect x="96" y="108" width="168" height="244" rx="46" fill="#070709"/>
+  <!-- cover-glass sheen + inner edge highlight, clipped to screen -->
+  <g clip-path="url(#wg-screen-clip)">
+    <rect x="96" y="108" width="168" height="130" fill="url(#lg-sheen)"/>
+    <rect x="97.5" y="109.5" width="165" height="241" rx="44.5" fill="none" stroke="#ffffff" stroke-opacity="0.07" stroke-width="1"/>
+  </g>
 
   <!-- title + time -->
   <text class="t sec" x="180" y="146" font-size="13" text-anchor="middle">Wingman</text>
   <text class="t amber" x="180" y="166" font-size="11" text-anchor="middle" font-family="ui-monospace,monospace">10:09</text>
 
   <!-- pinch gesture glyph -->
+  <!-- amber bloom behind -->
+  <circle cx="180" cy="232" r="40" fill="url(#lg-amberglow)" filter="url(#lg-glow)"/>
   <circle cx="180" cy="232" r="46" fill="none" stroke="#FF7A1A" stroke-opacity="0.2" stroke-width="2"/>
   <circle cx="180" cy="232" r="34" fill="#FF7A1A" fill-opacity="0.08" stroke="#FF7A1A" stroke-opacity="0.45" stroke-width="2"/>
-  <!-- two fingertips pinching -->
+  <!-- two fingertips pinching, glass beads -->
   <circle cx="166" cy="232" r="9" class="amber"/>
+  <circle cx="166" cy="232" r="9" fill="url(#lg-gloss)"/>
   <circle cx="194" cy="232" r="9" class="amber"/>
+  <circle cx="194" cy="232" r="9" fill="url(#lg-gloss)"/>
   <path d="M150 232 h6 M204 232 h6" stroke="#FF9A4D" stroke-width="2" stroke-linecap="round"/>
 
   <!-- label -->
   <text class="t dim" x="180" y="306" font-size="11" text-anchor="middle">Double-pinch</text>
   <circle cx="156" cy="326" r="3.5" class="green"/>
+  <circle cx="156" cy="326" r="3.5" fill="url(#lg-gloss)"/>
   <text class="t sec" x="168" y="330" font-size="11">Linked</text>
 </svg>

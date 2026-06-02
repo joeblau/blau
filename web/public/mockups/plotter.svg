@@ -7,6 +7,40 @@
       .tm{font-family:ui-monospace,'SF Mono',monospace}
       .pri{fill:#EDEDF2}.sec{fill:#8a8a95}.dim{fill:#55555f}
     </style>
+
+    <!-- LIQUID GLASS KIT -->
+    <linearGradient id="lg-surface" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.015"/>
+    </linearGradient>
+    <linearGradient id="lg-edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="0.12" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="0.9" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.12"/>
+    </linearGradient>
+    <linearGradient id="lg-sheen" x1="0" y1="0" x2="0.5" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.42"/>
+      <stop offset="0.18" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lg-redglow" cx="50%" cy="50%" r="60%">
+      <stop offset="0" stop-color="#ff453a" stop-opacity="0.45"/><stop offset="1" stop-color="#ff453a" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="lg-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.55"/></filter>
+    <filter id="lg-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="14"/></filter>
+    <radialGradient id="lg-gloss" cx="35%" cy="28%" r="65%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/><stop offset="0.5" stop-color="#ffffff" stop-opacity="0.12"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- light frosted glass body for the PencilKit palette -->
+    <linearGradient id="pk-glass" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="#f2f2f5" stop-opacity="0.86"/>
+      <stop offset="0.5" stop-color="#dcdce2" stop-opacity="0.74"/>
+      <stop offset="1" stop-color="#c8c8d0" stop-opacity="0.7"/>
+    </linearGradient>
+    <radialGradient id="pk-rainbow"><stop offset="0" stop-color="#ff7a1a"/><stop offset="1" stop-color="#8a2be2"/></radialGradient>
   </defs>
 
   <rect class="scr" width="1400" height="1000"/>
@@ -18,24 +52,31 @@
     <path d="M1268 26 a9 9 0 0 1 13 0 l-6.5 7 z"/>
     <text class="t" x="1300" y="40" font-size="17" fill="#EDEDF2">100%</text>
     <rect x="1352" y="24" width="26" height="14" rx="3" fill="none" stroke="#EDEDF2" stroke-width="1.6"/><rect x="1354" y="26" width="22" height="10" rx="1.5"/>
+    <!-- faint glassy sheen on the battery -->
+    <rect x="1354" y="26" width="22" height="5" rx="1.5" fill="url(#lg-sheen)"/>
   </g>
 
   <!-- mirrored Mac window -->
-  <g>
+  <g filter="url(#lg-shadow)">
     <rect class="win" x="110" y="150" width="1180" height="800" rx="18" stroke="#ffffff" stroke-opacity="0.08"/>
     <rect class="bar" x="110" y="150" width="1180" height="46" rx="18"/>
     <rect class="bar" x="110" y="178" width="1180" height="18"/>
+
+    <!-- traffic lights with glossy glass highlights -->
     <circle cx="140" cy="173" r="7" fill="#ff5f57"/><circle cx="164" cy="173" r="7" fill="#febc2e"/><circle cx="188" cy="173" r="7" fill="#28c840"/>
+    <circle cx="140" cy="173" r="7" fill="url(#lg-gloss)"/><circle cx="164" cy="173" r="7" fill="url(#lg-gloss)"/><circle cx="188" cy="173" r="7" fill="url(#lg-gloss)"/>
+
     <line class="hair" x1="110" y1="196" x2="1290" y2="196"/>
 
     <!-- mini sidebar -->
     <rect x="110" y="196" width="190" height="754" fill="#0A0A0E"/>
     <line class="hair" x1="300" y1="196" x2="300" y2="950"/>
-    <rect class="t" x="132" y="232" width="120" height="8" rx="3" fill="#ffffff" fill-opacity="0.1"/>
-    <rect x="132" y="262" width="100" height="8" rx="3" fill="#ffffff" fill-opacity="0.07"/>
-    <rect x="132" y="292" width="130" height="8" rx="3" fill="#ffffff" fill-opacity="0.07"/>
+    <text class="tm" x="132" y="240" font-size="11" fill="#55555f">EXPLORER</text>
+    <text class="tm" x="132" y="268" font-size="13" fill="#8a8a95">lib.rs</text>
+    <text class="tm" x="132" y="296" font-size="13" fill="#8a8a95">vault_state.rs</text>
     <rect x="124" y="320" width="160" height="26" rx="6" fill="#ffffff" fill-opacity="0.05"/>
-    <rect x="132" y="356" width="110" height="8" rx="3" fill="#ffffff" fill-opacity="0.07"/>
+    <text class="tm" x="132" y="338" font-size="12" fill="#EDEDF2">apply_pending_lp_delta.rs</text>
+    <text class="tm" x="132" y="366" font-size="13" fill="#8a8a95">errors.rs</text>
 
     <!-- editor: colorful code lines -->
     <g>
@@ -43,34 +84,59 @@
       <g fill="#3a3a44" font-size="13" class="tm">
         <text x="330" y="252">1</text><text x="330" y="288">2</text><text x="330" y="324">3</text><text x="330" y="360">4</text><text x="330" y="396">5</text><text x="330" y="432">6</text><text x="330" y="468">7</text><text x="330" y="504">8</text><text x="330" y="540">9</text>
       </g>
-      <!-- syntax bars -->
-      <rect x="370" y="244" width="90" height="9" rx="2" fill="#b48ead"/><rect x="470" y="244" width="150" height="9" rx="2" fill="#d8dee9" fill-opacity="0.5"/>
-      <rect x="400" y="280" width="120" height="9" rx="2" fill="#81a1c1"/><rect x="530" y="280" width="180" height="9" rx="2" fill="#d8dee9" fill-opacity="0.4"/>
-      <rect x="400" y="316" width="200" height="9" rx="2" fill="#a3be8c"/>
-      <rect x="430" y="352" width="160" height="9" rx="2" fill="#d8dee9" fill-opacity="0.4"/><rect x="600" y="352" width="90" height="9" rx="2" fill="#ebcb8b"/>
-      <rect x="430" y="388" width="240" height="9" rx="2" fill="#81a1c1"/>
-      <rect x="400" y="424" width="110" height="9" rx="2" fill="#b48ead"/><rect x="520" y="424" width="200" height="9" rx="2" fill="#d8dee9" fill-opacity="0.4"/>
-      <rect x="430" y="460" width="280" height="9" rx="2" fill="#a3be8c"/>
-      <rect x="400" y="496" width="150" height="9" rx="2" fill="#d8dee9" fill-opacity="0.4"/>
-      <rect x="370" y="532" width="90" height="9" rx="2" fill="#b48ead"/>
+      <!-- real Rust source -->
+      <g class="tm" font-size="14">
+        <text x="370" y="252"><tspan fill="#b48ead">use</tspan><tspan fill="#d8dee9"> anchor_lang::prelude::*;</tspan></text>
+        <text x="370" y="288"><tspan fill="#b48ead">use</tspan><tspan fill="#d8dee9"> crate::state::</tspan><tspan fill="#ebcb8b">VaultState</tspan><tspan fill="#d8dee9">;</tspan></text>
+        <text x="370" y="360"><tspan fill="#b48ead">pub fn</tspan><tspan fill="#d8dee9"> apply_pending_lp_delta(</tspan></text>
+        <text x="370" y="396"><tspan fill="#d8dee9">    ctx: </tspan><tspan fill="#ebcb8b">Context</tspan><tspan fill="#d8dee9">&lt;ApplyPendingLpDelta&gt;,</tspan></text>
+        <text x="370" y="432"><tspan fill="#d8dee9">) -&gt; </tspan><tspan fill="#ebcb8b">Result</tspan><tspan fill="#d8dee9">&lt;()&gt; {</tspan></text>
+        <text x="370" y="468"><tspan fill="#b48ead">    let</tspan><tspan fill="#d8dee9"> vault = </tspan><tspan fill="#81a1c1">&amp;mut</tspan><tspan fill="#d8dee9"> ctx.accounts.vault;</tspan></text>
+        <text x="370" y="504"><tspan fill="#d8dee9">    vault.apply_delta()?;</tspan></text>
+        <text x="370" y="540"><tspan fill="#d8dee9">    </tspan><tspan fill="#d8dee9">Ok</tspan><tspan fill="#d8dee9">(())</tspan></text>
+      </g>
     </g>
 
     <!-- right edge faint preview column -->
     <line class="hair" x1="960" y1="196" x2="960" y2="950" stroke-opacity="0.05"/>
-    <g fill="#ffffff" fill-opacity="0.05">
-      <rect x="990" y="240" width="260" height="8" rx="2"/><rect x="990" y="266" width="220" height="8" rx="2"/><rect x="990" y="306" width="260" height="8" rx="2"/><rect x="990" y="332" width="200" height="8" rx="2"/>
+    <g class="tm">
+      <text x="990" y="248" font-size="13" fill="#8a8a95"># Vault — single region</text>
+      <text x="990" y="274" font-size="12" fill="#55555f">Remove validator_identity from all</text>
+      <text x="990" y="300" font-size="12" fill="#55555f">instruction handlers and state.</text>
+      <text x="990" y="330" font-size="12" fill="#55555f">Use per-region PDAs; collapse to one</text>
     </g>
+
+    <!-- frosted glass chrome overlays -->
+    <rect x="110" y="150" width="1180" height="46" rx="18" fill="url(#lg-surface)"/>
+    <rect x="110" y="178" width="1180" height="18" fill="url(#lg-surface)"/>
+    <!-- 1px top highlight -->
+    <path d="M128 151 h1144" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1"/>
+    <!-- subtle glass edge wrap on the whole window body -->
+    <rect x="110.5" y="150.5" width="1179" height="799" rx="17.5" fill="url(#lg-surface)" stroke="#ffffff" stroke-opacity="0.06"/>
   </g>
 
   <!-- Apple Pencil annotation (hand-drawn red) -->
+  <!-- soft glow bloom behind the ink -->
+  <g filter="url(#lg-glow)" opacity="0.9">
+    <path d="M560 690 C470 640 470 540 590 530 C720 520 760 620 690 680 C640 720 590 715 560 686"
+          fill="none" stroke="url(#lg-redglow)" stroke-width="26" stroke-linecap="round"/>
+    <path d="M430 600 q90 22 170 6" fill="none" stroke="url(#lg-redglow)" stroke-width="22" stroke-linecap="round"/>
+  </g>
+  <!-- crisp ink on top -->
   <path d="M560 690 C470 640 470 540 590 530 C720 520 760 620 690 680 C640 720 590 715 560 686"
         fill="none" stroke="#ff453a" stroke-width="6" stroke-linecap="round" opacity="0.92"/>
   <path d="M430 600 q90 22 170 6" fill="none" stroke="#ff453a" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
 
-  <!-- PencilKit tool palette -->
-  <g>
-    <rect x="470" y="92" width="460" height="64" rx="20" fill="#d9d9de"/>
-    <rect x="470" y="92" width="460" height="64" rx="20" fill="none" stroke="#000" stroke-opacity="0.12"/>
+  <!-- PencilKit tool palette — hero Liquid Glass element -->
+  <g filter="url(#lg-shadow)">
+    <!-- frosted translucent body -->
+    <rect x="470" y="92" width="460" height="64" rx="22" fill="url(#pk-glass)"/>
+    <!-- inner surface sheen + bright top specular edge -->
+    <rect x="470" y="92" width="460" height="64" rx="22" fill="url(#lg-surface)"/>
+    <rect x="470" y="92" width="460" height="64" rx="22" fill="url(#lg-sheen)"/>
+    <rect x="470" y="92" width="460" height="64" rx="22" fill="url(#lg-edge)" fill-opacity="0.6"/>
+    <rect x="470.5" y="92.5" width="459" height="63" rx="21.5" fill="none" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1"/>
+    <rect x="471" y="93" width="458" height="62" rx="21" fill="none" stroke="#000" stroke-opacity="0.10"/>
     <!-- grab handle -->
     <rect x="690" y="100" width="20" height="4" rx="2" fill="#9a9aa0"/>
     <!-- pens -->
@@ -89,10 +155,14 @@
     <!-- eraser/ruler -->
     <rect x="672" y="116" width="20" height="34" rx="3" fill="#bcbcc2"/>
     <rect x="700" y="116" width="14" height="34" rx="2" fill="#8a8a90"/>
-    <!-- color dots -->
-    <circle cx="838" cy="116" r="9" fill="#111"/><circle cx="864" cy="116" r="9" fill="#0A84FF"/><circle cx="890" cy="116" r="9" fill="#3DDC84"/>
-    <circle cx="838" cy="140" r="9" fill="#ffcc00"/><circle cx="864" cy="140" r="9" fill="#ff453a"/>
-    <circle cx="890" cy="140" r="9" fill="url(#pk-rainbow)"/>
-    <radialGradient id="pk-rainbow"><stop offset="0" stop-color="#ff7a1a"/><stop offset="1" stop-color="#8a2be2"/></radialGradient>
+    <!-- color dots as glossy glass beads -->
+    <g>
+      <circle cx="838" cy="116" r="9" fill="#111"/><circle cx="838" cy="116" r="9" fill="url(#lg-gloss)"/>
+      <circle cx="864" cy="116" r="9" fill="#0A84FF"/><circle cx="864" cy="116" r="9" fill="url(#lg-gloss)"/>
+      <circle cx="890" cy="116" r="9" fill="#3DDC84"/><circle cx="890" cy="116" r="9" fill="url(#lg-gloss)"/>
+      <circle cx="838" cy="140" r="9" fill="#ffcc00"/><circle cx="838" cy="140" r="9" fill="url(#lg-gloss)"/>
+      <circle cx="864" cy="140" r="9" fill="#ff453a"/><circle cx="864" cy="140" r="9" fill="url(#lg-gloss)"/>
+      <circle cx="890" cy="140" r="9" fill="url(#pk-rainbow)"/><circle cx="890" cy="140" r="9" fill="url(#lg-gloss)"/>
+    </g>
   </g>
 </svg>
