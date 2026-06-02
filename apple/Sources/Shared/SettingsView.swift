@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
 
 // A shared, extensible Settings surface for Copilot, Pilot, and Plotter.
 //
@@ -28,25 +31,87 @@ enum AppInfo {
 
 /// The settings sections shared across all three apps. Place inside a `Form`.
 struct SettingsSections: View {
+    /// The device's long-term public key (base64), loaded once from the
+    /// Keychain-backed identity (issue #51). `nil` while loading or on failure.
+    @State private var publicKey: String?
+    #if os(macOS)
+    /// Pilot presents its secure-messaging screen as a sheet (the macOS Settings
+    /// scene has no NavigationStack to push into).
+    @State private var showSecureMessaging = false
+    #endif
+
     var body: some View {
         Section {
             LabeledContent("Public key") {
-                Text("Not yet generated")
-                    .foregroundStyle(.secondary)
+                if let publicKey {
+                    Text(publicKey)
+                        .font(.system(.footnote, design: .monospaced))
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                } else {
+                    Text("Generating…")
+                        .foregroundStyle(.secondary)
+                }
             }
-            // Key exchange / trusted-peer management lands in #51; the entry
-            // point is present but disabled so the screen is wired end-to-end.
-            Button {
-                // Intentionally empty until key sharing ships (#51).
+            // Share the device's public key so a peer can enter it during
+            // pairing for the Noise IK handshake (issue #51).
+            if let publicKey {
+                #if os(iOS)
+                ShareLink(item: publicKey) {
+                    Label("Share device key…", systemImage: "key")
+                }
+                #else
+                Button {
+                    #if canImport(AppKit)
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(publicKey, forType: .string)
+                    #endif
+                } label: {
+                    Label("Copy device key", systemImage: "key")
+                }
+                #endif
+            }
+            // Copilot-only: peer-to-peer secure messaging over the encrypted
+            // channel (issue #51). Gated to the Copilot target so the screen,
+            // which lives in Sources/Copilot, doesn't leak into Pilot/Plotter.
+            #if os(iOS) && COPILOT
+            NavigationLink {
+                SecureMessagingView()
             } label: {
-                Label("Share device key…", systemImage: "key")
+                Label("Secure messaging…", systemImage: "lock.fill")
             }
-            .disabled(true)
+            #endif
+            // Pilot (macOS): the responder side of the same encrypted channel
+            // (issue #51, Phase 4). Presented as a sheet from the Settings window.
+            #if os(macOS)
+            Button {
+                showSecureMessaging = true
+            } label: {
+                Label("Secure messaging…", systemImage: "lock.fill")
+            }
+            #endif
         } header: {
             Text("Identity & Keys")
         } footer: {
-            Text("Exchange device keys to encrypt the peer-to-peer channel. Coming soon.")
+            Text("Share this device's public key with your peer to encrypt the peer-to-peer channel.")
         }
+        .task {
+            // Generate-or-load off the main actor; Keychain access can block.
+            publicKey = await Task.detached { DeviceIdentity.publicKeyBase64() }.value
+        }
+        #if os(macOS)
+        .sheet(isPresented: $showSecureMessaging) {
+            NavigationStack {
+                PilotSecureMessagingView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showSecureMessaging = false }
+                        }
+                    }
+            }
+        }
+        #endif
 
         Section("About") {
             LabeledContent("App", value: AppInfo.name)
