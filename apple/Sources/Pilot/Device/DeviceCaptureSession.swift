@@ -1,5 +1,6 @@
 import AVFoundation
 import AppKit
+import AudioToolbox
 import CoreMediaIO
 import Foundation
 import OSLog
@@ -37,21 +38,34 @@ final class DeviceCaptureSession: NSObject {
 
     @ObservationIgnored private let logger = Logger(subsystem: "app.blau.pilot.device", category: "capture")
     @ObservationIgnored private let audioPreview = AVCaptureAudioPreviewOutput()
-    @ObservationIgnored private let movieOutput = AVCaptureMovieFileOutput()
     @ObservationIgnored private let videoDataOutput = AVCaptureVideoDataOutput()
-    @ObservationIgnored private let frameDelegate = NextFrameCaptureDelegate()
+    @ObservationIgnored private let audioDataOutput = AVCaptureAudioDataOutput()
     @ObservationIgnored private let frameQueue = DispatchQueue(label: "app.blau.pilot.device.frame")
     @ObservationIgnored private let sessionQueue = DispatchQueue(label: "app.blau.pilot.device.capture")
-    @ObservationIgnored private let recordingDelegate = MovieRecordingDelegate()
+
+    /// Grabs one-shot frames (screenshots) and writes recordings to disk via
+    /// `AVAssetWriter`. We write the exact frames the session delivers — the
+    /// same ones the preview shows — rather than routing through
+    /// `AVCaptureMovieFileOutput`, whose output dimensions follow the session
+    /// preset. On macOS the preset can't be `.inputPriority` (iOS-only), so a
+    /// movie file output bakes a letterboxed 16:9 frame instead of the device's
+    /// tall screen; writing the data-output buffers ourselves preserves the
+    /// device's real aspect ratio (issue #56).
+    @ObservationIgnored private let coordinator = CaptureCoordinator()
 
     override init() {
         super.init()
         Self.enableScreenCaptureDevices()
-        applyHighestAvailableSessionPreset()
+        useDeviceNativeFormat()
         audioPreview.volume = 1.0
         videoDataOutput.alwaysDiscardsLateVideoFrames = true
-        videoDataOutput.setSampleBufferDelegate(frameDelegate, queue: frameQueue)
-        recordingDelegate.owner = self
+        videoDataOutput.setSampleBufferDelegate(coordinator, queue: frameQueue)
+        audioDataOutput.setSampleBufferDelegate(coordinator, queue: frameQueue)
+        coordinator.onFinish = { [weak self] url, errorMessage in
+            Task { @MainActor in
+                self?.recordingDidFinish(url: url, errorMessage: errorMessage)
+            }
+        }
         observeConnections()
     }
 
@@ -76,7 +90,7 @@ final class DeviceCaptureSession: NSObject {
 
     func stop() {
         if isRecording {
-            movieOutput.stopRecording()
+            coordinator.stopRecording()
         }
         detach()
     }
@@ -86,7 +100,7 @@ final class DeviceCaptureSession: NSObject {
     func toggleRecording() {
         guard status == .streaming else { return }
         if isRecording {
-            movieOutput.stopRecording()
+            coordinator.stopRecording()
         } else {
             startRecording()
         }
@@ -94,22 +108,24 @@ final class DeviceCaptureSession: NSObject {
 
     private func startRecording() {
         guard !isRecording else { return }
-        guard movieOutput.connection(with: .video) != nil else {
+        guard videoDataOutput.connection(with: .video) != nil else {
             lastError = "No video stream available to record."
             return
         }
         let url = Self.timestampedURL(folder: "Desktop", name: "iPhone Recording", ext: "mov")
-        movieOutput.startRecording(to: url, recordingDelegate: recordingDelegate)
+        coordinator.startRecording(to: url)
         isRecording = true
         lastError = nil
     }
 
-    fileprivate func recordingDidFinish(url: URL, error: Error?) {
+    fileprivate func recordingDidFinish(url: URL, errorMessage: String?) {
         isRecording = false
-        if let error {
-            lastError = "Recording failed: \(error.localizedDescription)"
-            logger.error("recording failed: \(error.localizedDescription)")
+        if let errorMessage {
+            lastError = "Recording failed: \(errorMessage)"
+            logger.error("recording failed: \(errorMessage)")
+            return
         }
+        verifyNativeAspectRatio(of: url)
     }
 
     // MARK: - Screenshot
@@ -118,7 +134,7 @@ final class DeviceCaptureSession: NSObject {
         guard status == .streaming else { return }
         Task { [weak self] in
             guard let self else { return }
-            guard let cgImage = await self.frameDelegate.nextFrame() else {
+            guard let cgImage = await self.coordinator.nextFrame() else {
                 self.lastError = "Couldn't grab a frame for the screenshot."
                 return
             }
@@ -135,7 +151,7 @@ final class DeviceCaptureSession: NSObject {
         guard status == .streaming else { return }
         Task { [weak self] in
             guard let self else { return }
-            guard let cgImage = await self.frameDelegate.nextFrame() else {
+            guard let cgImage = await self.coordinator.nextFrame() else {
                 self.lastError = "Couldn't grab a frame to copy."
                 return
             }
@@ -299,14 +315,18 @@ final class DeviceCaptureSession: NSObject {
         for input in session.inputs { session.removeInput(input) }
         for output in session.outputs { session.removeOutput(output) }
 
-        applyHighestAvailableSessionPreset()
-        configureHighestResolutionFormat(for: device)
+        useDeviceNativeFormat()
 
         do {
             let videoInput = try AVCaptureDeviceInput(device: device)
             if session.canAddInput(videoInput) {
                 session.addInput(videoInput)
             }
+            // Pin the device to its highest-res native format only after the
+            // input is live, so the `.inputPriority` session keeps the device's
+            // real aspect ratio instead of having it overridden when the input
+            // is added.
+            configureHighestResolutionFormat(for: device)
         } catch {
             logger.error("video input failed: \(error.localizedDescription)")
             status = .failed(error.localizedDescription)
@@ -322,14 +342,16 @@ final class DeviceCaptureSession: NSObject {
                 if session.canAddOutput(audioPreview) {
                     session.addOutput(audioPreview)
                 }
+                // Separate data output so recordings can capture audio too —
+                // the writer pulls sample buffers from here.
+                if session.canAddOutput(audioDataOutput) {
+                    session.addOutput(audioDataOutput)
+                }
             } catch {
                 logger.warning("audio input failed: \(error.localizedDescription)")
             }
         }
 
-        if session.canAddOutput(movieOutput) {
-            session.addOutput(movieOutput)
-        }
         if session.canAddOutput(videoDataOutput) {
             session.addOutput(videoDataOutput)
         }
@@ -382,12 +404,15 @@ final class DeviceCaptureSession: NSObject {
         return candidates.first { $0.localizedName == video.localizedName }
     }
 
-    private func applyHighestAvailableSessionPreset() {
-        for preset in [AVCaptureSession.Preset.hd4K3840x2160, .hd1920x1080, .high] {
-            if session.canSetSessionPreset(preset) {
-                session.sessionPreset = preset
-                return
-            }
+    /// Use the input device's own format instead of a fixed preset. A fixed
+    /// resolution preset (e.g. `.hd1920x1080`) forces 16:9, which letterboxes a
+    /// phone's taller screen in the recording. (`.inputPriority` would be ideal
+    /// but is iOS-only.) `.high` adapts to the device's native format, and we
+    /// then pin `activeFormat` via `configureHighestResolutionFormat`, so we
+    /// record at the device's real resolution and aspect ratio.
+    private func useDeviceNativeFormat() {
+        if session.canSetSessionPreset(.high) {
+            session.sessionPreset = .high
         }
     }
 
@@ -413,6 +438,21 @@ final class DeviceCaptureSession: NSObject {
             logger.warning("screen capture format selection failed: \(error.localizedDescription)")
         }
     }
+
+    /// Log the saved recording's real dimensions so we can confirm it kept the
+    /// device's native aspect ratio (a tall phone screen, not a 16:9 frame) —
+    /// read from the finished file, independent of the live preview (issue #56).
+    private func verifyNativeAspectRatio(of url: URL) {
+        let logger = self.logger
+        Task.detached(priority: .utility) {
+            let asset = AVURLAsset(url: url)
+            guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+                  let size = try? await track.load(.naturalSize) else { return }
+            let w = Int(size.width.rounded())
+            let h = Int(size.height.rounded())
+            logger.info("recording saved at \(w)x\(h) (\(h >= w ? "portrait" : "landscape"))")
+        }
+    }
 }
 
 private extension [AVFrameRateRange] {
@@ -421,12 +461,39 @@ private extension [AVFrameRateRange] {
     }
 }
 
-// MARK: - Frame & recording delegates
+// MARK: - Capture coordinator
 
-private final class NextFrameCaptureDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
+/// Receives video + audio sample buffers off the capture queue and does two
+/// jobs: hand back a single frame for screenshots, and write recordings to
+/// disk with `AVAssetWriter`. Writing the buffers ourselves (rather than via
+/// `AVCaptureMovieFileOutput`) is what keeps the recording at the device's
+/// native dimensions: the writer is sized from the first video frame's real
+/// `CMVideoFormatDescription`, so the file is exactly what the session
+/// delivers — the same frames the preview shows (issue #56).
+///
+/// All mutable state is guarded by `lock`. The two data outputs share one
+/// serial delivery queue, so video/audio callbacks never overlap; only
+/// `start`/`stopRecording` (called from the main actor) race them, and the
+/// lock serializes that.
+private final class CaptureCoordinator: NSObject,
+    AVCaptureVideoDataOutputSampleBufferDelegate,
+    AVCaptureAudioDataOutputSampleBufferDelegate,
+    @unchecked Sendable {
     private let lock = NSLock()
-    private var pending: CheckedContinuation<CGImage?, Never>?
     private let ciContext = CIContext()
+    private var pending: CheckedContinuation<CGImage?, Never>?
+
+    private var writer: AVAssetWriter?
+    private var videoInput: AVAssetWriterInput?
+    private var audioInput: AVAssetWriterInput?
+    private var recordingURL: URL?
+    private var armed = false      // start requested; writer is built on the first frame
+    private var finishing = false
+
+    /// Called on completion with the saved URL and an error description (if any).
+    var onFinish: (@Sendable (URL, String?) -> Void)?
+
+    // MARK: Screenshot
 
     func nextFrame() async -> CGImage? {
         await withCheckedContinuation { cont in
@@ -437,11 +504,64 @@ private final class NextFrameCaptureDelegate: NSObject, AVCaptureVideoDataOutput
         }
     }
 
+    // MARK: Recording control
+
+    func startRecording(to url: URL) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard writer == nil else { return }
+        recordingURL = url
+        armed = true
+        finishing = false
+    }
+
+    func stopRecording() {
+        lock.lock()
+        guard let writer, !finishing else {
+            // Armed but no frame ever arrived, or already stopping: just disarm.
+            armed = false
+            recordingURL = nil
+            lock.unlock()
+            return
+        }
+        finishing = true
+        let url = recordingURL ?? writer.outputURL
+        let callback = onFinish
+        videoInput?.markAsFinished()
+        audioInput?.markAsFinished()
+        lock.unlock()
+
+        writer.finishWriting { [weak self] in
+            let message = writer.status == .failed ? writer.error?.localizedDescription : nil
+            callback?(url, message)
+            guard let self else { return }
+            self.lock.lock()
+            self.writer = nil
+            self.videoInput = nil
+            self.audioInput = nil
+            self.recordingURL = nil
+            self.armed = false
+            self.finishing = false
+            self.lock.unlock()
+        }
+    }
+
+    // MARK: Sample delegate
+
     func captureOutput(
         _ output: AVCaptureOutput,
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        if output is AVCaptureVideoDataOutput {
+            serveScreenshot(sampleBuffer)
+            appendVideo(sampleBuffer)
+        } else if output is AVCaptureAudioDataOutput {
+            appendAudio(sampleBuffer)
+        }
+    }
+
+    private func serveScreenshot(_ sampleBuffer: CMSampleBuffer) {
         lock.lock()
         let cont = pending
         pending = nil
@@ -453,22 +573,66 @@ private final class NextFrameCaptureDelegate: NSObject, AVCaptureVideoDataOutput
             return
         }
         let ciImage = CIImage(cvImageBuffer: imageBuffer)
-        let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
-        cont.resume(returning: cgImage)
+        cont.resume(returning: ciContext.createCGImage(ciImage, from: ciImage.extent))
     }
-}
 
-private final class MovieRecordingDelegate: NSObject, AVCaptureFileOutputRecordingDelegate, @unchecked Sendable {
-    weak var owner: DeviceCaptureSession?
+    private func appendVideo(_ sampleBuffer: CMSampleBuffer) {
+        lock.lock()
+        defer { lock.unlock() }
+        if armed, writer == nil {
+            buildWriter(from: sampleBuffer)
+        }
+        guard let writer, let videoInput, !finishing else { return }
+        if writer.status == .unknown {
+            writer.startWriting()
+            writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        }
+        if writer.status == .writing, videoInput.isReadyForMoreMediaData {
+            videoInput.append(sampleBuffer)
+        }
+    }
 
-    func fileOutput(
-        _ output: AVCaptureFileOutput,
-        didFinishRecordingTo outputFileURL: URL,
-        from connections: [AVCaptureConnection],
-        error: Error?
-    ) {
-        Task { @MainActor in
-            self.owner?.recordingDidFinish(url: outputFileURL, error: error)
+    private func appendAudio(_ sampleBuffer: CMSampleBuffer) {
+        lock.lock()
+        defer { lock.unlock() }
+        // Only once the writer is live (video frame started the session) —
+        // appending audio before `startSession` would fail.
+        guard let writer, let audioInput, !finishing,
+              writer.status == .writing, audioInput.isReadyForMoreMediaData else { return }
+        audioInput.append(sampleBuffer)
+    }
+
+    /// Build the writer sized to the device's real frame dimensions. Called
+    /// with `lock` held, on the first video sample of a recording.
+    private func buildWriter(from sampleBuffer: CMSampleBuffer) {
+        guard let url = recordingURL,
+              let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
+        let dimensions = CMVideoFormatDescriptionGetDimensions(formatDescription)
+        do {
+            let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+
+            let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
+                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoWidthKey: Int(dimensions.width),
+                AVVideoHeightKey: Int(dimensions.height),
+            ])
+            videoInput.expectsMediaDataInRealTime = true
+            if writer.canAdd(videoInput) { writer.add(videoInput) }
+
+            let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVNumberOfChannelsKey: 2,
+                AVSampleRateKey: 44_100,
+                AVEncoderBitRateKey: 128_000,
+            ])
+            audioInput.expectsMediaDataInRealTime = true
+            if writer.canAdd(audioInput) { writer.add(audioInput) }
+
+            self.writer = writer
+            self.videoInput = videoInput
+            self.audioInput = audioInput
+        } catch {
+            armed = false
         }
     }
 }
