@@ -16,8 +16,6 @@ struct ContentView: View {
     @State private var gitStore = GitCommitStore()
     @State private var tasksStore = GitHubTasksStore()
     @State private var isDrawingActive = false
-    @State private var rootPathEditorWorkspaceID: UUID?
-    @State private var rootPathEditorText = ""
     @AppStorage("sidebar.pinnedExpanded") private var pinnedSectionExpanded = true
     @AppStorage("sidebar.workspacesExpanded") private var workspacesSectionExpanded = true
     @FocusState private var isBrowserURLFieldFocused: Bool
@@ -155,17 +153,6 @@ struct ContentView: View {
         .onDisappear { removeNotesToggleMonitor() }
         .onReceive(NotificationCenter.default.publisher(for: .pilotFocusBrowserAddressBar)) { _ in
             focusBrowserAddressBar()
-        }
-        .alert("Update Root Path", isPresented: rootPathEditorPresentedBinding) {
-            TextField("Root path", text: $rootPathEditorText)
-
-            Button("Cancel", role: .cancel) {
-                dismissRootPathEditor()
-            }
-
-            Button("Sync") {
-                syncEditedRootPath()
-            }
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -375,7 +362,7 @@ struct ContentView: View {
         .tag(SidebarSelection.workspace(workspace.id))
         .contextMenu {
             Button {
-                showRootPathEditor(for: workspace)
+                presentRootPathPicker(for: workspace)
             } label: {
                 Label("Update Root Path", systemImage: "arrow.triangle.2.circlepath")
             }
@@ -637,44 +624,29 @@ struct ContentView: View {
         return "Open project in \(ide!.displayName)"
     }
 
-    private var rootPathEditorPresentedBinding: Binding<Bool> {
-        Binding(
-            get: { rootPathEditorWorkspaceID != nil },
-            set: { isPresented in
-                if !isPresented {
-                    dismissRootPathEditor()
-                }
-            }
-        )
-    }
-
     private func syncSelectedWorkspaceRootPath() {
         store.selectedWorkspace?.syncDefaultRootPathIfNeeded()
     }
 
-    private func showRootPathEditor(for workspace: Workspace) {
-        rootPathEditorWorkspaceID = workspace.id
-        rootPathEditorText = workspace.rootPath
-    }
-
-    private func dismissRootPathEditor() {
-        rootPathEditorWorkspaceID = nil
-        rootPathEditorText = ""
-    }
-
-    private func syncEditedRootPath() {
-        guard let workspace = workspaceForRootPathEditor else {
-            dismissRootPathEditor()
-            return
+    /// Browse to and pick the workspace's root directory with AppKit's native
+    /// folder panel (issue #65). The panel only returns directories that exist,
+    /// so we get validation for free; cancelling leaves the path unchanged.
+    /// Pilot ships unsandboxed, so the returned path is usable directly with no
+    /// security-scoped bookmark.
+    private func presentRootPathPicker(for workspace: Workspace) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Set Root Path"
+        panel.message = "Choose the root directory for “\(workspace.name)”."
+        // Seed the browser at the current root when one is set.
+        if let current = workspace.effectiveRootPath {
+            panel.directoryURL = URL(fileURLWithPath: current)
         }
 
-        workspace.setRootPath(rootPathEditorText)
-        dismissRootPathEditor()
-    }
-
-    private var workspaceForRootPathEditor: Workspace? {
-        guard let rootPathEditorWorkspaceID else { return nil }
-        return store.workspaces.first { $0.id == rootPathEditorWorkspaceID }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        workspace.setRootPath(url.path)
     }
 
     private func syncInspectorRepo(_ repoPath: String?) {
