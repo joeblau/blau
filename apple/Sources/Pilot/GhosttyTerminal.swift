@@ -879,6 +879,15 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         // Cmd+V, Cmd+C, etc. before the active terminal sees them.
         guard window?.firstResponder === self else { return false }
 
+        // Let ⌘, fall through to the app menu so it opens Pilot's Settings
+        // window, instead of being swallowed by Ghostty's binding system.
+        if event.modifierFlags.contains(.command),
+           !event.modifierFlags.contains(.control),
+           !event.modifierFlags.contains(.option),
+           event.charactersIgnoringModifiers == "," {
+            return false
+        }
+
         if event.modifierFlags.contains(.command),
            !event.modifierFlags.contains(.control),
            !event.modifierFlags.contains(.option),
