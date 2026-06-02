@@ -222,7 +222,9 @@ private struct GitHubTaskRow: View {
     /// (it owns the terminal); we just announce the prompt.
     private func sendImplementPrompt() {
         let prompt = "Implement GitHub issue #\(task.number). "
-            + "Read it first with `gh issue view \(task.number)`, then build and apply the fix."
+            + "Read it first with `gh issue view \(task.number)`, then build and apply the fix. "
+            + "When you open the pull request, include `fixes #\(task.number)` in the commit "
+            + "message so merging auto-closes the issue."
         NotificationCenter.default.post(
             name: .pilotSendIssuePrompt,
             object: nil,

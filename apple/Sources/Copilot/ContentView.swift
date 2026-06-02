@@ -186,7 +186,7 @@ struct ContentView: View {
     private func deviceIcon(_ device: ConnectedDevice) -> some View {
         Image(systemName: device.kind.systemImageName)
             .symbolVariant(device.kind.usesFillVariant ? .fill : .none)
-            .foregroundStyle(device.isConnected ? .green : .red)
+            .foregroundStyle(device.isConnected ? .green : .secondary)
             .help(device.name ?? device.kind.displayName)
     }
 

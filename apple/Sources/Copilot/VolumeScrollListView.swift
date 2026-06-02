@@ -215,10 +215,12 @@ final class VolumeObserver {
     private let midpointVolume: Float = 0.5
     /// How long to wait after the first volume event before treating it as a
     /// single tap. A press-and-hold's first auto-repeat must land inside this
-    /// window to register as a hold; set above iOS's hardware key-repeat
-    /// initial delay (~0.4s) so a real hold is caught before any tap
-    /// navigation fires (which is what caused the up/down/up jitter). The cost
-    /// is short-tap navigation lags by this much.
+    /// window to register as a hold, so this MUST sit above iOS's hardware
+    /// key-repeat initial delay (~0.4s); otherwise the window closes before the
+    /// repeat lands and the hold is never seen — the press just navigates the
+    /// list (moves down) instead of recording. Confirmed on device: 400ms (and
+    /// below) fails this way; 450ms catches the hold. The cost is that a short
+    /// tap's navigation lags by this much.
     private static let holdDetectWindow: Duration = .milliseconds(450)
 
     private let tapHaptic = UIImpactFeedbackGenerator(style: .medium)
