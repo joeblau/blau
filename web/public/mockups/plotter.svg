@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1000" role="img" aria-label="Plotter on iPad: the Mac screen mirrored live over HEVC, marked up with an Apple Pencil annotation, with the PencilKit tool palette on screen.">
+  <defs>
+    <style>
+      .scr{fill:#09090C}.win{fill:#0D0D12}.bar{fill:#16161c}
+      .hair{stroke:#ffffff;stroke-opacity:.08;stroke-width:1}
+      .t{font-family:ui-sans-serif,system-ui,sans-serif}
+      .tm{font-family:ui-monospace,'SF Mono',monospace}
+      .pri{fill:#EDEDF2}.sec{fill:#8a8a95}.dim{fill:#55555f}
+    </style>
+  </defs>
+
+  <rect class="scr" width="1400" height="1000"/>
+
+  <!-- status bar -->
+  <text class="tm pri" x="40" y="40" font-size="20" font-weight="500">11:43 PM</text>
+  <text class="t sec" x="200" y="40" font-size="18">Sat May 30</text>
+  <g fill="#EDEDF2">
+    <path d="M1268 26 a9 9 0 0 1 13 0 l-6.5 7 z"/>
+    <text class="t" x="1300" y="40" font-size="17" fill="#EDEDF2">100%</text>
+    <rect x="1352" y="24" width="26" height="14" rx="3" fill="none" stroke="#EDEDF2" stroke-width="1.6"/><rect x="1354" y="26" width="22" height="10" rx="1.5"/>
+  </g>
+
+  <!-- mirrored Mac window -->
+  <g>
+    <rect class="win" x="110" y="150" width="1180" height="800" rx="18" stroke="#ffffff" stroke-opacity="0.08"/>
+    <rect class="bar" x="110" y="150" width="1180" height="46" rx="18"/>
+    <rect class="bar" x="110" y="178" width="1180" height="18"/>
+    <circle cx="140" cy="173" r="7" fill="#ff5f57"/><circle cx="164" cy="173" r="7" fill="#febc2e"/><circle cx="188" cy="173" r="7" fill="#28c840"/>
+    <line class="hair" x1="110" y1="196" x2="1290" y2="196"/>
+
+    <!-- mini sidebar -->
+    <rect x="110" y="196" width="190" height="754" fill="#0A0A0E"/>
+    <line class="hair" x1="300" y1="196" x2="300" y2="950"/>
+    <rect class="t" x="132" y="232" width="120" height="8" rx="3" fill="#ffffff" fill-opacity="0.1"/>
+    <rect x="132" y="262" width="100" height="8" rx="3" fill="#ffffff" fill-opacity="0.07"/>
+    <rect x="132" y="292" width="130" height="8" rx="3" fill="#ffffff" fill-opacity="0.07"/>
+    <rect x="124" y="320" width="160" height="26" rx="6" fill="#ffffff" fill-opacity="0.05"/>
+    <rect x="132" y="356" width="110" height="8" rx="3" fill="#ffffff" fill-opacity="0.07"/>
+
+    <!-- editor: colorful code lines -->
+    <g>
+      <!-- line numbers -->
+      <g fill="#3a3a44" font-size="13" class="tm">
+        <text x="330" y="252">1</text><text x="330" y="288">2</text><text x="330" y="324">3</text><text x="330" y="360">4</text><text x="330" y="396">5</text><text x="330" y="432">6</text><text x="330" y="468">7</text><text x="330" y="504">8</text><text x="330" y="540">9</text>
+      </g>
+      <!-- syntax bars -->
+      <rect x="370" y="244" width="90" height="9" rx="2" fill="#b48ead"/><rect x="470" y="244" width="150" height="9" rx="2" fill="#d8dee9" fill-opacity="0.5"/>
+      <rect x="400" y="280" width="120" height="9" rx="2" fill="#81a1c1"/><rect x="530" y="280" width="180" height="9" rx="2" fill="#d8dee9" fill-opacity="0.4"/>
+      <rect x="400" y="316" width="200" height="9" rx="2" fill="#a3be8c"/>
+      <rect x="430" y="352" width="160" height="9" rx="2" fill="#d8dee9" fill-opacity="0.4"/><rect x="600" y="352" width="90" height="9" rx="2" fill="#ebcb8b"/>
+      <rect x="430" y="388" width="240" height="9" rx="2" fill="#81a1c1"/>
+      <rect x="400" y="424" width="110" height="9" rx="2" fill="#b48ead"/><rect x="520" y="424" width="200" height="9" rx="2" fill="#d8dee9" fill-opacity="0.4"/>
+      <rect x="430" y="460" width="280" height="9" rx="2" fill="#a3be8c"/>
+      <rect x="400" y="496" width="150" height="9" rx="2" fill="#d8dee9" fill-opacity="0.4"/>
+      <rect x="370" y="532" width="90" height="9" rx="2" fill="#b48ead"/>
+    </g>
+
+    <!-- right edge faint preview column -->
+    <line class="hair" x1="960" y1="196" x2="960" y2="950" stroke-opacity="0.05"/>
+    <g fill="#ffffff" fill-opacity="0.05">
+      <rect x="990" y="240" width="260" height="8" rx="2"/><rect x="990" y="266" width="220" height="8" rx="2"/><rect x="990" y="306" width="260" height="8" rx="2"/><rect x="990" y="332" width="200" height="8" rx="2"/>
+    </g>
+  </g>
+
+  <!-- Apple Pencil annotation (hand-drawn red) -->
+  <path d="M560 690 C470 640 470 540 590 530 C720 520 760 620 690 680 C640 720 590 715 560 686"
+        fill="none" stroke="#ff453a" stroke-width="6" stroke-linecap="round" opacity="0.92"/>
+  <path d="M430 600 q90 22 170 6" fill="none" stroke="#ff453a" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+
+  <!-- PencilKit tool palette -->
+  <g>
+    <rect x="470" y="92" width="460" height="64" rx="20" fill="#d9d9de"/>
+    <rect x="470" y="92" width="460" height="64" rx="20" fill="none" stroke="#000" stroke-opacity="0.12"/>
+    <!-- grab handle -->
+    <rect x="690" y="100" width="20" height="4" rx="2" fill="#9a9aa0"/>
+    <!-- pens -->
+    <g transform="translate(508,150)">
+      <path d="M0 0 l8 -42 l8 42 z" fill="#3a3a40"/><rect x="-2" y="-30" width="20" height="6" fill="#FF7A1A"/>
+    </g>
+    <g transform="translate(548,150)">
+      <path d="M0 0 l8 -42 l8 42 z" fill="#3a3a40"/><rect x="-2" y="-28" width="20" height="6" fill="#3DDC84"/>
+    </g>
+    <g transform="translate(588,150)">
+      <path d="M0 0 l9 -42 l9 42 z" fill="#5a5a60"/>
+    </g>
+    <g transform="translate(630,150)">
+      <path d="M0 0 l8 -42 l8 42 z" fill="#3a3a40"/><rect x="-2" y="-30" width="20" height="6" fill="#ff453a"/>
+    </g>
+    <!-- eraser/ruler -->
+    <rect x="672" y="116" width="20" height="34" rx="3" fill="#bcbcc2"/>
+    <rect x="700" y="116" width="14" height="34" rx="2" fill="#8a8a90"/>
+    <!-- color dots -->
+    <circle cx="838" cy="116" r="9" fill="#111"/><circle cx="864" cy="116" r="9" fill="#0A84FF"/><circle cx="890" cy="116" r="9" fill="#3DDC84"/>
+    <circle cx="838" cy="140" r="9" fill="#ffcc00"/><circle cx="864" cy="140" r="9" fill="#ff453a"/>
+    <circle cx="890" cy="140" r="9" fill="url(#pk-rainbow)"/>
+    <radialGradient id="pk-rainbow"><stop offset="0" stop-color="#ff7a1a"/><stop offset="1" stop-color="#8a2be2"/></radialGradient>
+  </g>
+</svg>

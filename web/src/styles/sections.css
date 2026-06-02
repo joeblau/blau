@@ -344,11 +344,11 @@
   z-index: 2;
 }
 
-/* ---- Cell spans ---- */
-.apps__card--pilot   { grid-column: span 7; grid-row: span 2; }
-.apps__card--copilot { grid-column: span 5; }
-.apps__card--wingman { grid-column: span 4; }
-.apps__card--plotter { grid-column: span 8; }
+/* ---- Cell spans (2 rows: Pilot|Copilot, then Plotter|Wingman) ---- */
+.apps__card--pilot   { grid-column: span 8; }
+.apps__card--copilot { grid-column: span 4; }
+.apps__card--plotter { grid-column: span 8; order: 3; }
+.apps__card--wingman { grid-column: span 4; order: 4; }
 
 /* ---------------- Card header ---------------- */
 .apps__cardhead {
@@ -382,8 +382,9 @@
 .apps__card--pilot .apps__body { max-width: 56ch; }
 
 .apps__pilotshot {
-  margin-top: auto;
+  margin-block: auto;
   padding-top: var(--s-6);
+  width: 100%;
 }
 .apps__pane { box-shadow: var(--shadow-float); }
 .apps__paneimg {
@@ -401,14 +402,13 @@
 }
 .apps__card--pilot:hover .apps__paneimg img { transform: scale(1.015); }
 
-/* ---------------- Copilot (iPhone, bleeds bottom-right) ---------------- */
-.apps__card--copilot { padding-bottom: 0; }
+/* ---------------- Copilot (iPhone, centered) ---------------- */
 .apps__phone {
   position: relative;
-  margin-top: var(--s-5);
-  align-self: flex-end;
-  width: min(62%, 220px);
-  margin-bottom: -8%;
+  margin-block: auto;
+  padding-top: var(--s-5);
+  align-self: center;
+  width: min(64%, 230px);
   filter: drop-shadow(0 30px 60px rgba(0,0,0,0.55));
 }
 .apps__phone img {
@@ -434,8 +434,17 @@
 }
 .apps__card--wingman:hover .apps__watch img { transform: translateY(-3px) scale(1.02); }
 
-/* ---------------- Plotter (iPad in thin bezel) ---------------- */
-.apps__ipad { margin-top: auto; padding-top: var(--s-5); }
+/* ---------------- Plotter (full-width: text left, iPad right) ---------------- */
+.apps__card--plotter {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: clamp(var(--s-6), 4vw, var(--s-9));
+}
+.apps__card--plotter .apps__cardhead { grid-column: 1; grid-row: 1; align-self: end; margin-bottom: var(--s-4); }
+.apps__card--plotter .apps__body { grid-column: 1; grid-row: 2; align-self: start; }
+.apps__ipad { grid-column: 2; grid-row: 1 / 3; margin: 0; }
 .apps__bezel {
   position: relative;
   border-radius: var(--r-3);
@@ -471,10 +480,10 @@
 
 /* ---------------- Responsive ---------------- */
 @media (max-width: 1080px) {
-  .apps__card--pilot   { grid-column: span 12; grid-row: auto; }
-  .apps__card--copilot { grid-column: span 5; }
-  .apps__card--wingman { grid-column: span 5; }
-  .apps__card--plotter { grid-column: span 7; }
+  .apps__card--pilot   { grid-column: span 12; }
+  .apps__card--copilot { grid-column: span 6; }
+  .apps__card--wingman { grid-column: span 6; order: 0; }
+  .apps__card--plotter { grid-column: span 12; order: 0; }
 }
 
 @media (max-width: 760px) {
@@ -484,8 +493,12 @@
   .apps__card--wingman,
   .apps__card--plotter { grid-column: span 12; }
 
-  .apps__phone { width: min(58%, 200px); margin-bottom: -6%; }
-  .apps__watch { width: min(40%, 120px); }
+  /* Plotter back to a stacked card */
+  .apps__card--plotter { display: flex; }
+  .apps__ipad { padding-top: var(--s-5); }
+
+  .apps__phone { width: min(58%, 210px); }
+  .apps__watch { width: min(44%, 130px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
