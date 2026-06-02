@@ -1,36 +1,64 @@
-name: Deploy to GitHub Pages
+name: Deploy to Cloudflare
 
 on:
   push:
     branches: [main]
-    paths: ['workers/web/**']
+    paths: ['workers/**']
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
-  build:
+  # Decide which workers changed so we only redeploy what moved. A manual
+  # workflow_dispatch run deploys both (see the job `if:` conditions).
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      rendezvous: ${{ steps.filter.outputs.rendezvous }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'workers/web/**'
+            rendezvous:
+              - 'workers/rendezvous/**'
+
+  web:
+    needs: changes
+    if: ${{ needs.changes.outputs.web == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: withastro/action@v3
+      - uses: oven-sh/setup-bun@v2
+      - name: Install
+        run: bun install --frozen-lockfile
+        working-directory: workers/web
+      - name: Build site
+        run: bun run build
+        working-directory: workers/web
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
         with:
-          path: workers/web
-          node-version: 22
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/web
+          command: deploy
 
-  deploy:
-    needs: build
+  rendezvous:
+    needs: changes
+    if: ${{ needs.changes.outputs.rendezvous == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - uses: actions/checkout@v4
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/rendezvous
+          command: deploy

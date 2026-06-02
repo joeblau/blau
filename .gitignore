@@ -58,6 +58,10 @@ node_modules/
 workers/web/dist/
 workers/web/.astro/
 
+### Cloudflare Workers ###
+.wrangler/
+.dev.vars
+
 ### Build artifacts ###
 build/
 *.profraw
