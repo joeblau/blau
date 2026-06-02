@@ -6,6 +6,15 @@
   "observability": {
     "enabled": true
   },
+  // One Durable Object instance per pairing code holds both peers' sockets and
+  // relays messages between them.
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "RendezvousRoom" }]
+  },
+  // SQLite-backed class so the relay runs on the Workers free plan. It keeps
+  // sockets in memory and uses no storage, but the class must still be declared
+  // sqlite-backed.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RendezvousRoom"] }],
   "routes": [
     {
       "pattern": "rendezvous.blau.app",

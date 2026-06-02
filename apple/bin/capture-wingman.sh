@@ -8,14 +8,14 @@
 # representative fixture state with no live Pilot peer, waits for the UI to
 # settle, then grabs a PNG.
 #
-# Output: web/public/screenshots/wingman/01-wingman.png
+# Output: workers/web/public/screenshots/wingman/01-wingman.png
 #
 # Run from apple/:  ./bin/capture-wingman.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-OUT_DIR="$APPLE_DIR/../web/public/screenshots/wingman"
+OUT_DIR="$APPLE_DIR/../workers/web/public/screenshots/wingman"
 OUT="$OUT_DIR/01-wingman.png"
 mkdir -p "$OUT_DIR"
 

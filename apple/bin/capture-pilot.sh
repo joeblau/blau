@@ -13,14 +13,14 @@
 # PILOT_CAPTURE_DELAY to add more lead time, or run with INTERACTIVE=1 to be
 # prompted to press Return when the layout looks right.
 #
-# Output: web/public/screenshots/pilot/01-pilot.png
+# Output: workers/web/public/screenshots/pilot/01-pilot.png
 #
 # Run from apple/:  ./bin/capture-pilot.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-OUT_DIR="$APPLE_DIR/../web/public/screenshots/pilot"
+OUT_DIR="$APPLE_DIR/../workers/web/public/screenshots/pilot"
 OUT="$OUT_DIR/01-pilot.png"
 mkdir -p "$OUT_DIR"
 

@@ -5,7 +5,8 @@ Three-app ecosystem + landing page.
 ## Structure
 
 - `apple/` — Pilot (macOS), Copilot (iOS), Wingman (watchOS). Built with SwiftUI, XcodeGen, Swift 6.0. Run `xcodegen generate` from `apple/`.
-- `workers/web/` — Landing page at blau.app. Built with Astro, deployed to GitHub Pages via `.github/workflows/deploy.yml`.
+- `workers/web/` — Landing page at blau.app. Built with Astro, deployed to Cloudflare (Workers Static Assets) via `.github/workflows/deploy.yml`.
+- `workers/rendezvous/` — Cloudflare Worker (Durable Object WebSocket relay) that pairs blau peers across networks. Deployed alongside web by the same workflow.
 
 ## Skill routing
 

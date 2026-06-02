@@ -1,0 +1,20 @@
+{
+  // Deploys the built Astro site (./dist) as a Cloudflare Workers Static Assets
+  // project. There is no Worker script — Cloudflare's asset server serves the
+  // files directly. Build with `bun run build` first, then `wrangler deploy`.
+  "name": "blau-web",
+  "compatibility_date": "2026-06-02",
+  "assets": {
+    "directory": "./dist",
+    // Serve Astro's generated 404.html for unknown paths (falls back to a
+    // default 404 if the site has no 404 page).
+    "not_found_handling": "404-page"
+  }
+
+  // First deploy lands on https://blau-web.<account>.workers.dev — safe to test there.
+  //
+  // Uncommenting the route below CUTS blau.app OVER from GitHub Pages to this
+  // Worker on the next deploy (the zone is already on Cloudflare, since
+  // rendezvous.blau.app is). Flip it when you're ready to retire GitHub Pages:
+  // "routes": [{ "pattern": "blau.app", "custom_domain": true }]
+}

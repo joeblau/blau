@@ -13,7 +13,7 @@
 // UI-test bundles (CopilotUITests / PlotterUITests) inject that launch arg, so
 // captureScreenshots only needs to point at the right scheme + device.
 //
-// Output lands in web/public/screenshots/<app>/ so the landing page can ship
+// Output lands in workers/web/public/screenshots/<app>/ so the landing page can ship
 // the images directly.
 //
 // Usage (from apple/):
@@ -29,7 +29,7 @@ class Fastfile: LaneFile {
         captureScreenshots(
             project: .userDefined("blau.xcodeproj"),
             devices: .userDefined(["iPhone 16 Pro"]),
-            outputDirectory: "../web/public/screenshots/copilot",
+            outputDirectory: "../workers/web/public/screenshots/copilot",
             reinstallApp: .userDefined(true),
             clean: .userDefined(true),
             scheme: .userDefined("Copilot"),
@@ -42,7 +42,7 @@ class Fastfile: LaneFile {
         captureScreenshots(
             project: .userDefined("blau.xcodeproj"),
             devices: .userDefined(["iPad Pro 13-inch (M4)"]),
-            outputDirectory: "../web/public/screenshots/plotter",
+            outputDirectory: "../workers/web/public/screenshots/plotter",
             reinstallApp: .userDefined(true),
             clean: .userDefined(true),
             scheme: .userDefined("Plotter"),
