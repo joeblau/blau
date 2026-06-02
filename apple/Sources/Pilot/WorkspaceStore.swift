@@ -10,6 +10,14 @@ final class WorkspaceStore {
         didSet {
             if let id = selectedWorkspaceID {
                 UserDefaults.standard.set(id.uuidString, forKey: "selectedWorkspaceID")
+                // Looking at a workspace clears its "Action completed" badge,
+                // mirroring how selecting clears terminal bells.
+                if let workspace = workspaces.first(where: { $0.id == id }),
+                   workspace.actionBadgeCount != 0 {
+                    workspace.resetActionBadge()
+                    try? modelContext.save()
+                    changeCount += 1
+                }
             } else {
                 UserDefaults.standard.removeObject(forKey: "selectedWorkspaceID")
             }
@@ -49,6 +57,16 @@ final class WorkspaceStore {
 
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
+    }
+
+    /// Called by `WorkspaceActionWatcher` when a GitHub Action run completes
+    /// for a background workspace. Bumps its badge and refreshes observers +
+    /// the Copilot summaries.
+    func badgeActionCompletion(workspaceID: UUID) {
+        guard let workspace = workspaces.first(where: { $0.id == workspaceID }) else { return }
+        workspace.incrementActionBadge()
+        try? modelContext.save()
+        changeCount += 1
     }
 
     func togglePin(_ workspace: Workspace) {

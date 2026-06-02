@@ -77,6 +77,7 @@
 		E57F6CDE4BED1E1E9489FE9E /* GitHubTasksStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09CBC9A2EAF71B52D91F96DB /* GitHubTasksStore.swift */; };
 		E974BEB84F83FBDAD2A14AB3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E42AFD4B9A8EB5AE10637F0C /* Assets.xcassets */; };
 		EA6044046223AE65A20D870B /* MarkdownStyler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3773008E360B991866932E4A /* MarkdownStyler.swift */; };
+		EF6268702B8DB6CF936E2180 /* WorkspaceActionWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E831A131F5C50AD8808B7E /* WorkspaceActionWatcher.swift */; };
 		F797C21E5A72C28BD91D6073 /* GitCommitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */; };
 		FB51EDCD634335282B1FE07D /* FrameLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146BC5C13A2019B42354E198 /* FrameLink.swift */; };
 		FFB527B6162A6FC0DF966C77 /* SyncMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67FAA18AA33DB039B0026206 /* SyncMessages.swift */; };
@@ -201,6 +202,7 @@
 		898B7F76464636A04054FEA9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Wingman Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B4486B0848D4DDEE5E23D18 /* Pilot.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Pilot.entitlements; sourceTree = "<group>"; };
+		93E831A131F5C50AD8808B7E /* WorkspaceActionWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceActionWatcher.swift; sourceTree = "<group>"; };
 		97052041CFD5C5F3CAFA379C /* SharedTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SharedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9CFEC5B017F014E9A487D037 /* FrameProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameProtocolTests.swift; sourceTree = "<group>"; };
 		A0144CE36B7342F7D171F350 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -413,6 +415,7 @@
 				DCB7A71E179389DD6C888CCD /* ScreenMirror.swift */,
 				5A2C2E1B521C51A4B0B660B1 /* UIZoom.swift */,
 				1B3448A85CDA9475511475C2 /* Workspace.swift */,
+				93E831A131F5C50AD8808B7E /* WorkspaceActionWatcher.swift */,
 				84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */,
 				24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */,
 				CE2133599350108B03394D95 /* Browser */,
@@ -813,6 +816,7 @@
 				83D64D93C19B54470E4E1C2C /* SyncMessages.swift in Sources */,
 				506D51547D6AA3C40D9B1161 /* UIZoom.swift in Sources */,
 				A755A8C5DCFF1165E408136A /* Workspace.swift in Sources */,
+				EF6268702B8DB6CF936E2180 /* WorkspaceActionWatcher.swift in Sources */,
 				7C8C2A101382F27189DA38D6 /* WorkspaceStore.swift in Sources */,
 				61F220E0506458F5A49CEDE8 /* WorkspaceView.swift in Sources */,
 			);

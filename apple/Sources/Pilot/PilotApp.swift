@@ -26,6 +26,8 @@ struct PilotApp: App {
     /// happen on the iPhone now.
     @State private var isPeerRecording: Bool = false
     @State private var didSetupSync = false
+    /// Badges background workspaces when their GitHub Actions complete.
+    @State private var actionWatcher = WorkspaceActionWatcher()
 
     @AppStorage("ui.zoom") private var uiZoom: Double = UIZoomLadder.default
 
@@ -91,6 +93,7 @@ struct PilotApp: App {
                     _ = MouseBridge.shared.ensurePermissions()
                     headphoneDetector.start()
                     setupSync()
+                    actionWatcher.start(store: store)
                     frameSender.onClientCountChanged = { count in
                         Task { @MainActor in
                             let wasConnected = plotterClientCount > 0
