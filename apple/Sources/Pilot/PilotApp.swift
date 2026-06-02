@@ -28,6 +28,9 @@ struct PilotApp: App {
     @State private var didSetupSync = false
     /// Badges background workspaces when their GitHub Actions complete.
     @State private var actionWatcher = WorkspaceActionWatcher()
+    /// Auto-generated identity key, auto-exchanged with Copilot over the
+    /// encrypted channel (issue #51).
+    @State private var secureIdentity = SecureIdentity(role: .pilot)
 
     @AppStorage("ui.zoom") private var uiZoom: Double = UIZoomLadder.default
 
@@ -143,7 +146,10 @@ struct PilotApp: App {
                 .onChange(of: syncService.isConnected) {
                     guard syncService.isConnected else { return }
                     sendLocalDeviceStatus()
+                    // Auto-exchange device keys with Copilot once connected.
+                    secureIdentity.announce()
                 }
+                .environment(secureIdentity)
                 .onReceive(NotificationCenter.default.publisher(for: .pilotSendIssuePrompt)) { note in
                     // Issues inspector → paste an "implement this issue" prompt
                     // into the selected workspace's active terminal and submit
@@ -237,6 +243,7 @@ struct PilotApp: App {
         // shared Identity & Keys section.
         Settings {
             PilotSettingsView()
+                .environment(secureIdentity)
         }
     }
 
@@ -330,6 +337,7 @@ struct PilotApp: App {
         guard !didSetupSync else { return }
         didSetupSync = true
 
+        secureIdentity.send = { syncService.send($0) }
         syncService.onReceive = { (message: SyncMessage) in
             switch message {
             case .selectWorkspace(let sel):
@@ -400,6 +408,9 @@ struct PilotApp: App {
                 case .enter:
                     activeTerminalView?.sendEnter()
                 }
+            case .deviceKey(let announce):
+                // Auto-exchange device keys with Copilot (issue #51).
+                secureIdentity.receive(announce)
             }
         }
         syncService.start()

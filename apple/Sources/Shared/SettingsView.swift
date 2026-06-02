@@ -1,14 +1,15 @@
 import SwiftUI
-#if canImport(AppKit)
-import AppKit
-#endif
 
 // A shared, extensible Settings surface for Copilot, Pilot, and Plotter.
 //
 // `SettingsSections` is the cross-platform body (a set of `Section`s meant to
-// live inside a `Form`); it's the container we add to over time — pairing,
-// appearance, diagnostics, etc. For now it carries a placeholder Identity &
-// Keys section (the home for peer key sharing, #51) and an About section.
+// live inside a `Form`); it's the container we add to over time. It currently
+// carries Identity & Keys (this device's auto-generated public key, the paired
+// peer's auto-synced key, and a single Regenerate & re-sync action — issue #51)
+// and an About section.
+//
+// Identity & Keys only appears when a `SecureIdentity` is in the environment
+// (Copilot, Pilot); Plotter, which doesn't pair keys, shows just About.
 //
 // The iOS apps present it as a sheet via `SettingsButton`/`SettingsScreen`;
 // Pilot drops `SettingsSections` into a macOS `Settings { }` scene.
@@ -31,87 +32,48 @@ enum AppInfo {
 
 /// The settings sections shared across all three apps. Place inside a `Form`.
 struct SettingsSections: View {
-    /// The device's long-term public key (base64), loaded once from the
-    /// Keychain-backed identity (issue #51). `nil` while loading or on failure.
-    @State private var publicKey: String?
-    #if os(macOS)
-    /// Pilot presents its secure-messaging screen as a sheet (the macOS Settings
-    /// scene has no NavigationStack to push into).
-    @State private var showSecureMessaging = false
-    #endif
+    /// Provided by Copilot/Pilot; absent on Plotter (which doesn't pair keys).
+    @Environment(SecureIdentity.self) private var identity: SecureIdentity?
 
     var body: some View {
-        Section {
-            LabeledContent("Public key") {
-                if let publicKey {
-                    Text(publicKey)
-                        .font(.system(.footnote, design: .monospaced))
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                } else {
-                    Text("Generating…")
-                        .foregroundStyle(.secondary)
+        if let identity {
+            Section {
+                LabeledContent("This device") {
+                    keyValue(identity.localPublicKey, placeholder: "Generating…")
                 }
-            }
-            // Share the device's public key so a peer can enter it during
-            // pairing for the Noise IK handshake (issue #51).
-            if let publicKey {
-                #if os(iOS)
-                ShareLink(item: publicKey) {
-                    Label("Share device key…", systemImage: "key")
-                }
-                #else
-                Button {
-                    #if canImport(AppKit)
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(publicKey, forType: .string)
-                    #endif
-                } label: {
-                    Label("Copy device key", systemImage: "key")
-                }
-                #endif
-            }
-            // Copilot-only: peer-to-peer secure messaging over the encrypted
-            // channel (issue #51). Gated to the Copilot target so the screen,
-            // which lives in Sources/Copilot, doesn't leak into Pilot/Plotter.
-            #if os(iOS) && COPILOT
-            NavigationLink {
-                SecureMessagingView()
-            } label: {
-                Label("Secure messaging…", systemImage: "lock.fill")
-            }
-            #endif
-            // Pilot (macOS): the responder side of the same encrypted channel
-            // (issue #51, Phase 4). Presented as a sheet from the Settings window.
-            #if os(macOS)
-            Button {
-                showSecureMessaging = true
-            } label: {
-                Label("Secure messaging…", systemImage: "lock.fill")
-            }
-            #endif
-        } header: {
-            Text("Identity & Keys")
-        } footer: {
-            Text("Share this device's public key with your peer to encrypt the peer-to-peer channel.")
-        }
-        .task {
-            // Generate-or-load off the main actor; Keychain access can block.
-            publicKey = await Task.detached { DeviceIdentity.publicKeyBase64() }.value
-        }
-        #if os(macOS)
-        .sheet(isPresented: $showSecureMessaging) {
-            NavigationStack {
-                PilotSecureMessagingView()
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showSecureMessaging = false }
-                        }
+                LabeledContent("Paired device") {
+                    if let peer = identity.peerPublicKey {
+                        keyValue(peer, tint: .green)
+                    } else {
+                        Text("Waiting to sync…")
+                            .foregroundStyle(.secondary)
                     }
+                }
+                // The only control: roll a new identity key and push it to the
+                // paired device over the encrypted channel. Everything else is
+                // automatic.
+                Button {
+                    identity.regenerate()
+                } label: {
+                    Label("Regenerate & re-sync", systemImage: "arrow.triangle.2.circlepath")
+                }
+            } header: {
+                HStack(spacing: 6) {
+                    if identity.isSynced {
+                        Text("Synced")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.green)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.green.opacity(0.15), in: Capsule())
+                            .textCase(nil)
+                    }
+                    Text("Identity & Keys")
+                }
+            } footer: {
+                Text("Your device key is generated automatically and exchanged with your paired device over the encrypted connection — no setup required.")
             }
         }
-        #endif
 
         Section("About") {
             LabeledContent("App", value: AppInfo.name)
@@ -119,10 +81,24 @@ struct SettingsSections: View {
             LabeledContent("Build", value: AppInfo.build)
         }
     }
+
+    @ViewBuilder
+    private func keyValue(_ value: String?, placeholder: String = "—", tint: Color? = nil) -> some View {
+        if let value {
+            Text(value)
+                .font(.system(.footnote, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(tint ?? .primary)
+                .textSelection(.enabled)
+        } else {
+            Text(placeholder).foregroundStyle(.secondary)
+        }
+    }
 }
 
 #if os(iOS)
-/// Self-contained gear button for the iOS apps (Copilot, Plotter): tapping it
+/// Self-contained "•••" button for the iOS apps (Copilot, Plotter): tapping it
 /// presents the shared settings in a sheet. Owns its own presentation state, so
 /// a host only needs to drop it into a toolbar or overlay.
 struct SettingsButton: View {
@@ -132,7 +108,7 @@ struct SettingsButton: View {
         Button {
             isPresented = true
         } label: {
-            Image(systemName: "gearshape")
+            Image(systemName: "ellipsis")
         }
         .accessibilityLabel("Settings")
         .sheet(isPresented: $isPresented) {
