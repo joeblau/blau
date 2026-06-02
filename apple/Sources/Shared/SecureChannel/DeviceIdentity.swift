@@ -16,6 +16,9 @@ enum DeviceIdentity {
 
     /// Keychain generic-password account used to store the raw private key.
     private static let account = "app.blau.securechannel.identity"
+    /// Account for the paired peer's public key (base64), auto-synced over the
+    /// encrypted Multipeer channel (issue #51).
+    private static let peerAccount = "app.blau.securechannel.peer"
     /// Service scopes the item to this app family.
     private static let service = "app.blau.securechannel"
 
@@ -32,14 +35,14 @@ enum DeviceIdentity {
 
         if let cached { return cached }
 
-        if let raw = try readKeychain(),
+        if let raw = try readKeychain(account: account),
            let key = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: raw) {
             cached = key
             return key
         }
 
         let key = Curve25519.KeyAgreement.PrivateKey()
-        try writeKeychain(key.rawRepresentation)
+        try writeKeychain(key.rawRepresentation, account: account)
         cached = key
         return key
     }
@@ -49,6 +52,34 @@ enum DeviceIdentity {
     static func publicKeyBase64() -> String? {
         guard let key = try? loadOrCreate() else { return nil }
         return key.publicKey.rawRepresentation.base64EncodedString()
+    }
+
+    /// Discard the current identity and generate a fresh key pair (e.g. the
+    /// user tapped "Regenerate & re-sync"). The new public key must then be
+    /// re-announced to the peer.
+    @discardableResult
+    static func regenerate() throws -> Curve25519.KeyAgreement.PrivateKey {
+        lock.lock()
+        defer { lock.unlock() }
+        let key = Curve25519.KeyAgreement.PrivateKey()
+        try writeKeychain(key.rawRepresentation, account: account)
+        cached = key
+        return key
+    }
+
+    /// Persist the paired peer's public key (base64), trusting it for the
+    /// handshake. Overwrites any previously trusted peer.
+    static func storePeerPublicKey(_ base64: String) {
+        guard parsePeerPublicKey(base64) != nil,
+              let data = base64.data(using: .utf8) else { return }
+        try? writeKeychain(data, account: peerAccount)
+    }
+
+    /// The trusted peer's public key (base64), if one has been synced.
+    static func peerPublicKeyBase64() -> String? {
+        guard let data = try? readKeychain(account: peerAccount),
+              let value = String(data: data, encoding: .utf8) else { return nil }
+        return value
     }
 
     /// Parse a peer's shared base64 public key back into a CryptoKit key, or
@@ -64,7 +95,7 @@ enum DeviceIdentity {
 
     // MARK: - Keychain
 
-    private static func baseQuery() -> [String: Any] {
+    private static func baseQuery(account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -72,8 +103,8 @@ enum DeviceIdentity {
         ]
     }
 
-    private static func readKeychain() throws -> Data? {
-        var query = baseQuery()
+    private static func readKeychain(account: String) throws -> Data? {
+        var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
@@ -89,11 +120,11 @@ enum DeviceIdentity {
         }
     }
 
-    private static func writeKeychain(_ data: Data) throws {
-        // Replace any existing item so generation is idempotent.
-        SecItemDelete(baseQuery() as CFDictionary)
+    private static func writeKeychain(_ data: Data, account: String) throws {
+        // Replace any existing item so writes are idempotent.
+        SecItemDelete(baseQuery(account: account) as CFDictionary)
 
-        var attributes = baseQuery()
+        var attributes = baseQuery(account: account)
         attributes[kSecValueData as String] = data
         attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 

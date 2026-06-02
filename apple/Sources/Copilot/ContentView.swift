@@ -16,6 +16,9 @@ struct ContentView: View {
     /// Bumped after each recording cycle to re-arm volume observation, since
     /// `transcription.stop()` deactivates the shared audio session.
     @State private var rearmTrigger = 0
+    /// Auto-generated identity key, auto-exchanged with Pilot over the
+    /// encrypted channel (issue #51). Drives the Settings "Identity & Keys".
+    @State private var secureIdentity = SecureIdentity(role: .copilot)
 
     /// In demo mode we treat the peer as connected so the populated
     /// workspace list and trackpad inset render. The live `isConnected`
@@ -27,8 +30,6 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             mainContent
-            .navigationTitle("Copilot")
-            .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
                 deviceToolbar
             }
@@ -36,6 +37,7 @@ struct ContentView: View {
                 trackpadInset
             }
         }
+        .environment(secureIdentity)
         .task {
             guard !demoMode else {
                 seedDemoState()
@@ -49,6 +51,8 @@ struct ContentView: View {
         .onChange(of: syncService.isConnected) {
             guard syncService.isConnected else { return }
             sendDeviceStatus()
+            // Auto-exchange device keys with Pilot once connected.
+            secureIdentity.announce()
         }
     }
 
@@ -166,10 +170,12 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var deviceToolbar: some ToolbarContent {
-        // Settings gear + device connection status, top-left. Leading items
-        // stay visible in both the large and collapsed title states.
-        ToolbarItemGroup(placement: .topBarLeading) {
+        // "•••" settings entry, top-left.
+        ToolbarItem(placement: .topBarLeading) {
             SettingsButton()
+        }
+        // Device connection status, top-right.
+        ToolbarItemGroup(placement: .topBarTrailing) {
             ForEach(connectedDevices) { device in
                 deviceIcon(device)
             }
@@ -218,11 +224,14 @@ struct ContentView: View {
     }
 
     private func setupSync() {
+        secureIdentity.send = { syncService.send($0) }
         syncService.onReceive = { message in
             switch message {
             case .workspaceState(let state):
                 workspaces = state.workspaces
                 selectedID = state.selectedWorkspaceID
+            case .deviceKey(let announce):
+                secureIdentity.receive(announce)
             case .selectWorkspace, .selectTab, .deviceStatus, .mouseMove, .mouseClick,
                  .voiceRecord, .transcribedSpeech, .terminalInput:
                 break

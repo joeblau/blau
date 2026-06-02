@@ -54,6 +54,17 @@ enum SyncMessage: Codable, Sendable {
     case voiceRecord(VoiceRecordCommand)
     case transcribedSpeech(TranscribedSpeech)
     case terminalInput(TerminalInput)
+    /// Announces this device's long-term public key to the paired peer so the
+    /// two sides exchange keys automatically over the encrypted Multipeer
+    /// channel — no manual entry (issue #51).
+    case deviceKey(DeviceKeyAnnounce)
+}
+
+/// A device broadcasting its long-term Curve25519 public key (base64) to its
+/// paired peer, tagged with which app sent it.
+struct DeviceKeyAnnounce: Codable, Sendable {
+    let role: ConnectedDeviceAppRole
+    let publicKey: String
 }
 
 public struct AnnotationPoint: Codable, Sendable, Hashable {
