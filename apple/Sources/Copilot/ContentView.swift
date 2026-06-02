@@ -166,6 +166,9 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var deviceToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            SettingsButton()
+        }
         ToolbarItemGroup(placement: .topBarTrailing) {
             ForEach(connectedDevices) { device in
                 deviceIcon(device)
