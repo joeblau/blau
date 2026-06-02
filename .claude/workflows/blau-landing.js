@@ -169,7 +169,7 @@ Read the real Swift sources under apple/Sources/ — especially:
  - Shared/PeerSyncService.swift, Shared/FrameLink.swift, Shared/FrameProtocol.swift, Shared/TranscriptionService.swift, Shared/SyncMessages.swift
  - Plotter/*.swift, PlotterShared/*, PlotterWidgets/*
  - Copilot/*.swift, Wingman/**/*.swift
-Also read web/src/pages/index.astro and web/src/layouts/Layout.astro (the CURRENT landing page).
+Also read workers/web/src/pages/index.astro and workers/web/src/layouts/Layout.astro (the CURRENT landing page).
 
 Determine precisely: what each app does, what end-user features really exist (cite the file proving each), which frameworks are actually used and for what. IMPORTANT KNOWN ISSUE: the current page credits "MultipeerConnectivity" but the code imports Network.framework — verify which is real and list every wrong claim in 'corrections'. Be ruthless about accuracy; do not invent features. Return the schema.`,
   { label: 'codebase-truth', schema: TRUTH_SCHEMA }

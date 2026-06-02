@@ -14,7 +14,7 @@ open blau.xcodeproj
 ## Web (blau.app)
 
 ```bash
-cd web
+cd workers/web
 bun install
 bun run dev
 ```

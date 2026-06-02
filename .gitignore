@@ -55,8 +55,8 @@ xcuserdata/
 
 ### Web ###
 node_modules/
-web/dist/
-web/.astro/
+workers/web/dist/
+workers/web/.astro/
 
 ### Build artifacts ###
 build/
