@@ -21,6 +21,14 @@ struct ContentView: View {
             // diagnostic ticks don't re-render the canvas or video reps.
             SearchingOverlay(mirror: mirror)
         }
+        // Settings entry point. Top-leading so it clears the annotation
+        // toolbar (undo/clear/reset), which sits top-trailing.
+        .overlay(alignment: .topLeading) {
+            SettingsButton()
+                .font(.title2)
+                .tint(.white)
+                .padding()
+        }
     }
 }
 

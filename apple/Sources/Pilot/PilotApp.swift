@@ -231,6 +231,13 @@ struct PilotApp: App {
                 .disabled(!hasBrowserPaneInActiveWorkspace)
             }
         }
+
+        // Standard macOS Settings window (⌘,). A thin, extensible shell; the
+        // first real use is peer key sharing (#51), which drops into the
+        // shared Identity & Keys section.
+        Settings {
+            PilotSettingsView()
+        }
     }
 
     private func activeTerminalPane(in workspaceID: UUID?) -> Pane? {
@@ -432,5 +439,18 @@ private struct AppearanceReporter: View {
             .onChange(of: isConnected) { _, connected in
                 if connected { send(colorScheme == .dark) }
             }
+    }
+}
+
+/// Pilot's Settings window contents (⌘,). Reuses the shared `SettingsSections`
+/// (Identity & Keys + About) in a grouped macOS form. Extend by adding more
+/// sections here or in `SettingsSections`.
+private struct PilotSettingsView: View {
+    var body: some View {
+        Form {
+            SettingsSections()
+        }
+        .formStyle(.grouped)
+        .frame(width: 460, height: 380)
     }
 }
