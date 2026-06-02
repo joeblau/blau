@@ -107,6 +107,9 @@ targets:
         GENERATE_INFOPLIST_FILE: false
         INFOPLIST_FILE: Sources/Copilot/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
+        # Lets the shared SettingsView surface the Copilot-only secure
+        # messaging screen (issue #51) without leaking it into Pilot/Plotter.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: COPILOT
     dependencies:
       - target: Wingman Watch App
       - package: WhisperKit
