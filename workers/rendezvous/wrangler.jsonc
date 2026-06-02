@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "rendezvous",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-02",
+  "observability": {
+    "enabled": true
+  },
+  "routes": [
+    {
+      "pattern": "rendezvous.blau.app",
+      "custom_domain": true
+    }
+  ]
+}
