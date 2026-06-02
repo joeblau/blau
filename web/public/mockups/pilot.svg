@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-label="Pilot for macOS: a sidebar of workspaces beside split panes — a terminal showing a code diff and an agent run, a browser with a live price chart, a dev-server terminal, and a GitHub Actions activity feed.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1058" role="img" aria-label="Pilot for macOS: a sidebar of workspaces beside split panes — a terminal showing a code diff and an agent run, a browser with a live price chart, a dev-server terminal, and a GitHub Actions activity feed.">
   <defs>
     <linearGradient id="pl-chart" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#3DDC84" stop-opacity="0.22"/>
@@ -50,8 +50,45 @@
   </defs>
 
   <!-- canvas -->
-  <rect class="b0" width="1600" height="1000"/>
+  <rect class="b0" width="1600" height="1058"/>
 
+  <!-- ============ WINDOW TOOLBAR ============ -->
+  <rect x="0" y="0" width="1600" height="58" fill="#141419"/>
+  <rect x="0" y="0" width="1600" height="58" fill="url(#lg-surface)"/>
+  <rect x="0" y="0" width="1600" height="1" fill="#ffffff" fill-opacity="0.18"/>
+  <line class="hair" x1="0" y1="58" x2="1600" y2="58"/>
+  <!-- traffic lights -->
+  <circle cx="26" cy="29" r="7" fill="#ff5f57"/><ellipse cx="23.5" cy="26.5" rx="3" ry="2.2" fill="url(#lg-gloss)"/>
+  <circle cx="50" cy="29" r="7" fill="#febc2e"/><ellipse cx="47.5" cy="26.5" rx="3" ry="2.2" fill="url(#lg-gloss)"/>
+  <circle cx="74" cy="29" r="7" fill="#28c840"/><ellipse cx="71.5" cy="26.5" rx="3" ry="2.2" fill="url(#lg-gloss)"/>
+  <!-- sidebar-toggle -->
+  <rect x="112" y="18" width="22" height="22" rx="4" fill="none" stroke="#8a8a95" stroke-width="1.6"/>
+  <line x1="121" y1="18" x2="121" y2="40" stroke="#8a8a95" stroke-width="1.6"/>
+  <!-- new-tab + -->
+  <line x1="156" y1="29" x2="170" y2="29" stroke="#8a8a95" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="163" y1="22" x2="163" y2="36" stroke="#8a8a95" stroke-width="1.8" stroke-linecap="round"/>
+  <!-- workspace title -->
+  <text x="192" y="36" font-size="18" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="500" fill="#EDEDF2">blau.app</text>
+  <!-- RIGHT cluster (~x1356–1574, vertically centered on y29) -->
+  <!-- terminal -->
+  <rect x="1345" y="18" width="22" height="22" rx="4" fill="none" stroke="#8a8a95" stroke-width="1.5"/>
+  <path d="M1350 25 l4 4 l-4 4" fill="none" stroke="#8a8a95" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="1356" y1="34" x2="1362" y2="34" stroke="#8a8a95" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- compass -->
+  <circle cx="1392" cy="29" r="11" fill="none" stroke="#8a8a95" stroke-width="1.5"/>
+  <path d="M1397 24 l-3 6 l-6 3 l3 -6 z" fill="none" stroke="#8a8a95" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- device -->
+  <rect x="1424" y="17" width="14" height="24" rx="3" fill="none" stroke="#8a8a95" stroke-width="1.5"/>
+  <line x1="1428" y1="37" x2="1434" y2="37" stroke="#8a8a95" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- wrench -->
+  <path d="M1474 19 a6 6 0 1 0 5.5 9 l5 5 l2.5 -2.5 l-5 -5 a6 6 0 0 0 -7.5 -6.5 l3.5 3.5 l-2 2 l-3.5 -3.5 z" fill="none" stroke="#8a8a95" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- A glyph -->
+  <text x="1510" y="36" font-size="18" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="600" fill="#8a8a95" text-anchor="middle">A</text>
+  <!-- right-panel toggle -->
+  <rect x="1551" y="18" width="22" height="22" rx="4" fill="none" stroke="#8a8a95" stroke-width="1.5"/>
+  <line x1="1566" y1="18" x2="1566" y2="40" stroke="#8a8a95" stroke-width="1.5"/>
+
+  <g transform="translate(0,58)">
   <!-- ============ SIDEBAR ============ -->
   <rect class="b1" width="252" height="1000"/>
   <!-- frosted glass overlay -->
@@ -59,26 +96,51 @@
   <!-- bright right-edge hairline -->
   <rect x="250" y="0" width="2" height="1000" fill="#ffffff" fill-opacity="0.12"/>
   <line class="hair" x1="252" y1="0" x2="252" y2="1000"/>
-  <text class="lbld" x="24" y="46" font-size="11" letter-spacing="1.5">PINNED</text>
-  <text class="lbl" x="24" y="80" font-size="14">Excalidraw</text>
-  <text class="lbl" x="24" y="110" font-size="14">joeblau.com</text>
-  <text class="lbld" x="24" y="160" font-size="11" letter-spacing="1.5">WORKSPACES</text>
-  <!-- amber liquid-glass selection pill: glow bloom behind, glass fill, top edge -->
-  <ellipse cx="126" cy="192" rx="118" ry="22" fill="url(#lg-amberglow)" filter="url(#lg-glow)"/>
-  <rect x="12" y="176" width="228" height="32" rx="10" fill="url(#lg-amberglass)"/>
-  <rect x="12" y="176" width="228" height="1.5" rx="0.75" fill="#FFB877" fill-opacity="0.5"/>
-  <rect x="12" y="176" width="2.5" height="32" rx="1" fill="#FF7A1A"/>
-  <text class="amber" x="26" y="198" font-size="14">bloxwap.com</text>
-  <text class="lbl" x="26" y="240" font-size="14">blau.app</text>
-  <text class="lbl" x="26" y="276" font-size="14">submap.ai</text>
-  <text class="lbl" x="26" y="312" font-size="14">veblenhype.com</text>
-  <text class="lbl" x="26" y="348" font-size="14">TalkText</text>
-  <circle cx="24" cy="960" r="4" class="green"/>
-  <circle cx="22.5" cy="958.5" r="1.4" fill="#ffffff" fill-opacity="0.75"/>
-  <text class="lbl" x="40" y="965" font-size="12">Mic Idle</text>
-  <rect x="196" y="956" width="10" height="8" rx="2" class="green" fill-opacity="0.7"/>
-  <rect x="212" y="956" width="10" height="8" rx="2" class="green" fill-opacity="0.7"/>
-  <rect x="228" y="956" width="10" height="8" rx="2" class="green" fill-opacity="0.7"/>
+  <!-- Notes row (unselected) with note/page icon -->
+  <rect x="24" y="22" width="13" height="16" rx="2.5" fill="none" stroke="#8a8a95" stroke-width="1.4"/>
+  <line x1="28" y1="27" x2="33" y2="27" stroke="#8a8a95" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="28" y1="31" x2="33" y2="31" stroke="#8a8a95" stroke-width="1.2" stroke-linecap="round"/>
+  <text x="50" y="36" font-size="14" font-family="ui-sans-serif,system-ui,sans-serif" fill="#c9c9d2">Notes</text>
+  <!-- Pinned -->
+  <text class="lbld" x="24" y="80" font-size="11" letter-spacing="1.5" fill="#6a6a74" fill-opacity="1">PINNED</text>
+  <text x="24" y="110" font-size="14" font-family="ui-sans-serif,system-ui,sans-serif" fill="#c9c9d2">Browser</text>
+  <text x="24" y="140" font-size="14" font-family="ui-sans-serif,system-ui,sans-serif" fill="#c9c9d2">bloxwap.com</text>
+  <text x="24" y="170" font-size="14" font-family="ui-sans-serif,system-ui,sans-serif" fill="#c9c9d2">tapsiren.com</text>
+  <text x="24" y="200" font-size="14" font-family="ui-sans-serif,system-ui,sans-serif" fill="#c9c9d2">taptrade.tv</text>
+  <!-- Workspaces -->
+  <text class="lbld" x="24" y="250" font-size="11" letter-spacing="1.5" fill="#6a6a74" fill-opacity="1">WORKSPACES</text>
+  <!-- selected blau.app: neutral gray frosted pill -->
+  <rect x="12" y="266" width="228" height="32" rx="10" fill="url(#lg-surface)"/>
+  <rect x="12" y="266" width="228" height="1.5" rx="0.75" fill="#ffffff" fill-opacity="0.10"/>
+  <text x="26" y="288" font-size="14" font-family="ui-sans-serif,system-ui,sans-serif" fill="#5b9dff">blau.app</text>
+  <text x="26" y="320" font-size="14" font-family="ui-sans-serif,system-ui,sans-serif" fill="#c9c9d2">turtle</text>
+  <text x="26" y="350" font-size="14" font-family="ui-sans-serif,system-ui,sans-serif" fill="#c9c9d2">submap.ai</text>
+  <text x="26" y="380" font-size="14" font-family="ui-sans-serif,system-ui,sans-serif" fill="#c9c9d2">veblenhype.com</text>
+  <text x="26" y="410" font-size="14" font-family="ui-sans-serif,system-ui,sans-serif" fill="#c9c9d2">TalkText</text>
+  <text x="26" y="440" font-size="14" font-family="ui-sans-serif,system-ui,sans-serif" fill="#c9c9d2">joeblau.com</text>
+  <text x="26" y="470" font-size="14" font-family="ui-sans-serif,system-ui,sans-serif" fill="#c9c9d2">Workspace 10</text>
+  <!-- footer: Mic Idle (left) -->
+  <circle cx="24" cy="930" r="4" class="green"/>
+  <circle cx="22.5" cy="928.5" r="1.4" fill="#ffffff" fill-opacity="0.75"/>
+  <!-- tiny mic glyph -->
+  <rect x="38" y="922" width="6" height="9" rx="3" fill="none" stroke="#8a8a95" stroke-width="1.2"/>
+  <path d="M36 929 a5 5 0 0 0 10 0" fill="none" stroke="#8a8a95" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="41" y1="934" x2="41" y2="937" stroke="#8a8a95" stroke-width="1.2"/>
+  <text class="lbl" x="52" y="934" font-size="12">Mic Idle</text>
+  <!-- footer: device icons + status dot (right) -->
+  <!-- phone -->
+  <rect x="150" y="921" width="11" height="18" rx="2.5" fill="none" stroke="#8a8a95" stroke-width="1.3"/>
+  <line x1="153.5" y1="936" x2="157.5" y2="936" stroke="#8a8a95" stroke-width="1.3" stroke-linecap="round"/>
+  <!-- tablet -->
+  <rect x="170" y="922" width="15" height="16" rx="2.5" fill="none" stroke="#8a8a95" stroke-width="1.3"/>
+  <line x1="183" y1="925" x2="183" y2="935" stroke="#8a8a95" stroke-width="1.3" stroke-linecap="round"/>
+  <!-- watch -->
+  <rect x="195" y="924" width="12" height="12" rx="3.5" fill="none" stroke="#8a8a95" stroke-width="1.3"/>
+  <line x1="198" y1="921" x2="204" y2="921" stroke="#8a8a95" stroke-width="1.3" stroke-linecap="round"/>
+  <line x1="198" y1="939" x2="204" y2="939" stroke="#8a8a95" stroke-width="1.3" stroke-linecap="round"/>
+  <!-- status dot -->
+  <circle cx="222" cy="930" r="4" class="green"/>
+  <circle cx="220.5" cy="928.5" r="1.4" fill="#ffffff" fill-opacity="0.75"/>
 
   <!-- ============ HEADER STRIP ============ -->
   <rect class="bar" x="252" y="0" width="1348" height="44"/>
@@ -90,13 +152,29 @@
   <!-- 1px top highlight -->
   <rect x="252" y="0" width="1348" height="1" fill="#ffffff" fill-opacity="0.18"/>
   <line class="hair" x1="252" y1="44" x2="1600" y2="44"/>
-  <text class="lbl" x="482" y="28" font-size="13" text-anchor="middle">⌨ Terminal</text>
-  <text class="lbl" x="876" y="28" font-size="13" text-anchor="middle">Browser</text>
-  <text class="lbl" x="1173" y="28" font-size="13" text-anchor="middle">Terminal</text>
-  <text class="amber" x="1330" y="28" font-size="13">Actions</text>
-  <rect x="1330" y="36" width="48" height="2" rx="1" fill="#FF7A1A"/>
-  <text class="lbl" x="1410" y="28" font-size="13" fill="#5a5a64">Commits</text>
-  <text class="lbl" x="1500" y="28" font-size="13" fill="#5a5a64">Files</text>
+  <!-- pane tabs: active pill behind first Terminal -->
+  <rect x="266" y="10" width="118" height="26" rx="7" fill="#ffffff" fill-opacity="0.07"/>
+  <rect x="266" y="10" width="118" height="1" rx="0.5" fill="#ffffff" fill-opacity="0.18"/>
+  <!-- tab 1: Terminal (active) -->
+  <path d="M280 19 l4 4 l-4 4" fill="none" stroke="#8a8a95" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="285" y1="27" x2="290" y2="27" stroke="#8a8a95" stroke-width="1.4" stroke-linecap="round"/>
+  <text class="lbl" x="300" y="28" font-size="13">Terminal</text>
+  <!-- tab 2: Browser (compass) -->
+  <circle cx="744" cy="23" r="7" fill="none" stroke="#8a8a95" stroke-width="1.3"/>
+  <path d="M747 20 l-2 4 l-4 2 l2 -4 z" fill="none" stroke="#8a8a95" stroke-width="1.3" stroke-linejoin="round"/>
+  <text class="lbl" x="758" y="28" font-size="13">Browser</text>
+  <!-- tab 3: Terminal -->
+  <path d="M1052 19 l4 4 l-4 4" fill="none" stroke="#8a8a95" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="1057" y1="27" x2="1062" y2="27" stroke="#8a8a95" stroke-width="1.4" stroke-linecap="round"/>
+  <text class="lbl" x="1072" y="28" font-size="13">Terminal</text>
+  <!-- four tabs: Actions  Tasks  Commits  Files -->
+  <text class="lbl" x="1322" y="28" font-size="13">Actions</text>
+  <!-- Tasks active: neutral gray pill + faint top edge -->
+  <rect x="1383" y="11" width="58" height="26" rx="7" fill="url(#lg-surface)"/>
+  <rect x="1383" y="11" width="58" height="1" rx="0.5" fill="#ffffff" fill-opacity="0.10"/>
+  <text x="1397" y="28" font-size="13" font-family="ui-monospace,'SF Mono',monospace" fill="#EDEDF2">Tasks</text>
+  <text class="lbl" x="1455" y="28" font-size="13">Commits</text>
+  <text class="lbl" x="1545" y="28" font-size="13">Files</text>
 
   <!-- pane dividers -->
   <line class="hair" x1="712" y1="44" x2="712" y2="1000"/>
@@ -288,55 +366,22 @@
     <rect x="1306" y="44" width="294" height="956" fill="url(#lg-surface)"/>
     <!-- left-edge highlight -->
     <rect x="1306" y="44" width="2" height="956" fill="#ffffff" fill-opacity="0.12"/>
-    <g font-family="ui-monospace,monospace">
-      <!-- 8 entries -->
-      <g>
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">fix: remove orphan accounts from</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">initialize, use per-region PDAs</text>
-        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Production · main</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">f1c4d87</text>
-        <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
-      </g>
-      <g transform="translate(0,108)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">feat: zero-downtime LP deposits</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">and withdrawals via rollup</text>
-        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Preview · feat/zero-downtime-lp</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">29b755a</text>
-        <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
-      </g>
-      <g transform="translate(0,216)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">refactor: simplify to single-region</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">deployment, fix price oracle</text>
-        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Production · main</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">142cce1</text>
-        <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
-      </g>
-      <g transform="translate(0,324)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">feat: initialize all 3 regions</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">(US, EU, AS) in deploy tooling</text>
-        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Preview · feat/multi-region-init</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">82b0b56</text>
-        <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
-      </g>
-      <g transform="translate(0,432)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">chore: bump anchor-lang to 0.30.1</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">and solana-program 1.18</text>
-        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Production · main</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">4567fab</text>
-        <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
-      </g>
-      <g transform="translate(0,540)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">test: cover apply_pending_lp_delta</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">integration paths</text>
-        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Preview · test/lp-delta</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">2982da0</text>
-        <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
-      </g>
-      <g transform="translate(0,648)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">fix: guard stale ephemeral rollup</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">commits on resume</text>
-        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Production · main</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">7efef16</text>
-        <line class="hair" x1="1344" y1="150" x2="1584" y2="150" stroke-opacity="0.05"/>
-      </g>
-      <g transform="translate(0,756)">
-        <circle cx="1324" cy="84" r="8" fill="#3DDC84" fill-opacity="0.28"/><ellipse cx="1321" cy="81" rx="3.5" ry="2.6" fill="url(#lg-gloss)"/><path d="M1320 84 l3 3 l5 -6" stroke="#3DDC84" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="1344" y="80" font-size="11.5" fill="#c9c9d2">docs: update REQUIREMENTS for the</text><text x="1344" y="94" font-size="11.5" fill="#c9c9d2">single-region vault model</text>
-        <text x="1344" y="113" font-size="9.5" fill="#FF9A4D" fill-opacity="0.8">Preview · docs/requirements</text><text x="1344" y="129" font-size="9.5" fill="#5a5a64">c3c55c2</text>
-      </g>
+    <!-- Tasks view: GitHub issues list -->
+    <text x="1324" y="80" font-size="11" font-family="ui-sans-serif,system-ui,sans-serif" fill="#6a6a74">2 open</text>
+    <!-- Issue #49 -->
+    <g>
+      <text x="1324" y="116" font-size="12.5" font-family="ui-monospace,'SF Mono',monospace" fill="#5b9dff">#49</text>
+      <text x="1324" y="138" font-size="13" font-family="ui-sans-serif,system-ui,sans-serif" fill="#d9d9df">Add Turborepo at the repo root to</text>
+      <text x="1324" y="158" font-size="13" font-family="ui-sans-serif,system-ui,sans-serif" fill="#d9d9df">orchestrate the JS workspace(s)</text>
+      <line class="hair" x1="1324" y1="182" x2="1584" y2="182" stroke-opacity="0.06"/>
     </g>
+    <!-- Issue #47 -->
+    <g>
+      <text x="1324" y="216" font-size="12.5" font-family="ui-monospace,'SF Mono',monospace" fill="#5b9dff">#47</text>
+      <text x="1324" y="238" font-size="13" font-family="ui-sans-serif,system-ui,sans-serif" fill="#d9d9df">Tasks list clips the first item when</text>
+      <text x="1324" y="258" font-size="13" font-family="ui-sans-serif,system-ui,sans-serif" fill="#d9d9df">a new issue is injected</text>
+      <line class="hair" x1="1324" y1="282" x2="1584" y2="282" stroke-opacity="0.06"/>
+    </g>
+  </g>
   </g>
 </svg>
