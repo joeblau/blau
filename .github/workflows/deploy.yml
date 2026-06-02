@@ -48,6 +48,9 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: workers/web
           command: deploy
+          # 4.x is required to read wrangler.jsonc (jsonc config landed in 3.91)
+          # and to deploy assets-only Workers. The action defaults to 3.90.0.
+          wranglerVersion: "4"
 
   rendezvous:
     needs: changes
@@ -65,3 +68,5 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: workers/rendezvous
           command: deploy
+          # 4.x reads wrangler.jsonc and supports SQLite-backed Durable Objects.
+          wranglerVersion: "4"
