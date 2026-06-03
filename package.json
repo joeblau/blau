@@ -1,0 +1,15 @@
+{
+  "name": "blau",
+  "private": true,
+  "workspaces": ["workers/*"],
+  "packageManager": "bun@1.3.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "preview": "turbo run preview",
+    "deploy": "turbo run deploy"
+  },
+  "devDependencies": {
+    "turbo": "^2"
+  }
+}

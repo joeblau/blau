@@ -58,6 +58,9 @@ node_modules/
 workers/web/dist/
 workers/web/.astro/
 
+### Turborepo ###
+.turbo/
+
 ### Cloudflare Workers ###
 .wrangler/
 .dev.vars

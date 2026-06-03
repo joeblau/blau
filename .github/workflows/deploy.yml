@@ -48,6 +48,9 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: workers/web
           command: deploy
+          # The repo is a Bun workspace with a single root bun.lock, so name the
+          # package manager explicitly rather than relying on a per-dir lockfile.
+          packageManager: bun
           # 4.x is required to read wrangler.jsonc (jsonc config landed in 3.91)
           # and to deploy assets-only Workers. The action defaults to 3.90.0.
           wranglerVersion: "4"
@@ -58,8 +61,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # wrangler-action uses the repo's package manager to install wrangler; the
-      # rendezvous worker has a bun.lock, so bun must be on the runner.
+      # wrangler-action installs wrangler with the package manager named below;
+      # the repo is a Bun workspace (single root bun.lock), so bun must be on
+      # the runner.
       - uses: oven-sh/setup-bun@v2
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
@@ -68,5 +72,8 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: workers/rendezvous
           command: deploy
+          # The repo is a Bun workspace with a single root bun.lock, so name the
+          # package manager explicitly rather than relying on a per-dir lockfile.
+          packageManager: bun
           # 4.x reads wrangler.jsonc and supports SQLite-backed Durable Objects.
           wranglerVersion: "4"
