@@ -471,6 +471,16 @@ struct TabItemContent: View {
 
             Spacer(minLength: 0)
 
+            // Device panes mirror a connected iPhone — surface a one-click jump
+            // to Safari's remote Web Inspector for debugging the device's web
+            // content right here on the pane (#75).
+            if isHovering && pane.kind == .device {
+                headerButton(systemName: "safari",
+                             help: "Debug this device in Safari Web Inspector",
+                             action: SafariWebInspector.open)
+                    .transition(.opacity)
+            }
+
             if isHovering {
                 headerButton(systemName: "eye.slash", help: "Hide \(paneTitle)", action: onHide)
                     .transition(.opacity)
