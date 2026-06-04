@@ -416,6 +416,16 @@ struct ContentView: View {
         }
         .disabled(!isStreaming)
         .help("Copy a screenshot of the iPhone screen to the clipboard")
+
+        // Same hammer the browser pane shows — opens the debugger for the
+        // phone. Safari hosts iOS remote Web Inspector; this brings it
+        // frontmost with the connected device ready (#75).
+        Button {
+            SafariWebInspector.open()
+        } label: {
+            Label("Developer Tools", systemImage: "hammer")
+        }
+        .help("Open Safari Web Inspector to debug this device")
     }
 
     @ViewBuilder
