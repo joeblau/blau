@@ -171,13 +171,28 @@ struct GitHubTasksView: View {
         // a later poll errors out, so the inspector never blinks to an error
         // screen mid-poll.
         if !store.tasks.isEmpty {
-            List(store.tasks) { task in
-                GitHubTaskRow(task: task)
-                    .listRowSeparator(.hidden)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            ScrollViewReader { proxy in
+                List(store.tasks) { task in
+                    GitHubTaskRow(task: task)
+                        .listRowSeparator(.hidden)
+                        // Fade in rather than sliding from the top edge: the
+                        // `.move(edge: .top)` transition left a newly-injected
+                        // first row offset under the header on the inset List,
+                        // clipping it (issue #47).
+                        .transition(.opacity)
+                }
+                .listStyle(.inset)
+                .animation(.snappy, value: store.tasks)
+                // When a new issue is injected at the top, the inset List keeps
+                // its scroll offset and hides the fresh first row behind the
+                // header — scroll it back into view so it renders fully.
+                .onChange(of: store.tasks.first?.id) { _, newFirstID in
+                    guard let newFirstID else { return }
+                    withAnimation(.snappy) {
+                        proxy.scrollTo(newFirstID, anchor: .top)
+                    }
+                }
             }
-            .listStyle(.inset)
-            .animation(.snappy, value: store.tasks)
         } else if store.isLoading {
             ProgressView()
                 .controlSize(.small)
