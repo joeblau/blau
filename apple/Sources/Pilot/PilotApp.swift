@@ -235,6 +235,17 @@ struct PilotApp: App {
                 }
                 .keyboardShortcut("l", modifiers: .command)
                 .disabled(!hasBrowserPaneInActiveWorkspace)
+
+                Divider()
+
+                // One-click jump to web debugging for the mobile app (#75).
+                // Enabled only while an iPhone peer is connected; activates
+                // Safari, where iOS remote Web Inspector lives.
+                Button("Debug Mobile App in Browser") {
+                    openSafariForRemoteInspect()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .option])
+                .disabled(!syncService.isConnected)
             }
         }
 
@@ -266,6 +277,21 @@ struct PilotApp: App {
         guard let pane = store.selectedWorkspace?.selectedPane,
               pane.kind == .terminal else { return nil }
         return terminalView(for: pane.id)
+    }
+
+    /// Bring Safari frontmost so the user lands where iOS remote web debugging
+    /// lives: Safari's Develop menu lists every connected device with Web
+    /// Inspector enabled, and picking the mobile app's page opens the inspector.
+    /// macOS exposes no API to open the Web Inspector pane directly, so this gets
+    /// the user to the browser in one step; the final target pick stays in
+    /// Safari's Develop menu (#75).
+    private func openSafariForRemoteInspect() {
+        guard let safari = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.apple.Safari"
+        ) else { return }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: safari, configuration: configuration)
     }
 
     private var selectedBrowserState: BrowserState? {
