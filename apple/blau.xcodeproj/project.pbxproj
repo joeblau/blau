@@ -75,6 +75,7 @@
 		873845340784690BC3748654 /* ScreenMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB7A71E179389DD6C888CCD /* ScreenMirror.swift */; };
 		89F1AA2347092C088C969903 /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47FBC3890175E320C78E68E1 /* DeviceIdentity.swift */; };
 		8A94170AE83036EEA8FD2924 /* IDELauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = C158EABC62B1A1985C1F548E /* IDELauncher.swift */; };
+		8D8287A5D987C076DF9E330A /* SafariWebInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 853ADC302079465619D0D228 /* SafariWebInspector.swift */; };
 		8E40BD57F90EBBCBC354C356 /* CopilotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F06639323C2B403D53DEBC7 /* CopilotUITests.swift */; };
 		8E7E4A3268249CACC57B046D /* PlotterSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 682AB09642BE2C3FA96FD284 /* PlotterSnapshotStore.swift */; };
 		91698151B8722ED0E14C60E9 /* SyncMessagesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A71DC4B75C15342693E47C /* SyncMessagesTests.swift */; };
@@ -245,6 +246,7 @@
 		7D00A3F70E212149A88CCD63 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7F52CD1238C31CAF42367CA2 /* SecureMessagingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureMessagingView.swift; sourceTree = "<group>"; };
 		84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStore.swift; sourceTree = "<group>"; };
+		853ADC302079465619D0D228 /* SafariWebInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebInspector.swift; sourceTree = "<group>"; };
 		860F562B6ECC3F208F44D970 /* SecureChannelTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureChannelTransport.swift; sourceTree = "<group>"; };
 		898B7F76464636A04054FEA9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Wingman Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -557,6 +559,7 @@
 				40448E5B9EBBD91D642FC080 /* DeviceCaptureRegistry.swift */,
 				EFC9833035A28E24597A8997 /* DeviceCaptureSession.swift */,
 				E7B90338AE3A8F5EE0CA12C6 /* DevicePaneView.swift */,
+				853ADC302079465619D0D228 /* SafariWebInspector.swift */,
 			);
 			path = Device;
 			sourceTree = "<group>";
@@ -924,6 +927,7 @@
 				CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */,
 				64F5BBAD2D8C4BF5CDAAC40A /* ReliableMessenger.swift in Sources */,
 				F75FC2F068710EC5DA74BE40 /* ReplayWindow.swift in Sources */,
+				8D8287A5D987C076DF9E330A /* SafariWebInspector.swift in Sources */,
 				873845340784690BC3748654 /* ScreenMirror.swift in Sources */,
 				6D51318DAE223B1A7B3D7D42 /* SecureChannelResponder.swift in Sources */,
 				72D7ECC607D4CD5FB26BF992 /* SecureIdentity.swift in Sources */,
