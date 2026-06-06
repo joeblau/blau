@@ -178,6 +178,15 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
             ], range: range)
             protectedRanges.append(range)
         }
+
+        // A line whose code span is a color gets a little breathing room below,
+        // so its swatch isn't cramped against the next line.
+        for match in ColorChip.matches(in: string) {
+            let lineRange = ns.lineRange(for: NSRange(location: match.range.location, length: 0))
+            let spaced = NSMutableParagraphStyle()
+            spaced.paragraphSpacing = baseSize
+            storage.addAttribute(.paragraphStyle, value: spaced, range: lineRange)
+        }
     }
 
     // MARK: - Attribute helpers

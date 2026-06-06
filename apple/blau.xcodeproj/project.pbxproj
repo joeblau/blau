@@ -86,6 +86,7 @@
 		9CCB3AE0ECFF1D2D7C809867 /* HeadphoneDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEF294C6D54F08AFA7316B33 /* HeadphoneDetector.swift */; };
 		9E43FEF6FB23D25B023ED32A /* DeviceCaptureRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40448E5B9EBBD91D642FC080 /* DeviceCaptureRegistry.swift */; };
 		A755A8C5DCFF1165E408136A /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3448A85CDA9475511475C2 /* Workspace.swift */; };
+		A777700135D8A05BAA8AB11D /* ColorChipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB6D8C3263608D267C325CE /* ColorChipTests.swift */; };
 		A88388A8B8A982296E63C85B /* CryptoCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB3905E9A184741F8BBDBC85 /* CryptoCore.swift */; };
 		A9D25668C070DD5356945E42 /* PacketCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAB4F3EFB9309CE13F44E611 /* PacketCodec.swift */; };
 		B1D7F5C683BA09919DE89D46 /* PacketCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAB4F3EFB9309CE13F44E611 /* PacketCodec.swift */; };
@@ -107,6 +108,7 @@
 		CF0427ED034B7A71489D82F9 /* PeerSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */; };
 		CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F684D74A8F12B03954CC49B3 /* PilotApp.swift */; };
 		D0614091089D4F0F461285ED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1D8AC628F3F55D563872C7 /* ContentView.swift */; };
+		D0FFBBC93C69BA053BFCFDA3 /* ColorChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0E9B23F9E541C22DC648C34 /* ColorChip.swift */; };
 		DA86DAE82E6503F4950D487A /* SnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64D18628BFB58D751B964957 /* SnapshotHelper.swift */; };
 		E57F6CDE4BED1E1E9489FE9E /* GitHubTasksStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09CBC9A2EAF71B52D91F96DB /* GitHubTasksStore.swift */; };
 		E7006D0803DB97A507D8A7AB /* CryptoCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB3905E9A184741F8BBDBC85 /* CryptoCore.swift */; };
@@ -197,6 +199,7 @@
 		0146AB6C59B6957CE9B7E874 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		09CBC9A2EAF71B52D91F96DB /* GitHubTasksStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubTasksStore.swift; sourceTree = "<group>"; };
 		0D11744ADF836F5AE0046ECE /* SecureChannelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureChannelTests.swift; sourceTree = "<group>"; };
+		0DB6D8C3263608D267C325CE /* ColorChipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorChipTests.swift; sourceTree = "<group>"; };
 		113DAF69FB3F5B7103A098B8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		1276A49AF5B79B2DF90F9A4F /* SecureChannelResponder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureChannelResponder.swift; sourceTree = "<group>"; };
 		132CB022A0BDFF0DE96316EF /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -283,6 +286,7 @@
 		E7B90338AE3A8F5EE0CA12C6 /* DevicePaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePaneView.swift; sourceTree = "<group>"; };
 		EAB4F3EFB9309CE13F44E611 /* PacketCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketCodec.swift; sourceTree = "<group>"; };
 		EFC9833035A28E24597A8997 /* DeviceCaptureSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCaptureSession.swift; sourceTree = "<group>"; };
+		F0E9B23F9E541C22DC648C34 /* ColorChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorChip.swift; sourceTree = "<group>"; };
 		F41F5AC980B9260EDB78A608 /* BrowserStartPageVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserStartPageVisibilityTests.swift; sourceTree = "<group>"; };
 		F430B621891B5DED12E1CF39 /* Copilot.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Copilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F684D74A8F12B03954CC49B3 /* PilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PilotApp.swift; sourceTree = "<group>"; };
@@ -345,6 +349,7 @@
 			isa = PBXGroup;
 			children = (
 				F41F5AC980B9260EDB78A608 /* BrowserStartPageVisibilityTests.swift */,
+				0DB6D8C3263608D267C325CE /* ColorChipTests.swift */,
 				3C68475BF8E1475FC00ABFE0 /* PaneCyclingTests.swift */,
 				7297FC9076A3EEE92FA359FD /* PaneInitRegressionTests.swift */,
 				ADB726FAD149101B9A70CC0D /* WorkspaceRootTrackingTests.swift */,
@@ -487,6 +492,7 @@
 			isa = PBXGroup;
 			children = (
 				7D00A3F70E212149A88CCD63 /* Assets.xcassets */,
+				F0E9B23F9E541C22DC648C34 /* ColorChip.swift */,
 				B028DA279E32AB30A1A75942 /* CommitListView.swift */,
 				132CB022A0BDFF0DE96316EF /* ContentView.swift */,
 				A8128F295B3D268259C8F98F /* EnvSecret.swift */,
@@ -897,6 +903,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0D500EBE09A6E38A272B0733 /* BrowserStartPageView.swift in Sources */,
+				D0FFBBC93C69BA053BFCFDA3 /* ColorChip.swift in Sources */,
 				CB797869A7D03477CAC989A2 /* CommitListView.swift in Sources */,
 				595E0534F01685E42F0982C7 /* ConnectionState.swift in Sources */,
 				1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */,
@@ -985,6 +992,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FFDC16C3D0A160CCB1BCBDCF /* BrowserStartPageVisibilityTests.swift in Sources */,
+				A777700135D8A05BAA8AB11D /* ColorChipTests.swift in Sources */,
 				CAD4FA3FEF71B408F5A1C332 /* PaneCyclingTests.swift in Sources */,
 				97CCEC7CB74BCC87DC23E339 /* PaneInitRegressionTests.swift in Sources */,
 				B4E96CEA7BF0CCD5D84C0B86 /* WorkspaceRootTrackingTests.swift in Sources */,

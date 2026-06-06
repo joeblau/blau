@@ -267,6 +267,32 @@ private final class GutterButton: NSButton {
     }
 }
 
+/// A small color swatch placed just after an inline-code color (e.g. `#00FF3F`).
+/// Clicking it copies the color string to the pasteboard.
+private final class ColorChipButton: NSButton {
+    var onClick: (() -> Void)?
+    var swatch: NSColor = .clear { didSet { needsDisplay = true } }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3)
+        swatch.setFill()
+        path.fill()
+        // A hairline border keeps light/white swatches visible against the page.
+        NSColor.separatorColor.setStroke()
+        path.lineWidth = 1
+        path.stroke()
+    }
+}
+
 /// `NSTextView` subclass that adds ⇧⌘L "split selection into lines" — the
 /// Sublime/VS Code multi-cursor gesture. Each line touched by the selection
 /// gets a collapsed insertion point at the end of its selected content;
@@ -284,6 +310,10 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
     /// eventually aborts with an NSGenericException. We only touch the subview
     /// tree when this signature actually changes.
     private var gutterSignature = ""
+    /// Color swatches placed after inline-code colors, with their own
+    /// churn-guard signature (same rationale as `gutterSignature`).
+    private var colorChips: [NSButton] = []
+    private var colorChipSignature = ""
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -350,6 +380,54 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
     override func layout() {
         super.layout()
         layoutGutterIcons()
+        layoutColorChips()
+    }
+
+    /// Places a clickable color swatch just after each inline-code span whose
+    /// content is a color (e.g. `#00FF3F`, `rgb(...)`, `oklch(...)`, `cmyk(...)`).
+    /// Clicking the swatch copies the color string. Same signature-guard
+    /// discipline as the gutter icons so repeated layout passes don't churn the
+    /// subview tree.
+    private func layoutColorChips() {
+        guard let layoutManager, let textContainer else { return }
+        let ns = string as NSString
+        let chipSize: CGFloat = 12
+        let origin = textContainerOrigin
+
+        struct Spec { let value: String; let color: NSColor; let frame: NSRect }
+        var specs: [Spec] = []
+        for match in ColorChip.matches(in: ns as String) {
+            guard NSMaxRange(match.range) <= ns.length else { continue }
+            let glyphs = layoutManager.glyphRange(forCharacterRange: match.range, actualCharacterRange: nil)
+            let rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+            // Sit the swatch just past the end of the code span, vertically centered.
+            let frame = NSRect(x: rect.maxX + origin.x + 6,
+                               y: rect.midY + origin.y - chipSize / 2,
+                               width: chipSize, height: chipSize)
+            specs.append(Spec(value: match.value, color: match.color, frame: frame))
+        }
+
+        let signature = specs.map { "\($0.value)@\(NSStringFromRect($0.frame))" }
+            .joined(separator: ";")
+        guard signature != colorChipSignature else { return }
+        colorChipSignature = signature
+
+        colorChips.forEach { $0.removeFromSuperview() }
+        colorChips.removeAll()
+        for spec in specs {
+            let chip = ColorChipButton(frame: spec.frame)
+            chip.swatch = spec.color
+            chip.toolTip = "Copy \(spec.value)"
+            let value = spec.value
+            chip.onClick = { [weak self] in
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(value, forType: .string)
+                self?.onCopySecret?()
+            }
+            addSubview(chip)
+            colorChips.append(chip)
+        }
     }
 
     /// Gutter affordances are real buttons (custom drawing in `NSTextView.draw`
@@ -502,6 +580,7 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
         }
         window?.invalidateCursorRects(for: self)
         layoutGutterIcons()
+        layoutColorChips()
     }
 
     override func resetCursorRects() {
