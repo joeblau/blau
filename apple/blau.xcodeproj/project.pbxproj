@@ -115,6 +115,7 @@
 		E974BEB84F83FBDAD2A14AB3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E42AFD4B9A8EB5AE10637F0C /* Assets.xcassets */; };
 		EA6044046223AE65A20D870B /* MarkdownStyler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3773008E360B991866932E4A /* MarkdownStyler.swift */; };
 		EF6268702B8DB6CF936E2180 /* WorkspaceActionWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E831A131F5C50AD8808B7E /* WorkspaceActionWatcher.swift */; };
+		F69A855D82946B5F16665A92 /* MarkdownTableFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66D7FE5081E65EA4C78E83A5 /* MarkdownTableFormatter.swift */; };
 		F75FC2F068710EC5DA74BE40 /* ReplayWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D806B2F6BB75F102EA196B1F /* ReplayWindow.swift */; };
 		F797C21E5A72C28BD91D6073 /* GitCommitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */; };
 		FB51EDCD634335282B1FE07D /* FrameLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146BC5C13A2019B42354E198 /* FrameLink.swift */; };
@@ -238,6 +239,7 @@
 		63CD5071FA5C9733D90B190B /* PlotterLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotterLiveActivity.swift; sourceTree = "<group>"; };
 		6470DA7198630EEEED1F83E5 /* PlotterUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PlotterUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		64D18628BFB58D751B964957 /* SnapshotHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotHelper.swift; sourceTree = "<group>"; };
+		66D7FE5081E65EA4C78E83A5 /* MarkdownTableFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTableFormatter.swift; sourceTree = "<group>"; };
 		67FAA18AA33DB039B0026206 /* SyncMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMessages.swift; sourceTree = "<group>"; };
 		682AB09642BE2C3FA96FD284 /* PlotterSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotterSnapshotStore.swift; sourceTree = "<group>"; };
 		6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotApp.swift; sourceTree = "<group>"; };
@@ -505,6 +507,7 @@
 				21D88EA79C48861054839A54 /* InkOverlay.swift */,
 				5B068834105F375479ADF423 /* InspectorHelper.swift */,
 				3773008E360B991866932E4A /* MarkdownStyler.swift */,
+				66D7FE5081E65EA4C78E83A5 /* MarkdownTableFormatter.swift */,
 				3BA97D476477BE66A97A9D77 /* MouseBridge.swift */,
 				DFC9BB0F198A6D5E8298B3E1 /* Note.swift */,
 				E4A70BA667DE284AA151D2E2 /* NotesView.swift */,
@@ -925,6 +928,7 @@
 				255E48A2365C7AA480C081DC /* LocalServerProbe.swift in Sources */,
 				2D467D25E5DB354DC43D8451 /* LocalServerScanner.swift in Sources */,
 				EA6044046223AE65A20D870B /* MarkdownStyler.swift in Sources */,
+				F69A855D82946B5F16665A92 /* MarkdownTableFormatter.swift in Sources */,
 				1CA7F3A0C7FE6D35905BADD4 /* MouseBridge.swift in Sources */,
 				C24963188EB7118E15217C8C /* NoiseIKHandshake.swift in Sources */,
 				1E52F4B58A701BDEFF78E2D0 /* Note.swift in Sources */,

@@ -198,8 +198,12 @@ private struct NoteTextView: NSViewRepresentable {
             styler.style(storage)
         }
         maskController.refresh()
-        // Sort any already-completed tasks to the bottom of their group on load.
-        DispatchQueue.main.async { textView.reorderCompletedTasks() }
+        // Sort any already-completed tasks to the bottom of their group, and
+        // align every markdown table, on load.
+        DispatchQueue.main.async {
+            textView.reorderCompletedTasks()
+            textView.formatMarkdownTables(protectingCaret: false)
+        }
 
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
@@ -245,6 +249,7 @@ private struct NoteTextView: NSViewRepresentable {
             parent.text = textView.string
             maskController.refresh()
             textView.reorderCompletedTasks()
+            textView.formatMarkdownTables()
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -731,6 +736,66 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
             offset += (line as NSString).length + 1
         }
         setSelectedRange(NSRange(location: min(restored, newNS.length), length: 0))
+    }
+
+    /// Align markdown tables to fit their content (issue #79). Mirrors
+    /// `reorderCompletedTasks`: a non-destructive reflow of the live text that
+    /// preserves the caret. When `protectingCaret` is true the table block the
+    /// caret sits in is left alone, so alignment never fights the cursor while
+    /// you're typing inside a cell.
+    func formatMarkdownTables(protectingCaret: Bool = true) {
+        guard !isReordering, let textStorage else { return }
+        let ns = string as NSString
+        guard ns.length > 0 else { return }
+
+        let skip: Set<Int> = protectingCaret ? caretLineIndices() : []
+        guard let newText = MarkdownTableFormatter.reflow(string, skipLines: skip) else { return }
+
+        // Remember the caret's line + column so it can follow the reflow.
+        let sel = selectedRange()
+        let caretLineRange = ns.lineRange(for: NSRange(location: min(sel.location, ns.length), length: 0))
+        let caretLine = ns.substring(with: caretLineRange).trimmingCharacters(in: .newlines)
+        let caretColumn = sel.location - caretLineRange.location
+
+        let full = NSRange(location: 0, length: ns.length)
+        isReordering = true
+        if shouldChangeText(in: full, replacementString: newText) {
+            textStorage.replaceCharacters(in: full, with: newText)
+            didChangeText()
+        }
+        isReordering = false
+
+        // Restore the caret onto the same line in the reflowed text.
+        let newNS = string as NSString
+        var restored = min(sel.location, newNS.length)
+        var offset = 0
+        for line in newText.components(separatedBy: "\n") {
+            if line == caretLine {
+                restored = min(offset + caretColumn, offset + (line as NSString).length)
+                break
+            }
+            offset += (line as NSString).length + 1
+        }
+        setSelectedRange(NSRange(location: min(restored, newNS.length), length: 0))
+    }
+
+    /// 0-based line indices touched by any selection/caret, so the table block
+    /// the user is editing can be skipped during reflow.
+    private func caretLineIndices() -> Set<Int> {
+        let ns = string as NSString
+        var indices: Set<Int> = []
+        for value in selectedRanges {
+            let r = value.rangeValue
+            let start = lineIndex(at: min(r.location, ns.length), in: ns)
+            let end = lineIndex(at: min(r.location + r.length, ns.length), in: ns)
+            for i in start...end { indices.insert(i) }
+        }
+        return indices
+    }
+
+    private func lineIndex(at location: Int, in ns: NSString) -> Int {
+        guard location > 0 else { return 0 }
+        return ns.substring(to: min(location, ns.length)).reduce(0) { $0 + ($1 == "\n" ? 1 : 0) }
     }
 
     private func splitSelectionIntoLines() {
