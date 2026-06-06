@@ -20,6 +20,13 @@ struct RoundedSegmentedPicker: NSViewRepresentable {
         nsView.selectedSegment = InspectorTab.allCases.firstIndex(of: selection) ?? 0
     }
 
+    /// Report the control's natural (all-labels) width regardless of the
+    /// proposed size, so `ViewThatFits` can tell when the inspector is too narrow
+    /// to show every segment and fall back to the dropdown.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
+        nsView.intrinsicContentSize
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(selection: $selection)
     }
@@ -36,6 +43,29 @@ struct RoundedSegmentedPicker: NSViewRepresentable {
             if index >= 0, index < InspectorTab.allCases.count {
                 selection.wrappedValue = InspectorTab.allCases[index]
             }
+        }
+    }
+}
+
+/// The inspector's tab selector. Prefers the rounded segmented control, but when
+/// the inspector is too narrow to show all four labels it collapses to a compact
+/// dropdown so the selector never clips. `ViewThatFits` picks the first child
+/// whose ideal width fits the space the toolbar offers.
+struct InspectorTabSelector: View {
+    @Binding var selection: InspectorTab
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            RoundedSegmentedPicker(selection: $selection)
+
+            Picker("View", selection: $selection) {
+                ForEach(InspectorTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
         }
     }
 }
@@ -60,7 +90,7 @@ struct InspectorPanelView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                RoundedSegmentedPicker(selection: $selectedTab)
+                InspectorTabSelector(selection: $selectedTab)
             }
         }
     }
