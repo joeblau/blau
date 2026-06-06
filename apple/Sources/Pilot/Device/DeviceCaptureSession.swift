@@ -42,6 +42,10 @@ final class DeviceCaptureSession: NSObject {
     @ObservationIgnored private let audioDataOutput = AVCaptureAudioDataOutput()
     @ObservationIgnored private let frameQueue = DispatchQueue(label: "app.blau.pilot.device.frame")
     @ObservationIgnored private let sessionQueue = DispatchQueue(label: "app.blau.pilot.device.capture")
+    /// Drives the bounded rescan that catches an already-connected iPhone the
+    /// one-shot discovery races against (see `scheduleRescan`).
+    @ObservationIgnored private var rescanAttemptsRemaining = 0
+    @ObservationIgnored private var rescanActive = false
 
     /// Grabs one-shot frames (screenshots) and writes recordings to disk via
     /// `AVAssetWriter`. We write the exact frames the session delivers — the
@@ -229,7 +233,47 @@ final class DeviceCaptureSession: NSObject {
             attach(device)
         } else {
             status = .waiting
+            scheduleRescan()
         }
+    }
+
+    /// An iPhone that's already plugged in when the pane opens never fires
+    /// `wasConnectedNotification`, and the OS needs a beat to publish the
+    /// screen-capture device after the CMIO flag flips and camera access is
+    /// granted — so the single discovery in `attachIfAvailable()` can miss it
+    /// and leave the pane stuck on `.waiting`. Poll a few times so the common
+    /// "phone already connected" case attaches on its own, no unplug/replug.
+    private func scheduleRescan() {
+        rescanAttemptsRemaining = 10  // ~5s at a 0.5s cadence
+        guard !rescanActive else { return }  // a poll chain is already running
+        rescanActive = true
+        rescanTick()
+    }
+
+    private func rescanTick() {
+        guard deviceUniqueID == nil, rescanAttemptsRemaining > 0 else {
+            rescanActive = false
+            return
+        }
+        rescanAttemptsRemaining -= 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.deviceUniqueID == nil else {
+                    self?.rescanActive = false
+                    return
+                }
+                if let device = Self.firstAttachedScreenCaptureDevice() {
+                    self.attach(device)
+                } else {
+                    self.rescanTick()
+                }
+            }
+        }
+    }
+
+    private func cancelRescan() {
+        rescanAttemptsRemaining = 0
+        rescanActive = false
     }
 
     private static func firstAttachedScreenCaptureDevice() -> AVCaptureDevice? {
@@ -308,6 +352,7 @@ final class DeviceCaptureSession: NSObject {
     // MARK: - Session wiring
 
     private func attach(_ device: AVCaptureDevice) {
+        cancelRescan()
         status = .connecting
         session.beginConfiguration()
         defer { session.commitConfiguration() }
@@ -363,6 +408,7 @@ final class DeviceCaptureSession: NSObject {
     }
 
     private func detach() {
+        cancelRescan()
         session.beginConfiguration()
         for input in session.inputs { session.removeInput(input) }
         for output in session.outputs { session.removeOutput(output) }
