@@ -354,14 +354,13 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
             self?.canvasView.undoManager?.undo()
         }
         let clearButton = button(systemName: "trash") { [weak self] in
-            guard let self else { return }
-            // Suppress the diff handler so we send a single `.clear` rather than
-            // an empty resync as well.
-            self.isApplyingRemote = true
-            self.canvasView.drawing = PKDrawing()
-            self.lastStrokeCount = 0
-            self.isApplyingRemote = false
-            self.onClear?()
+            self?.clearCanvas()
+        }
+        // Close: clears the canvas and dismisses the drawing pane on Pilot. The
+        // remote-ink overlay on Pilot is shown only while ink is present, so the
+        // `.clear` that `clearCanvas()` sends both empties and closes it.
+        let closeButton = button(systemName: "xmark") { [weak self] in
+            self?.clearCanvas()
         }
         let resetZoomButton = button(systemName: "arrow.up.left.and.arrow.down.right") { [weak self] in
             self?.resetZoom()
@@ -369,6 +368,7 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
         toolbar.addArrangedSubview(resetZoomButton)
         toolbar.addArrangedSubview(undoButton)
         toolbar.addArrangedSubview(clearButton)
+        toolbar.addArrangedSubview(closeButton)
 
         // The toolbar stays fixed (not inside the transformable content view).
         addSubview(toolbar)
@@ -376,6 +376,19 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
             toolbar.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 12),
             toolbar.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -12)
         ])
+    }
+
+    /// Empties this canvas and tells Pilot to clear too (`onClear` sends a single
+    /// `.clear`). Used by both the trash and close buttons; the latter relies on
+    /// the clear to also dismiss Pilot's ink overlay, which is ink-gated.
+    private func clearCanvas() {
+        // Suppress the diff handler so we send a single `.clear` rather than an
+        // empty resync as well.
+        isApplyingRemote = true
+        canvasView.drawing = PKDrawing()
+        lastStrokeCount = 0
+        isApplyingRemote = false
+        onClear?()
     }
 
     private func button(systemName: String, action: @escaping () -> Void) -> UIButton {
