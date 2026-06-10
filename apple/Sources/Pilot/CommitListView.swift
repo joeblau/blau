@@ -50,7 +50,7 @@ struct RoundedSegmentedPicker: NSViewRepresentable {
 /// The inspector's tab selector. Prefers the rounded segmented control, but when
 /// the inspector is too narrow to show all four labels it collapses to a compact
 /// dropdown so the selector never clips. `ViewThatFits` picks the first child
-/// whose ideal width fits the space the toolbar offers.
+/// whose ideal width fits the space the inspector offers.
 struct InspectorTabSelector: View {
     @Binding var selection: InspectorTab
 
@@ -77,6 +77,13 @@ struct InspectorPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            InspectorTabSelector(selection: $selectedTab)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+
+            Divider()
+
             switch selectedTab {
             case .actions:
                 ActionsListView(store: gitStore)
@@ -86,11 +93,6 @@ struct InspectorPanelView: View {
                 CommitListView(store: gitStore)
             case .filesystem:
                 FilesystemListView(store: gitStore)
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                InspectorTabSelector(selection: $selectedTab)
             }
         }
     }
