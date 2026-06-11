@@ -1,89 +1,83 @@
 :root {
-  /* ---- Surfaces ---- */
-  --bg: #08080A;
-  --bg-1: #0C0C0F;
-  --bg-2: #111114;
-  --bg-3: #16161A;
-  --surface-card: rgba(255, 255, 255, 0.022);
-  --surface-card-hover: rgba(255, 255, 255, 0.04);
+  /* ---- canvas + surface ladder (blue-biased near-black) ---- */
+  --canvas: #05070a;
+  --surface-1: #0b0e14;
+  --surface-2: #10141c;
+  --surface-3: #151b25;
+  --well: #04060b; /* code wells: cooler and darker than canvas */
 
-  /* ---- Hairlines / borders ---- */
-  --line: rgba(255, 255, 255, 0.08);
-  --line-soft: rgba(255, 255, 255, 0.055);
-  --line-strong: rgba(255, 255, 255, 0.14);
-  --lip: rgba(255, 255, 255, 0.06); /* top inner highlight */
+  /* ---- ink ladder (never pure white body) ---- */
+  --ink-1: #f4f7fb;
+  --ink-2: #c5ccd6;
+  --ink-3: #8a93a1;
+  --ink-4: #6e7785; /* lifted from #5b6471 for WCAG AA at micro sizes */
 
-  /* ---- Text ---- */
-  --text: rgba(255, 255, 255, 0.92);
-  --text-2: rgba(255, 255, 255, 0.62);
-  --text-3: rgba(255, 255, 255, 0.45);
-  --text-faint: rgba(255, 255, 255, 0.30);
+  /* ---- hairlines (borders are the structure; shadows are not) ---- */
+  --hairline: rgba(255, 255, 255, 0.07);
+  --hairline-strong: rgba(255, 255, 255, 0.15);
 
-  /* ---- Accent (warm amber — native to the apps) ---- */
-  --accent: #FF7A1A;
-  --accent-soft: #FF9A4D;
-  --accent-deep: #E5640A;
-  --accent-tint: rgba(255, 122, 26, 0.12);
-  --accent-line: rgba(255, 122, 26, 0.32);
-  --accent-glow: rgba(255, 122, 26, 0.22);
+  /* ---- the one accent: blau ---- */
+  --blau: #5aa2ff;
+  --blau-bright: #8cc0ff;
+  --blau-glow: rgba(90, 162, 255, 0.08);
+  --blau-glow-soft: rgba(90, 162, 255, 0.045);
 
-  /* secondary signal — link-up green from device chips (used only for "connected" states) */
-  --live: #3DDC84;
-  --live-tint: rgba(61, 220, 132, 0.12);
+  /* ---- in-mockup-only hues (never on chrome, headings, or buttons) ---- */
+  --demo-green: #4cc38a;
+  --demo-red: #ff6b6b;
+  --demo-yellow: #f5c451;
 
-  /* ---- Type families ---- */
-  --font-sans: "Inter", "Inter Display", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Berkeley Mono", "JetBrains Mono", "SF Mono", ui-monospace, "Geist Mono", monospace;
+  /* ---- type ---- */
+  --font-sans: "Geist Variable", "Geist", -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* ---- Type scale (~1.25 modular) ---- */
-  --t-eyebrow: 0.75rem;   /* 12 */
-  --t-small: 0.8125rem;   /* 13 */
-  --t-body: 0.9375rem;    /* 15 */
-  --t-body-lg: 1.0625rem; /* 17 */
-  --t-h3: 1.375rem;       /* 22 */
-  --t-h2: clamp(1.75rem, 1.2rem + 2.4vw, 2.75rem);
-  --t-h1: clamp(2.5rem, 1.4rem + 5vw, 4.75rem);
+  --text-display-xl: clamp(2.625rem, 1.1rem + 5vw, 4.5rem);  /* 42 -> 72 */
+  --text-display: clamp(2rem, 1.2rem + 2.8vw, 3rem);         /* 32 -> 48 */
+  --text-headline: clamp(1.375rem, 1.1rem + 1.1vw, 1.75rem); /* 22 -> 28 */
+  --text-title: 1.25rem;
+  --text-body: 1rem;
+  --text-small: 0.875rem;
+  --text-micro: 0.8125rem;
 
-  /* ---- Tracking ---- */
-  --track-display: -0.03em;
-  --track-h2: -0.022em;
-  --track-tight: -0.012em;
-  --track-eyebrow: 0.14em;
+  --weight-display: 550;  /* variable axis; never exceeds 600 anywhere */
+  --weight-medium: 500;
+  --weight-body: 400;
 
-  /* ---- Spacing (4 / 8 grid) ---- */
-  --s-1: 4px;
-  --s-2: 8px;
-  --s-3: 12px;
-  --s-4: 16px;
-  --s-5: 24px;
-  --s-6: 32px;
-  --s-7: 48px;
-  --s-8: 64px;
-  --s-9: 96px;
-  --s-10: 128px;
-  --section-y: clamp(72px, 6vw + 24px, 144px);
+  --track-display: -0.035em;
+  --track-tight: -0.02em;
+  --track-eyebrow: 0.08em;  /* the ONLY positive tracking on the page */
 
-  /* ---- Radius ---- */
-  --r-1: 8px;
-  --r-2: 12px;
-  --r-3: 16px;
-  --r-4: 22px;
-  --r-pill: 999px;
+  --leading-display: 1.05;
+  --leading-headline: 1.15;
+  --leading-body: 1.6;
 
-  /* ---- Shadow ---- */
-  --shadow-card: 0 1px 0 var(--lip) inset, 0 18px 50px -28px rgba(0, 0, 0, 0.8);
-  --shadow-float: 0 40px 120px -40px rgba(0, 0, 0, 0.9), 0 2px 0 var(--lip) inset;
-  --shadow-glow: 0 0 0 1px var(--accent-line), 0 12px 50px -12px var(--accent-glow);
+  /* ---- spacing (4px base) ---- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-section: 6rem;      /* 96px rhythm */
+  --space-section-lg: 8rem;   /* 128px chapter breaks */
 
-  /* ---- Layout ---- */
-  --container: 1180px;
-  --container-wide: 1320px;
-  --container-text: 660px;
+  /* ---- radius vocabulary (strict) ---- */
+  --radius-xs: 4px;   /* keycaps */
+  --radius-sm: 6px;   /* chips, small controls */
+  --radius-md: 8px;   /* code windows, inner panels */
+  --radius-lg: 12px;  /* cards / panes */
+  --radius-xl: 16px;  /* product frames only */
+  --radius-pill: 999px; /* buttons only */
 
-  /* ---- Motion ---- */
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-std: cubic-bezier(0.4, 0, 0.2, 1);
-  --dur-micro: 150ms;
-  --dur-ui: 220ms;
-  --dur-reveal: 460ms;
+  /* ---- container ---- */
+  --container: 1200px;
+  --gutter: 24px;
+
+  /* ---- motion ---- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 150ms;
+  --dur-med: 350ms;
+  --dur-slow: 550ms;
 }

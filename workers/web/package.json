@@ -9,6 +9,9 @@
     "og": "node scripts/gen-og.mjs"
   },
   "dependencies": {
-    "astro": "^6.3.8"
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/geist-mono": "^5.2.8",
+    "astro": "^6.3.8",
+    "gsap": "^3.15.0"
   }
 }
