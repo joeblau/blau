@@ -1,4 +1,7 @@
 ---
+import '@fontsource-variable/geist';
+import '@fontsource-variable/geist-mono';
+
 interface Props {
   title: string;
   description?: string;
@@ -6,7 +9,7 @@ interface Props {
 
 const {
   title,
-  description = 'blau is a four-app native Apple ecosystem: Pilot (macOS) is a dev command-center with embedded Ghostty terminals, a WebKit browser, and git tooling — synced peer-to-peer to iPhone, Apple Watch, and a live HEVC screen mirror on iPad. No servers. No accounts.',
+  description = 'blau is a four-app native Apple ecosystem: Pilot (macOS) is a dev command-center with embedded Ghostty terminals, a WebKit browser, and git tooling — synced peer-to-peer to iPhone, Apple Watch, and a live HEVC screen mirror on iPad.',
 } = Astro.props;
 
 const ogImage = new URL('/og.png', Astro.site ?? 'https://blau.app').href;
@@ -19,7 +22,7 @@ const ogImage = new URL('/og.png', Astro.site ?? 'https://blau.app').href;
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <meta name="generator" content={Astro.generator} />
-    <meta name="theme-color" content="#08080A" />
+    <meta name="theme-color" content="#05070a" />
 
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
@@ -32,13 +35,14 @@ const ogImage = new URL('/og.png', Astro.site ?? 'https://blau.app').href;
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content={ogImage} />
 
-    <link rel="preconnect" href="https://rsms.me" crossorigin />
-
     <title>{title}</title>
+
+    <!-- Reveal styles are gated on .js so nothing is hidden without JavaScript -->
+    <script is:inline>document.documentElement.classList.add('js');</script>
   </head>
   <body>
     <slot />
-    <script src="../scripts/animations.ts"></script>
+    <script src="../scripts/main.ts"></script>
   </body>
 </html>
 
@@ -46,5 +50,4 @@ const ogImage = new URL('/og.png', Astro.site ?? 'https://blau.app').href;
   @import '../styles/tokens.css';
   @import '../styles/global.css';
   @import '../styles/sections.css';
-  @import '../styles/animations.css';
 </style>

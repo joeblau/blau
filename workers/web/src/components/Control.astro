@@ -1,0 +1,55 @@
+<section id="control" class="control section glow glow--soft">
+  <div class="container">
+    <div class="control__grid">
+      <div class="control__copy">
+        <header class="control__header reveal">
+          <p class="eyebrow">Copilot · <em>iOS</em> — Wingman · <em>watchOS</em></p>
+          <h2 class="display control__h2">Speak it. Point it. Pinch it.</h2>
+        </header>
+
+        <ul class="control__list reveal-stagger" role="list">
+          <li class="control__block">
+            <h3 class="title control__title">Push-to-talk, transcribed on the phone</h3>
+            <p class="control__body">Hold volume-down and talk. WhisperKit transcribes on-device — Whisper compiled to Core ML, scheduled across the Neural Engine — and only the finished text crosses the wire for Pilot to paste into the held workspace's terminal. Audio never leaves the phone.</p>
+            <p class="control__tag"><i class="control__tag-dot" aria-hidden="true"></i><code>WhisperKit · openai_whisper-base · Core ML</code></p>
+          </li>
+
+          <li class="control__block">
+            <h3 class="title control__title">A trackpad that posts real events</h3>
+            <p class="control__body">The touch trackpad streams relative deltas and clicks over the encrypted session; Pilot posts genuine CGEvents at the HID tap, gated by the macOS Accessibility permission.</p>
+            <p class="control__tag"><i class="control__tag-dot" aria-hidden="true"></i><code>CGEvent · AXIsProcessTrusted</code></p>
+          </li>
+
+          <li class="control__block">
+            <h3 class="title control__title">Hardware buttons as navigation</h3>
+            <p class="control__body">A KVO observer on the system output volume turns the physical buttons into list navigation — volume HUD suppressed by a hidden MPVolumeView. Hold volume-up to send Enter.</p>
+            <p class="control__tag"><i class="control__tag-dot" aria-hidden="true"></i><code>AVAudioSession.outputVolume KVO</code></p>
+          </li>
+
+          <li class="control__block">
+            <h3 class="title control__title">Workspaces in your pocket</h3>
+            <p class="control__body">Pilot's workspaces and pane tabs mirror live to the phone as a switcher — select a tab on the phone, it changes on the Mac.</p>
+            <p class="control__tag"><i class="control__tag-dot" aria-hidden="true"></i><code>TabSummary · SelectTab</code></p>
+          </li>
+
+          <li class="control__block">
+            <h3 class="title control__title"><span class="keycap" aria-hidden="true">⏎</span>Enter, from the wrist</h3>
+            <p class="control__body">Wingman binds the system Double Tap gesture: double-pinch and Enter lands in the Mac's active terminal, relayed through Copilot over WatchConnectivity, confirmed with a haptic.</p>
+            <p class="control__tag"><i class="control__tag-dot" aria-hidden="true"></i><code>.handGestureShortcut(.primaryAction)</code></p>
+          </li>
+        </ul>
+      </div>
+
+      <div class="control__visual reveal" style="--delay: 120ms">
+        <div class="control__stage">
+          <figure class="frame control__phone">
+            <img src="/mockups/copilot.svg" width="430" height="910" alt="Copilot on iPhone: push-to-talk, touch trackpad, and live workspace switcher driving Pilot on the Mac" loading="lazy" decoding="async" />
+          </figure>
+          <figure class="pane pane--flush control__watch">
+            <img src="/mockups/wingman.svg" width="360" height="460" alt="Wingman on Apple Watch: double-pinch sends Enter to the Mac's active terminal" loading="lazy" decoding="async" />
+          </figure>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
