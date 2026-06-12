@@ -250,6 +250,22 @@ html { scroll-padding-top: 80px; }
 
 .hero__frame img { width: 100%; height: auto; }
 
+/* parallax drift against the scroll — native scroll-driven animation,
+   compositor-only, no JS; browsers without support just don't drift */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .hero__frame {
+      animation: hero-drift linear both;
+      animation-timeline: view();
+    }
+  }
+}
+
+@keyframes hero-drift {
+  from { transform: translateY(0); }
+  to { transform: translateY(-28px); }
+}
+
 .hero__caption {
   position: relative;
   z-index: 1;
@@ -920,6 +936,22 @@ html { scroll-padding-top: 80px; }
     /* canvas-colored ring separates the layers without a drop shadow */
     outline: 6px solid var(--canvas);
   }
+
+  /* the watch parts slightly from the phone as you scroll past — the page's
+     one depth cue, scroll-driven natively */
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .control__watch {
+        animation: watch-drift linear both;
+        animation-timeline: view();
+      }
+    }
+  }
+}
+
+@keyframes watch-drift {
+  from { transform: translateY(10px); }
+  to { transform: translateY(-14px); }
 }
 
 /* ===== architecture: transport lane table ===== */

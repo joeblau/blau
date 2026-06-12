@@ -1,6 +1,8 @@
 ---
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
+import geistLatinUrl from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
+import geistMonoLatinUrl from '@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2?url';
 
 interface Props {
   title: string;
@@ -34,6 +36,9 @@ const ogImage = new URL('/og.png', Astro.site ?? 'https://blau.app').href;
     <meta property="og:image:alt" content="blau — a native Apple developer cockpit" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content={ogImage} />
+
+    <link rel="preload" href={geistLatinUrl} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={geistMonoLatinUrl} as="font" type="font/woff2" crossorigin />
 
     <title>{title}</title>
 
