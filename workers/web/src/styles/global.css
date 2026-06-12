@@ -37,7 +37,6 @@ ul, ol { list-style: none; }
 .headline { font-size: var(--text-headline); letter-spacing: var(--track-tight); line-height: var(--leading-headline); }
 .title { font-size: var(--text-title); font-weight: var(--weight-medium); color: var(--ink-1); letter-spacing: var(--track-tight); }
 .lede { font-size: 1.125rem; color: var(--ink-3); max-width: 38rem; text-wrap: pretty; }
-.muted { color: var(--ink-3); }
 .dim { color: var(--ink-4); }
 .small { font-size: var(--text-small); }
 
@@ -54,10 +53,6 @@ ul, ol { list-style: none; }
 .eyebrow em { font-style: normal; color: var(--blau); }
 
 .mono { font-family: var(--font-mono); font-size: var(--text-small); }
-
-/* inline text links */
-.link { color: var(--ink-1); border-bottom: 1px solid var(--hairline-strong); transition: color var(--dur-fast) ease, border-color var(--dur-fast) ease; }
-.link:hover { color: var(--blau-bright); border-color: var(--blau); }
 
 /* ============ buttons (pill scale only) ============ */
 .btn {

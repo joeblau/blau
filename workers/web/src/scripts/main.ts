@@ -1,67 +1,59 @@
-import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-
-gsap.registerPlugin(ScrollTrigger);
+// Scroll choreography driver. Reveals and the pipeline draw are CSS
+// transitions toggled by a single IntersectionObserver; the hero and watch
+// parallax are CSS scroll-driven animations (see sections.css) — no
+// animation library in the bundle.
 
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const reveals = Array.from(document.querySelectorAll<HTMLElement>('.reveal, .reveal-stagger'));
+const pipe = document.querySelector('.mirror__pipe');
 
-if (reduced) {
+if (reduced || !('IntersectionObserver' in window)) {
   // No choreography: everything visible, immediately.
   reveals.forEach((el) => el.classList.add('is-visible'));
+  pipe?.classList.add('is-visible');
 } else {
   // Hero plays on load; everything else reveals as it scrolls into view.
   document.querySelectorAll('#hero .reveal').forEach((el) => el.classList.add('is-visible'));
 
-  reveals
-    .filter((el) => !el.closest('#hero'))
-    .forEach((el) => {
-      ScrollTrigger.create({
-        trigger: el,
-        start: 'top 82%',
-        once: true,
-        onEnter: () => el.classList.add('is-visible'),
-      });
-    });
+  const pending = new Set<Element>(reveals.filter((el) => !el.closest('#hero')));
+  if (pipe) pending.add(pipe);
 
-  // Hero centerpiece: a slow drift against the scroll, like instruments settling.
-  gsap.to('.hero__stage', {
-    y: -28,
-    ease: 'none',
-    scrollTrigger: {
-      trigger: '.hero__stage',
-      start: 'top bottom',
-      end: 'bottom top',
-      scrub: true,
+  const show = (el: Element) => {
+    el.classList.add('is-visible');
+    pending.delete(el);
+    io.unobserve(el);
+  };
+
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) show(entry.target);
+      }
     },
-  });
+    // reveal once the element clears the bottom ~18% of the viewport
+    { rootMargin: '0px 0px -18% 0px' }
+  );
+  pending.forEach((el) => io.observe(el));
 
-  // Mirror pipeline: draw the chain node by node when it enters.
-  // The stagger lives in CSS transition-delays; this only flips the class.
-  const pipe = document.querySelector('.mirror__pipe');
-  if (pipe) {
-    ScrollTrigger.create({
-      trigger: pipe,
-      start: 'top 80%',
-      once: true,
-      onEnter: () => pipe.classList.add('is-visible'),
+  // An instant jump (anchor load, find-in-page) can skip elements straight
+  // past the viewport without an IO notification — sweep those on scroll.
+  let sweepQueued = false;
+  const sweep = () => {
+    sweepQueued = false;
+    pending.forEach((el) => {
+      if (el.getBoundingClientRect().bottom < 0) show(el);
     });
-  }
-
-  // Control stage: phone and watch part slightly as you scroll past — one
-  // subtle depth cue on the page's single layered composition.
-  if (window.matchMedia('(min-width: 1025px)').matches) {
-    gsap.to('.control__watch', {
-      y: -20,
-      ease: 'none',
-      scrollTrigger: {
-        trigger: '.control__stage',
-        start: 'top bottom',
-        end: 'bottom top',
-        scrub: true,
-      },
-    });
-  }
+  };
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (!sweepQueued && pending.size > 0) {
+        sweepQueued = true;
+        requestAnimationFrame(sweep);
+      }
+    },
+    { passive: true }
+  );
 }
 
 // ---- mobile nav disclosure (motion-independent) ----
