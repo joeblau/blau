@@ -10,6 +10,9 @@ enum MarkdownTableFormatter {
     /// changed. Blocks containing any line index in `skipLines` are left as-is
     /// (used to avoid reformatting the table the caret is inside while typing).
     static func reflow(_ text: String, skipLines: Set<Int> = []) -> String? {
+        // Called on every keystroke — a table needs a pipe somewhere, so skip
+        // the full line-split for the common case of a note with none.
+        guard text.contains("|") else { return nil }
         var lines = text.components(separatedBy: "\n")
         var changed = false
         var i = 0

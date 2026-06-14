@@ -102,7 +102,7 @@ struct WorkspaceView: View {
             HStack(spacing: 6) {
                 Image(systemName: pane.kind.systemImageName)
                     .scaledFont(size: 11)
-                Text(pane.kind.displayName)
+                Text(pane.displayTitle)
                     .scaledFont(size: 12)
             }
             .padding(.horizontal, 14)
@@ -464,7 +464,7 @@ struct TabItemContent: View {
                 .scaledFont(size: 11)
                 .foregroundStyle(isSelected ? .primary : .secondary)
 
-            Text(pane.kind.displayName)
+            Text(pane.displayTitle)
                 .scaledFont(size: 12)
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? .primary : .secondary)
@@ -595,6 +595,14 @@ struct PaneView: View {
             }
         case .device:
             DevicePaneView(paneID: pane.id, isActive: isWorkspaceActive, isSelected: isSelected)
+        case .editor:
+            if let editorState = pane.editorState {
+                EditorPaneView(state: editorState,
+                               rootPath: pane.workspace?.effectiveRootPath,
+                               isActive: isWorkspaceActive,
+                               isSelected: isSelected,
+                               onSelect: { pane.workspace?.selectedPaneID = pane.id })
+            }
         }
     }
 }

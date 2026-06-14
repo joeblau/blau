@@ -23,6 +23,12 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit.git
     from: "0.18.0"
+  CodeEditSourceEditor:
+    url: https://github.com/CodeEditApp/CodeEditSourceEditor.git
+    exactVersion: "0.15.2"
+  CodeEditLanguages:
+    url: https://github.com/CodeEditApp/CodeEditLanguages.git
+    exactVersion: "0.1.20"
 
 schemes:
   SharedTests:
@@ -71,6 +77,10 @@ targets:
     dependencies:
       - framework: Frameworks/GhosttyKit.xcframework
         embed: false
+      - package: CodeEditSourceEditor
+        product: CodeEditSourceEditor
+      - package: CodeEditLanguages
+        product: CodeEditLanguages
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.pilot

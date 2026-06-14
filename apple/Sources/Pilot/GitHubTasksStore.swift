@@ -144,7 +144,10 @@ struct GitHubTasksView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            // Fill the remaining height so the header stays pinned to the top
+            // and the empty/loading states center in the space below it.
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

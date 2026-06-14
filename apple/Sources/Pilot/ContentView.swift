@@ -195,7 +195,7 @@ struct ContentView: View {
                     }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
 
-                    ideToolbarButton
+                    editorToolbarButton
                 }
                 .disabled(store.selectedWorkspace == nil || store.isNotesMode)
                 Button {
@@ -229,6 +229,13 @@ struct ContentView: View {
             }
             .id(workspaceShortcutIDs)
             Button("") {
+                // ⌘W closes what's in front: the active note tab in Notes
+                // mode, otherwise the selected workspace pane.
+                if store.isNotesMode {
+                    guard let note = store.selectedNote else { return }
+                    store.requestCloseNote(note)
+                    return
+                }
                 guard let workspace = store.selectedWorkspace,
                       let pane = workspace.selectedPane else { return }
                 workspace.removePane(pane)
@@ -606,32 +613,17 @@ struct ContentView: View {
         store.selectedWorkspace?.effectiveRootPath
     }
 
-    /// Top-toolbar action that opens the active workspace's root in the
-    /// user's preferred external IDE — Cursor first, then Codex, then
-    /// VS Code. Disabled (with a "why" tooltip) when no supported IDE is
-    /// installed or the workspace has no root path yet.
     @ViewBuilder
-    private var ideToolbarButton: some View {
-        let ide = IDELauncher.preferred
+    private var editorToolbarButton: some View {
         let rootPath = selectedWorkspaceRootPath
         Button {
-            guard let ide, let rootPath else { return }
-            IDELauncher.open(directoryPath: rootPath, in: ide)
+            store.selectedWorkspace?.addPane(kind: .editor, side: .right)
         } label: {
-            Label("Open in IDE", systemImage: "wrench.and.screwdriver")
+            Label("Open Editor", systemImage: "curlybraces")
         }
-        .disabled(ide == nil || rootPath == nil)
-        .help(ideButtonHelp(ide: ide, rootPath: rootPath))
-    }
-
-    private func ideButtonHelp(ide: ExternalIDE?, rootPath: String?) -> String {
-        if ide == nil {
-            return "No supported IDE installed (Cursor, Codex, or VS Code)"
-        }
-        if rootPath == nil {
-            return "Set a workspace root path to open in an IDE"
-        }
-        return "Open project in \(ide!.displayName)"
+        .keyboardShortcut("e", modifiers: .command)
+        .disabled(rootPath == nil)
+        .help(rootPath == nil ? "Set a workspace root path to open the editor" : "Open a file editor with fuzzy file search")
     }
 
     private func syncSelectedWorkspaceRootPath() {
@@ -701,7 +693,7 @@ extension Notification.Name {
 @MainActor
 private enum ContentViewPreviewData {
     static let container: ModelContainer = {
-        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, Note.self])
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, EditorState.self, Note.self])
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: configuration)
     }()

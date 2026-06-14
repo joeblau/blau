@@ -41,10 +41,30 @@ final class WorkspaceStore {
         }
     }
 
+    /// Fetch caches: `workspaces`/`notes` are read many times per view render
+    /// (sidebar, selection lookups, summaries), and a SwiftData fetch hits the
+    /// store every time. Membership only changes through this class's mutating
+    /// funcs — each bumps `changeCount` — so the raw fetch is cached against
+    /// it. Sorting stays per-access: it reads live model properties (name,
+    /// isPinned, sortOrder), which keeps observation of those properties
+    /// intact for views that depend on the order. `@ObservationIgnored` keeps
+    /// the cache writes from invalidating views mid-render.
+    @ObservationIgnored private var fetchedWorkspaces: [Workspace]?
+    @ObservationIgnored private var workspacesFetchVersion = -1
+    @ObservationIgnored private var fetchedNotes: [Note]?
+    @ObservationIgnored private var notesFetchVersion = -1
+
     var workspaces: [Workspace] {
-        _ = changeCount // access to establish observation dependency
-        let descriptor = FetchDescriptor<Workspace>()
-        let items = (try? modelContext.fetch(descriptor)) ?? []
+        let version = changeCount // access to establish observation dependency
+        let items: [Workspace]
+        if let cached = fetchedWorkspaces, workspacesFetchVersion == version {
+            items = cached
+        } else {
+            let descriptor = FetchDescriptor<Workspace>()
+            items = (try? modelContext.fetch(descriptor)) ?? []
+            fetchedWorkspaces = items
+            workspacesFetchVersion = version
+        }
 
         return items.sorted { lhs, rhs in
             if lhs.isPinned != rhs.isPinned {
@@ -101,15 +121,37 @@ final class WorkspaceStore {
     }
 
     var notes: [Note] {
-        _ = changeCount // access to establish observation dependency
+        let version = changeCount // access to establish observation dependency
+        if let cached = fetchedNotes, notesFetchVersion == version {
+            return cached
+        }
         let descriptor = FetchDescriptor<Note>(
             sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.createdAt)]
         )
-        return (try? modelContext.fetch(descriptor)) ?? []
+        let items = (try? modelContext.fetch(descriptor)) ?? []
+        fetchedNotes = items
+        notesFetchVersion = version
+        return items
     }
 
     var selectedNote: Note? {
         notes.first { $0.id == selectedNoteID }
+    }
+
+    /// Set when a close was requested for a note that still has content, so
+    /// the Notes UI can confirm before the (undo-free) delete. Transient —
+    /// not persisted.
+    var notePendingClose: Note?
+
+    /// Closing a note tab deletes the note. Confirm first when there's content
+    /// to lose; close empty notes immediately so creating + dismissing a blank
+    /// note doesn't nag. Shared by the tab's ✕ button and ⌘W.
+    func requestCloseNote(_ note: Note) {
+        if note.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            deleteNote(note)
+        } else {
+            notePendingClose = note
+        }
     }
 
     /// ⌘0: flip into Notes mode (ensuring there's a note to show) or back

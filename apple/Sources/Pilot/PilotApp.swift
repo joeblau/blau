@@ -35,7 +35,7 @@ struct PilotApp: App {
     @AppStorage("ui.zoom") private var uiZoom: Double = UIZoomLadder.default
 
     init() {
-        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, Note.self])
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, EditorState.self, Note.self])
         let configuration = ModelConfiguration(schema: schema, url: Self.persistentStoreURL())
         let container = try! ModelContainer(for: schema, configurations: configuration)
         self.modelContainer = container
@@ -426,12 +426,30 @@ struct PilotApp: App {
         }
         syncService.start()
 
+        // Re-broadcast workspace state only when it actually changed; the 1s
+        // tick otherwise encoded + sent an identical payload to Copilot every
+        // second for the whole session. Reset on disconnect so a reconnecting
+        // peer always gets a fresh snapshot.
+        @MainActor final class LastBroadcast {
+            var summaries: [WorkspaceSummary]?
+            var selectedID: UUID?
+        }
+        let lastBroadcast = LastBroadcast()
         Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             Task { @MainActor in
-                guard syncService.isConnected else { return }
+                guard syncService.isConnected else {
+                    lastBroadcast.summaries = nil
+                    return
+                }
+                let summaries = store.summaries
+                let selectedID = store.selectedWorkspaceID
+                guard summaries != lastBroadcast.summaries
+                        || selectedID != lastBroadcast.selectedID else { return }
+                lastBroadcast.summaries = summaries
+                lastBroadcast.selectedID = selectedID
                 let state = WorkspaceState(
-                    workspaces: store.summaries,
-                    selectedWorkspaceID: store.selectedWorkspaceID
+                    workspaces: summaries,
+                    selectedWorkspaceID: selectedID
                 )
                 syncService.send(.workspaceState(state), reliable: false)
             }

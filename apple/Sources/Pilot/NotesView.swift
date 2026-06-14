@@ -8,9 +8,6 @@ struct NotesView: View {
     @Bindable var store: WorkspaceStore
     @State private var showCopiedToast = false
     @State private var toastDismiss: DispatchWorkItem?
-    /// Set when the user closes a note tab that still has content, so we can
-    /// confirm before the (undoable-free) delete. Empty notes close immediately.
-    @State private var noteToClose: Note?
 
     var body: some View {
         let notes = store.notes
@@ -30,29 +27,18 @@ struct NotesView: View {
         .confirmationDialog(
             "Delete this note?",
             isPresented: Binding(
-                get: { noteToClose != nil },
-                set: { if !$0 { noteToClose = nil } }
+                get: { store.notePendingClose != nil },
+                set: { if !$0 { store.notePendingClose = nil } }
             ),
-            presenting: noteToClose
+            presenting: store.notePendingClose
         ) { note in
             Button("Delete Note", role: .destructive) {
                 store.deleteNote(note)
-                noteToClose = nil
+                store.notePendingClose = nil
             }
-            Button("Cancel", role: .cancel) { noteToClose = nil }
+            Button("Cancel", role: .cancel) { store.notePendingClose = nil }
         } message: { note in
             Text("“\(note.displayTitle)” will be permanently deleted. This can’t be undone.")
-        }
-    }
-
-    /// Closing a note tab deletes the note. Confirm first when there's content
-    /// to lose; close empty notes immediately so creating + dismissing a blank
-    /// note doesn't nag.
-    private func requestClose(_ note: Note) {
-        if note.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            store.deleteNote(note)
-        } else {
-            noteToClose = note
         }
     }
 
@@ -74,7 +60,7 @@ struct NotesView: View {
                         title: note.displayTitle,
                         isSelected: note.id == store.selectedNoteID,
                         onSelect: { store.selectedNoteID = note.id },
-                        onClose: { requestClose(note) }
+                        onClose: { store.requestCloseNote(note) }
                     )
                     // Drag-to-reorder (issue #67). The note's id rides along as
                     // the dragged payload; dropping onto another tab inserts the
@@ -319,6 +305,31 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
     /// churn-guard signature (same rationale as `gutterSignature`).
     private var colorChips: [NSButton] = []
     private var colorChipSignature = ""
+    /// Layout-pass scan caches: `layout()` runs on every scroll/resize pass
+    /// and previously re-ran the fenced-block and color-chip regexes over the
+    /// whole document each time. The scans depend only on the text, so they
+    /// hold until it changes — typing and the programmatic reflows both funnel
+    /// through `didChangeText()`, and SwiftUI's binding pushes via `string`.
+    private var cachedFencedBlocks: [(range: NSRange, content: String)]?
+    private var cachedColorChipMatches: [ColorChip.Match]?
+
+    private func invalidateTextScanCaches() {
+        cachedFencedBlocks = nil
+        cachedColorChipMatches = nil
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        invalidateTextScanCaches()
+    }
+
+    override var string: String {
+        get { super.string }
+        set {
+            super.string = newValue
+            invalidateTextScanCaches()
+        }
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -401,7 +412,14 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
 
         struct Spec { let value: String; let color: NSColor; let frame: NSRect }
         var specs: [Spec] = []
-        for match in ColorChip.matches(in: ns as String) {
+        let matches: [ColorChip.Match]
+        if let cachedColorChipMatches {
+            matches = cachedColorChipMatches
+        } else {
+            matches = ColorChip.matches(in: ns as String)
+            cachedColorChipMatches = matches
+        }
+        for match in matches {
             guard NSMaxRange(match.range) <= ns.length else { continue }
             let glyphs = layoutManager.glyphRange(forCharacterRange: match.range, actualCharacterRange: nil)
             let rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
@@ -526,7 +544,9 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
     private static let fencedCodeBlock = try! NSRegularExpression(pattern: #"```[\s\S]*?```"#)
 
     /// Each fenced code block's full range plus its inner code (fences stripped).
+    /// Cached between text changes — see `cachedFencedBlocks`.
     private func fencedBlocks() -> [(range: NSRange, content: String)] {
+        if let cachedFencedBlocks { return cachedFencedBlocks }
         let ns = string as NSString
         guard ns.length > 0 else { return [] }
         var result: [(NSRange, String)] = []
@@ -547,6 +567,7 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
             if content.hasSuffix("\n") { content.removeLast() }
             result.append((range, content))
         }
+        cachedFencedBlocks = result
         return result
     }
 
@@ -691,6 +712,9 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
         guard !isReordering, let textStorage else { return }
         let ns = string as NSString
         guard ns.length > 0 else { return }
+        // Runs on every keystroke — skip the full line-split for the common
+        // case of a note with no completed checkbox anywhere.
+        guard string.contains("[x]") || string.contains("[X]") else { return }
 
         var lines = (ns as String).components(separatedBy: "\n")
         var changed = false

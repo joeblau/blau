@@ -84,16 +84,23 @@ struct InspectorPanelView: View {
 
             Divider()
 
-            switch selectedTab {
-            case .actions:
-                ActionsListView(store: gitStore)
-            case .tasks:
-                GitHubTasksView(store: tasksStore)
-            case .commits:
-                CommitListView(store: gitStore)
-            case .filesystem:
-                FilesystemListView(store: gitStore)
+            // Expand the tab content to fill the inspector's height. Without
+            // this, an intrinsically-sized tab (e.g. an empty-state
+            // ContentUnavailableView) lets the whole VStack shrink and float
+            // to the vertical center, dragging the picker mid-pane.
+            Group {
+                switch selectedTab {
+                case .actions:
+                    ActionsListView(store: gitStore)
+                case .tasks:
+                    GitHubTasksView(store: tasksStore)
+                case .commits:
+                    CommitListView(store: gitStore)
+                case .filesystem:
+                    FilesystemListView(store: gitStore)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
