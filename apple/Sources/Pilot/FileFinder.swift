@@ -14,8 +14,9 @@ struct FileItem: Identifiable, Hashable {
 /// `setQuery(_:)` filters it *off the main actor* on every keystroke via
 /// `FuzzyMatcher` — the full scan is ~280ms at the 200k cap, far too much to
 /// run on the MainActor without freezing typing. Indexing prefers
-/// `git ls-files` so `.gitignore` is honored for free, and falls back to a
-/// pruned filesystem walk outside git repos.
+/// `git ls-files` so `.gitignore` is honored for free (plus a pruned scan that
+/// adds back `.env*` / `.dev.vars` — gitignored, but exactly the files you open
+/// by hand), and falls back to a pruned filesystem walk outside git repos.
 @MainActor
 @Observable
 final class FileFinder {
@@ -52,6 +53,7 @@ final class FileFinder {
         ".git", "node_modules", ".build", "build", "DerivedData", "Pods",
         ".next", "dist", "out", "target", ".venv", "venv", "__pycache__",
         ".swiftpm", "vendor", "Carthage", ".gradle", ".idea", ".cache",
+        ".turbo", ".vercel", "coverage",
     ]
 
     init() {}
@@ -62,12 +64,24 @@ final class FileFinder {
     /// index and invalidates any in-flight task for the old root.
     func start(root: String) {
         let normalized = Self.normalize(root)
-        // Already done or in progress for this exact root — nothing to do.
-        if indexedRoot == normalized { return }
+        let isNewRoot = indexedRoot != normalized
+
+        // Re-index on every explicit open so files created or removed since the
+        // last scan show up — the index used to be built once per root and then
+        // cached forever, which left the finder stale (e.g. an agent writes new
+        // files in a sibling terminal and they never appear). Skip only when a
+        // scan for this exact root is already in flight.
+        if !isNewRoot && isIndexing { return }
 
         indexedRoot = normalized
-        index = []
-        results = []
+        if isNewRoot {
+            // Switched workspaces: drop the previous project's files so they
+            // don't linger while the first scan of the new root runs. On a
+            // same-root refresh we keep the current results visible until the
+            // rescan lands, avoiding an empty flash.
+            index = []
+            results = []
+        }
         isIndexing = true
 
         Task.detached(priority: .userInitiated) {
@@ -129,8 +143,16 @@ final class FileFinder {
 
         // Score every item; keep the matches; sort best-first, breaking ties
         // toward shorter paths (the shorter path is usually the tighter match).
+        // Quick-open semantics: match the file *name* by default so typing a
+        // filename (".env.", "Contents") surfaces files actually called that, not
+        // every path whose directory letters happen to spell it (".env." used to
+        // match ".../Assets.xcassets/assets/NVDA.imageset/…" through the dirs).
+        // Match the full relative path only once the query contains "/", the
+        // explicit "I'm typing a path" signal.
+        let matchPath = query.contains("/")
         let scored = items.compactMap { item -> (item: FileItem, score: Int)? in
-            guard let score = FuzzyMatcher.score(query: query, candidate: item.relativePath) else { return nil }
+            let candidate = matchPath ? item.relativePath : item.name
+            guard let score = FuzzyMatcher.score(query: query, candidate: candidate) else { return nil }
             return (item, score)
         }
         .sorted { lhs, rhs in
@@ -146,9 +168,27 @@ final class FileFinder {
     /// Builds the file list for `root`: git-aware first, filesystem walk second.
     private nonisolated static func buildIndex(root: String) -> [FileItem] {
         if let gitFiles = gitListFiles(root: root) {
-            return gitFiles
+            // git ls-files omits .gitignored files, but .env* / .dev.vars are
+            // exactly the ignored files a developer opens by hand. Add them back
+            // via a pruned walk (node_modules and friends stay skipped), deduped
+            // against the git set so non-ignored env files aren't listed twice.
+            var seen = Set(gitFiles.map(\.path))
+            var merged = gitFiles
+            for item in walkFilesystem(root: root, includeName: { Self.isDevConfigFile($0) })
+            where merged.count < maxIndexedFiles && !seen.contains(item.path) {
+                merged.append(item)
+                seen.insert(item.path)
+            }
+            return merged
         }
         return walkFilesystem(root: root)
+    }
+
+    /// Gitignored files worth surfacing anyway: env files and wrangler's local
+    /// secrets (`.dev.vars`). Matched by basename so they're found wherever they
+    /// sit in the tree.
+    private nonisolated static func isDevConfigFile(_ name: String) -> Bool {
+        name.hasPrefix(".env") || name.hasPrefix(".dev.vars")
     }
 
     /// `git ls-files --cached --others --exclude-standard -z` enumerates tracked
@@ -205,7 +245,10 @@ final class FileFinder {
 
     /// Filesystem fallback: a pruned recursive walk that skips known build/cache
     /// directories and collects regular files only.
-    private nonisolated static func walkFilesystem(root: String) -> [FileItem] {
+    private nonisolated static func walkFilesystem(
+        root: String,
+        includeName: (@Sendable (String) -> Bool)? = nil
+    ) -> [FileItem] {
         let fileManager = FileManager.default
         let rootURL = URL(fileURLWithPath: root, isDirectory: true)
         let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey]
@@ -239,12 +282,15 @@ final class FileFinder {
 
             guard values?.isRegularFile == true else { continue }
 
+            let name = url.lastPathComponent
+            if let includeName, !includeName(name) { continue }
+
             let absolute = url.path
-            let relativePath = absolute.hasPrefix(prefix) ? String(absolute.dropFirst(prefix.count)) : url.lastPathComponent
+            let relativePath = absolute.hasPrefix(prefix) ? String(absolute.dropFirst(prefix.count)) : name
             items.append(FileItem(
                 path: absolute,
                 relativePath: relativePath,
-                name: url.lastPathComponent
+                name: name
             ))
             if items.count >= maxIndexedFiles { break }
         }

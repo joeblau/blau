@@ -99,7 +99,7 @@ struct InkOverlay: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            InkCanvas(model: model)
+            InkCanvas(model: model, onDismiss: { isActive = false })
             toolbar.padding(.top, 14)
         }
     }
@@ -247,15 +247,18 @@ final class RemoteInkCanvasNSView: NSView {
 /// on top of whatever pane is behind it.
 private struct InkCanvas: NSViewRepresentable {
     var model: InkModel
+    var onDismiss: (() -> Void)?
 
     func makeNSView(context: Context) -> InkCanvasNSView {
         let view = InkCanvasNSView()
         view.model = model
+        view.onDismiss = onDismiss
         return view
     }
 
     func updateNSView(_ nsView: InkCanvasNSView, context: Context) {
         nsView.model = model
+        nsView.onDismiss = onDismiss
         nsView.needsDisplay = true
         // Recolor the pencil/eraser cursor immediately when the tool/color changes.
         nsView.refreshCursor()
@@ -264,6 +267,9 @@ private struct InkCanvas: NSViewRepresentable {
 
 final class InkCanvasNSView: NSView {
     weak var model: InkModel?
+    /// Invoked when the user leaves drawing mode from the canvas (Escape) —
+    /// wired to the same `isActive = false` the toolbar's "Done" button uses.
+    var onDismiss: (() -> Void)?
     private var current: InkStroke?
     private var isMouseInside = false
 
@@ -272,6 +278,29 @@ final class InkCanvasNSView: NSView {
 
     // Capture every click so the pane underneath stays untouched while drawing.
     override func hitTest(_ point: NSPoint) -> NSView? { self }
+
+    // Take key focus the moment the overlay appears so Escape dismisses drawing
+    // mode even before the first stroke. While drawing, keystrokes belong to the
+    // annotation layer, not the terminal/browser underneath — which is also why
+    // Escape can't be left to the pane (Ghostty would swallow it).
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            window.makeFirstResponder(self)
+        }
+    }
+
+    // Escape leaves drawing mode, exactly like tapping "Done". Other keys fall
+    // through to the default responder handling.
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { // Escape
+            onDismiss?()
+            return
+        }
+        super.keyDown(with: event)
+    }
 
     // MARK: - Cursor
 
