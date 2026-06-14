@@ -53,6 +53,7 @@
 		61F220E0506458F5A49CEDE8 /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */; };
 		6215B9C6DFBF73DB93072BD2 /* InspectorHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B068834105F375479ADF423 /* InspectorHelper.swift */; };
 		63E9991ECBF43248AC1D2DCF /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A70BA667DE284AA151D2E2 /* NotesView.swift */; };
+		63EDC53E371076E66ACF92C6 /* LocalServerScannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B56BD17012C0D3186C1E4792 /* LocalServerScannerTests.swift */; };
 		64CB71202BAB8AE61AFADDF1 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 201310A4047D7610189A9F4D /* SettingsView.swift */; };
 		64F5BBAD2D8C4BF5CDAAC40A /* ReliableMessenger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271D385A8DA926A540CE6710 /* ReliableMessenger.swift */; };
 		6684B7C0B05ED55FA9992E54 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 201310A4047D7610189A9F4D /* SettingsView.swift */; };
@@ -277,6 +278,7 @@
 		AEF294C6D54F08AFA7316B33 /* HeadphoneDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeadphoneDetector.swift; sourceTree = "<group>"; };
 		AFEA082D543FE38BE6F626A3 /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
 		B028DA279E32AB30A1A75942 /* CommitListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitListView.swift; sourceTree = "<group>"; };
+		B56BD17012C0D3186C1E4792 /* LocalServerScannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalServerScannerTests.swift; sourceTree = "<group>"; };
 		B944283C684052D8E37CEA34 /* ConnectionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionState.swift; sourceTree = "<group>"; };
 		BA0D0B9E48653778D28F00CA /* PlotterUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotterUITests.swift; sourceTree = "<group>"; };
 		BB0512C0240EE6A1F6AC5063 /* SnapshotHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotHelper.swift; sourceTree = "<group>"; };
@@ -364,6 +366,7 @@
 			children = (
 				F41F5AC980B9260EDB78A608 /* BrowserStartPageVisibilityTests.swift */,
 				0DB6D8C3263608D267C325CE /* ColorChipTests.swift */,
+				B56BD17012C0D3186C1E4792 /* LocalServerScannerTests.swift */,
 				3C68475BF8E1475FC00ABFE0 /* PaneCyclingTests.swift */,
 				7297FC9076A3EEE92FA359FD /* PaneInitRegressionTests.swift */,
 				ADB726FAD149101B9A70CC0D /* WorkspaceRootTrackingTests.swift */,
@@ -1023,6 +1026,7 @@
 			files = (
 				FFDC16C3D0A160CCB1BCBDCF /* BrowserStartPageVisibilityTests.swift in Sources */,
 				A777700135D8A05BAA8AB11D /* ColorChipTests.swift in Sources */,
+				63EDC53E371076E66ACF92C6 /* LocalServerScannerTests.swift in Sources */,
 				CAD4FA3FEF71B408F5A1C332 /* PaneCyclingTests.swift in Sources */,
 				97CCEC7CB74BCC87DC23E339 /* PaneInitRegressionTests.swift in Sources */,
 				B4E96CEA7BF0CCD5D84C0B86 /* WorkspaceRootTrackingTests.swift in Sources */,

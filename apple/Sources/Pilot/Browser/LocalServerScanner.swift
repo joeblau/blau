@@ -4,7 +4,12 @@ struct LocalServer: Identifiable, Hashable, Sendable {
     let port: Int
     let name: String
 
-    var id: Int { port }
+    // Identity is per-project, not per-port. Two dev servers can legitimately
+    // resolve to the same port (several Next apps that all default to 3000, or
+    // wrangler apps before their dev.port is read), and keying identity on the
+    // bare port made SwiftUI's `ForEach(id:)` collapse them into one card shown
+    // N times. Name + port keeps colliding servers distinct in the list.
+    var id: String { "\(name)@\(port)" }
     var url: URL { URL(string: "http://localhost:\(port)")! }
     var displayURL: String { "localhost:\(port)" }
 }
@@ -122,10 +127,51 @@ enum LocalServerScanner {
         if let port = extractPort(fromScript: scriptValue) {
             return LocalServer(port: port, name: projectName)
         }
+        // Wrangler-based dev (Cloudflare Workers, including OpenNext / `next`
+        // apps run via `wrangler dev`): the real port is wrangler's [dev].port,
+        // not a framework default. Read it before `inferFrameworkPort`, else the
+        // `next` dependency masks every wrangler app as 3000 and they collapse
+        // onto the same port. Wrangler's own fallback is 8787 when unset.
+        if scriptValue.range(of: "wrangler", options: .caseInsensitive) != nil {
+            let port = wranglerDevPort(in: url.deletingLastPathComponent()) ?? 8787
+            return LocalServer(port: port, name: projectName)
+        }
         if let port = inferFrameworkPort(script: scriptValue, packageJSON: json) {
             return LocalServer(port: port, name: projectName)
         }
         return nil
+    }
+
+    // Reads `[dev].port` from a sibling wrangler config (wrangler.jsonc, .json,
+    // or .toml). jsonc permits comments and trailing commas, so a tolerant
+    // regex is more robust here than JSONSerialization. Matches `dev.port`
+    // specifically — not the adjacent `inspector_port` (the `"port"` /
+    // `\bport` anchors exclude the `_port` suffix).
+    private static func wranglerDevPort(in directory: URL) -> Int? {
+        let candidates = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"]
+        for name in candidates {
+            let fileURL = directory.appendingPathComponent(name)
+            guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
+            let pattern = name.hasSuffix(".toml")
+                ? #"\[dev\][^\[]*?\bport\s*=\s*(\d+)"#
+                : #""dev"\s*:\s*\{[^}]*?"port"\s*:\s*(\d+)"#
+            if let port = firstCapturedInt(in: text, pattern: pattern) {
+                return port
+            }
+        }
+        return nil
+    }
+
+    private static func firstCapturedInt(in text: String, pattern: String) -> Int? {
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.dotMatchesLineSeparators]
+        ) else { return nil }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              match.numberOfRanges > 1,
+              let captured = Range(match.range(at: 1), in: text) else { return nil }
+        return Int(text[captured])
     }
 
     // Follows `bun run X` / `npm run X` / `pnpm run X` / `yarn X` wrappers
