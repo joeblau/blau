@@ -92,8 +92,7 @@ final class GitCommitStore {
 
     func fetchAll() {
         fetchCommits()
-        fetchActions()
-        fetchRuns()
+        fetchWorkflowRuns()
     }
 
     func fetchCommits() {
@@ -103,28 +102,25 @@ final class GitCommitStore {
 
         Task {
             let result = await Self.fetchGitData(directory: dir)
+            // Drop stale results: the user may have switched workspaces while
+            // the shell command ran, and these would clobber the new repo's data.
+            guard self.repoPath == dir else { return }
             self.commits = result
             self.isLoading = false
         }
     }
 
-    func fetchActions() {
+    /// Actions and runs both come from `gh run list`; one invocation (one
+    /// GitHub API round-trip) feeds both instead of two per refresh tick.
+    func fetchWorkflowRuns() {
         guard !repoPath.isEmpty else { return }
         let dir = repoPath
 
         Task {
-            let result = await Self.fetchActionsData(directory: dir)
-            self.actions = result
-        }
-    }
-
-    func fetchRuns() {
-        guard !repoPath.isEmpty else { return }
-        let dir = repoPath
-
-        Task {
-            let result = await Self.fetchRunsData(directory: dir)
-            self.runs = result
+            let (actions, runs) = await Self.fetchWorkflowData(directory: dir)
+            guard self.repoPath == dir else { return }
+            self.actions = actions
+            self.runs = runs
         }
     }
 
@@ -135,6 +131,7 @@ final class GitCommitStore {
 
         Task {
             let result = await Self.fetchFilesystemData(directory: dir)
+            guard self.repoPath == dir else { return }
             self.filesystem = result
             self.isLoadingFilesystem = false
         }
@@ -160,55 +157,36 @@ final class GitCommitStore {
         }
     }
 
-    private nonisolated static func fetchActionsData(directory: String) async -> [GitAction] {
+    private nonisolated static func fetchWorkflowData(directory: String) async -> ([GitAction], [GitRun]) {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = shellRun("gh", args: [
                     "run", "list", "--limit", "10",
-                    "--json", "status,conclusion,displayTitle,headBranch,headSha,name,createdAt,url"
+                    "--json", "databaseId,status,conclusion,displayTitle,headBranch,headSha,name,createdAt,updatedAt,url"
                 ], in: directory)
 
                 var actions: [GitAction] = []
-                if let data = result.data(using: .utf8),
-                   let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                    for item in items {
-                        let createdAt = item["createdAt"] as? String ?? ""
-                        actions.append(GitAction(
-                            name: item["name"] as? String ?? "",
-                            displayTitle: item["displayTitle"] as? String ?? "",
-                            headBranch: item["headBranch"] as? String ?? "",
-                            headSha: item["headSha"] as? String ?? "",
-                            status: item["status"] as? String ?? "",
-                            conclusion: item["conclusion"] as? String ?? "",
-                            elapsed: createdAt.isEmpty ? "" : Self.relativeTime(from: createdAt),
-                            url: item["url"] as? String ?? ""
-                        ))
-                    }
-                }
-                continuation.resume(returning: actions)
-            }
-        }
-    }
-
-    private nonisolated static func fetchRunsData(directory: String) async -> [GitRun] {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = shellRun("gh", args: [
-                    "run", "list", "--limit", "10",
-                    "--json", "databaseId,name,displayTitle,headBranch,status,conclusion,updatedAt"
-                ], in: directory)
-
                 var runs: [GitRun] = []
                 if let data = result.data(using: .utf8),
                    let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
                     for item in items {
-                        let dbID = item["databaseId"] as? Int ?? 0
                         let name = item["name"] as? String ?? ""
                         let title = item["displayTitle"] as? String ?? ""
                         let branch = item["headBranch"] as? String ?? ""
-                        let updatedAt = item["updatedAt"] as? String ?? ""
                         let conclusionStr = item["conclusion"] as? String ?? ""
                         let statusStr = item["status"] as? String ?? ""
+                        let createdAt = item["createdAt"] as? String ?? ""
+
+                        actions.append(GitAction(
+                            name: name,
+                            displayTitle: title,
+                            headBranch: branch,
+                            headSha: item["headSha"] as? String ?? "",
+                            status: statusStr,
+                            conclusion: conclusionStr,
+                            elapsed: createdAt.isEmpty ? "" : Self.relativeTime(from: createdAt),
+                            url: item["url"] as? String ?? ""
+                        ))
 
                         let status: GitRun.Status
                         if conclusionStr == "success" {
@@ -223,11 +201,18 @@ final class GitCommitStore {
                             status = .unknown
                         }
 
-                        let elapsed = Self.relativeTime(from: updatedAt)
-                        runs.append(GitRun(id: dbID, name: name, title: title, branch: branch, elapsed: elapsed, status: status))
+                        let updatedAt = item["updatedAt"] as? String ?? ""
+                        runs.append(GitRun(
+                            id: item["databaseId"] as? Int ?? 0,
+                            name: name,
+                            title: title,
+                            branch: branch,
+                            elapsed: Self.relativeTime(from: updatedAt),
+                            status: status
+                        ))
                     }
                 }
-                continuation.resume(returning: runs)
+                continuation.resume(returning: (actions, runs))
             }
         }
     }
@@ -254,15 +239,23 @@ final class GitCommitStore {
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 
-    private nonisolated static func parseISODate(_ value: String) -> Date? {
+    // ISO8601DateFormatter is documented thread-safe, and these are never
+    // mutated after init — hence nonisolated(unsafe) is sound. Building one
+    // per parsed row (30 rows per 30s refresh) was measurable churn.
+    private nonisolated(unsafe) static let isoFractionalFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: value) {
-            return date
-        }
+        return formatter
+    }()
 
+    private nonisolated(unsafe) static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: value)
+        return formatter
+    }()
+
+    private nonisolated static func parseISODate(_ value: String) -> Date? {
+        isoFractionalFormatter.date(from: value) ?? isoFormatter.date(from: value)
     }
 
     nonisolated static func findGitRoot(from directory: String) -> String? {

@@ -5,12 +5,14 @@ enum PaneKind: String, Codable, CaseIterable {
     case terminal
     case browser
     case device
+    case editor
 
     var displayName: String {
         switch self {
         case .terminal: "Terminal"
         case .browser: "Browser"
         case .device: "Device"
+        case .editor: "Editor"
         }
     }
 
@@ -19,6 +21,7 @@ enum PaneKind: String, Codable, CaseIterable {
         case .terminal: "terminal"
         case .browser: "safari"
         case .device: "iphone.gen3"
+        case .editor: "curlybraces"
         }
     }
 }
@@ -183,6 +186,9 @@ final class Pane {
     @Relationship(deleteRule: .cascade)
     var browserState: BrowserState?
 
+    @Relationship(deleteRule: .cascade)
+    var editorState: EditorState?
+
     var workspace: Workspace?
 
     var kind: PaneKind {
@@ -202,7 +208,16 @@ final class Pane {
             self.browserState = BrowserState()
         case .device:
             break
+        case .editor:
+            self.editorState = EditorState()
         }
+    }
+
+    var displayTitle: String {
+        if kind == .editor, let path = editorState?.filePath, !path.isEmpty {
+            return (path as NSString).lastPathComponent
+        }
+        return kind.displayName
     }
 
     func incrementBellCount() {

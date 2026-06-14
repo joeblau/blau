@@ -384,7 +384,6 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         // Fall back to the user's home so new panes never inherit Pilot's own
         // cwd (which could be whatever directory Pilot was launched from).
         let persistedDirectory = Self.validWorkingDirectory(from: rawDirectory) ?? NSHomeDirectory()
-        print("[Ghostty] Pane \(pane.id): rawDirectory='\(rawDirectory)' persistedDirectory='\(persistedDirectory)'")
 
         // Install OSC 7 hook silently via ZDOTDIR override.
         // We create a temp .zshenv that installs the precmd hook, then restores
