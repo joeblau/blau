@@ -35,6 +35,8 @@ struct ContentView: View {
                 Section {
                     Label("Notes", systemImage: "note.text")
                         .tag(SidebarSelection.notes)
+                    Label("Remote Desktop", systemImage: "macbook.and.iphone")
+                        .tag(SidebarSelection.remoteDesktop)
                 }
 
                 if !pinned.isEmpty {
@@ -90,6 +92,7 @@ struct ContentView: View {
                     ZStack {
                         ForEach(workspaces) { workspace in
                             let isActive = !store.isNotesMode
+                                && !store.isRemoteDesktopMode
                                 && workspace.id == store.selectedWorkspaceID
                             WorkspaceView(workspace: workspace, isActive: isActive)
                                 .zIndex(isActive ? 1 : 0)
@@ -99,7 +102,7 @@ struct ContentView: View {
                         }
                     }
 
-                    if !store.isNotesMode && !hasSelectedWorkspace {
+                    if !store.isNotesMode && !store.isRemoteDesktopMode && !hasSelectedWorkspace {
                         ContentUnavailableView("No Workspace Selected",
                                                systemImage: "rectangle.on.rectangle.slash",
                                                description: Text("Select a workspace from the sidebar."))
@@ -111,12 +114,17 @@ struct ContentView: View {
                         .zIndex(100)
                 }
 
-                if isDrawingActive && !store.isNotesMode && !workspaces.isEmpty {
+                if store.isRemoteDesktopMode {
+                    RemoteDesktopView(store: store)
+                        .zIndex(100)
+                }
+
+                if isDrawingActive && !store.isNotesMode && !store.isRemoteDesktopMode && !workspaces.isEmpty {
                     InkOverlay(isActive: $isDrawingActive)
                         .zIndex(60)
                 }
             }
-            .navigationTitle(store.isNotesMode ? "Notes" : (store.selectedWorkspace?.name ?? ""))
+            .navigationTitle(navigationTitle)
         }
         .inspector(isPresented: selectedWorkspaceInspectorPresentedBinding) {
             InspectorPanelView(
@@ -221,6 +229,7 @@ struct ContentView: View {
                     Button("") {
                         guard index - 1 < workspaceShortcutIDs.count else { return }
                         store.isNotesMode = false
+                        store.isRemoteDesktopMode = false
                         store.selectedWorkspaceID = workspaceShortcutIDs[index - 1]
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
@@ -286,10 +295,17 @@ struct ContentView: View {
     /// `selectedWorkspaceID`. Selecting a workspace row (even the one already
     /// backing `selectedWorkspaceID`) flips out of Notes mode, because the
     /// selection value changes from `.notes` to `.workspace`.
+    private var navigationTitle: String {
+        if store.isNotesMode { return "Notes" }
+        if store.isRemoteDesktopMode { return "Remote Desktop" }
+        return store.selectedWorkspace?.name ?? ""
+    }
+
     private var sidebarSelectionBinding: Binding<SidebarSelection?> {
         Binding(
             get: {
                 if store.isNotesMode { return .notes }
+                if store.isRemoteDesktopMode { return .remoteDesktop }
                 if let id = store.selectedWorkspaceID { return .workspace(id) }
                 return nil
             },
@@ -297,8 +313,11 @@ struct ContentView: View {
                 switch newValue {
                 case .notes:
                     store.enterNotesMode()
+                case .remoteDesktop:
+                    store.enterRemoteDesktopMode()
                 case .workspace(let id):
                     store.isNotesMode = false
+                    store.isRemoteDesktopMode = false
                     store.selectedWorkspaceID = id
                 case nil:
                     break
@@ -682,6 +701,7 @@ private struct RecordingStatusIndicator: View {
 /// permanent Notes row with the per-workspace rows.
 enum SidebarSelection: Hashable {
     case notes
+    case remoteDesktop
     case workspace(UUID)
 }
 
@@ -693,7 +713,7 @@ extension Notification.Name {
 @MainActor
 private enum ContentViewPreviewData {
     static let container: ModelContainer = {
-        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, EditorState.self, Note.self])
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, EditorState.self, Note.self, RemoteDesktopConnection.self])
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: configuration)
     }()

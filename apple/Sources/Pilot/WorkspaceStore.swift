@@ -28,7 +28,31 @@ final class WorkspaceStore {
     /// (toggled with ⌘0). Independent of `selectedWorkspaceID` so toggling
     /// out of Notes returns to whatever workspace was selected.
     var isNotesMode: Bool = false {
-        didSet { UserDefaults.standard.set(isNotesMode, forKey: "notesMode") }
+        didSet {
+            UserDefaults.standard.set(isNotesMode, forKey: "notesMode")
+            // Notes and Remote Desktop are both full-detail global modes;
+            // entering one exits the other.
+            if isNotesMode { isRemoteDesktopMode = false }
+        }
+    }
+
+    /// True while the global Remote Desktop mode is showing in the detail area
+    /// (toggled with ⇧⌘0). Mutually exclusive with `isNotesMode`.
+    var isRemoteDesktopMode: Bool = false {
+        didSet {
+            UserDefaults.standard.set(isRemoteDesktopMode, forKey: "remoteDesktopMode")
+            if isRemoteDesktopMode { isNotesMode = false }
+        }
+    }
+
+    var selectedRemoteConnectionID: UUID? {
+        didSet {
+            if let id = selectedRemoteConnectionID {
+                UserDefaults.standard.set(id.uuidString, forKey: "selectedRemoteConnectionID")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "selectedRemoteConnectionID")
+            }
+        }
     }
 
     var selectedNoteID: UUID? {
@@ -53,6 +77,8 @@ final class WorkspaceStore {
     @ObservationIgnored private var workspacesFetchVersion = -1
     @ObservationIgnored private var fetchedNotes: [Note]?
     @ObservationIgnored private var notesFetchVersion = -1
+    @ObservationIgnored private var fetchedRemoteConnections: [RemoteDesktopConnection]?
+    @ObservationIgnored private var remoteConnectionsFetchVersion = -1
 
     var workspaces: [Workspace] {
         let version = changeCount // access to establish observation dependency
@@ -231,6 +257,103 @@ final class WorkspaceStore {
         }
     }
 
+    // MARK: - Remote Desktop connections
+
+    var remoteConnections: [RemoteDesktopConnection] {
+        let version = changeCount // access to establish observation dependency
+        if let cached = fetchedRemoteConnections, remoteConnectionsFetchVersion == version {
+            return cached
+        }
+        let descriptor = FetchDescriptor<RemoteDesktopConnection>(
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.createdAt)]
+        )
+        let items = (try? modelContext.fetch(descriptor)) ?? []
+        fetchedRemoteConnections = items
+        remoteConnectionsFetchVersion = version
+        return items
+    }
+
+    var selectedRemoteConnection: RemoteDesktopConnection? {
+        remoteConnections.first { $0.id == selectedRemoteConnectionID }
+    }
+
+    /// Set when closing a connection tab so the UI can confirm before the
+    /// (undo-free) delete. Transient — not persisted.
+    var remoteConnectionPendingClose: RemoteDesktopConnection?
+
+    /// ⇧⌘0: flip into Remote Desktop mode (selecting a connection if one
+    /// exists) or back out to the previously selected workspace.
+    func toggleRemoteDesktopMode() {
+        if isRemoteDesktopMode {
+            isRemoteDesktopMode = false
+        } else {
+            enterRemoteDesktopMode()
+        }
+    }
+
+    func enterRemoteDesktopMode() {
+        if selectedRemoteConnection == nil {
+            selectedRemoteConnectionID = remoteConnections.first?.id
+        }
+        isRemoteDesktopMode = true
+    }
+
+    @discardableResult
+    func addRemoteConnection(host: String, port: Int = 5900, nickname: String = "", username: String = "") -> RemoteDesktopConnection {
+        let maxOrder = remoteConnections.map(\.sortOrder).max() ?? -1
+        let connection = RemoteDesktopConnection(
+            host: host, port: port, nickname: nickname, username: username, sortOrder: maxOrder + 1
+        )
+        modelContext.insert(connection)
+        try? modelContext.save()
+        changeCount += 1
+        selectedRemoteConnectionID = connection.id
+        return connection
+    }
+
+    func requestCloseRemoteConnection(_ connection: RemoteDesktopConnection) {
+        remoteConnectionPendingClose = connection
+    }
+
+    func deleteRemoteConnection(_ connection: RemoteDesktopConnection) {
+        let wasSelected = selectedRemoteConnectionID == connection.id
+        let remaining = remoteConnections.filter { $0.id != connection.id }
+        modelContext.delete(connection)
+        for (index, item) in remaining.enumerated() {
+            item.sortOrder = index
+        }
+        try? modelContext.save()
+        changeCount += 1
+        if wasSelected {
+            selectedRemoteConnectionID = remaining.first?.id
+        }
+    }
+
+    func moveRemoteConnection(_ draggedID: UUID, before targetID: UUID) {
+        guard draggedID != targetID else { return }
+        var ordered = remoteConnections
+        guard let from = ordered.firstIndex(where: { $0.id == draggedID }),
+              let to = ordered.firstIndex(where: { $0.id == targetID }) else { return }
+        ordered.move(fromOffsets: IndexSet(integer: from), toOffset: to)
+        normalizeRemoteConnectionSortOrder(ordered)
+    }
+
+    func moveRemoteConnectionToEnd(_ draggedID: UUID) {
+        var ordered = remoteConnections
+        guard let from = ordered.firstIndex(where: { $0.id == draggedID }),
+              from != ordered.count - 1 else { return }
+        ordered.move(fromOffsets: IndexSet(integer: from), toOffset: ordered.count)
+        normalizeRemoteConnectionSortOrder(ordered)
+    }
+
+    private func normalizeRemoteConnectionSortOrder(_ ordered: [RemoteDesktopConnection]) {
+        for (index, item) in ordered.enumerated() {
+            item.sortOrder = index
+        }
+        try? modelContext.save()
+        changeCount += 1
+    }
+
     var summaries: [WorkspaceSummary] {
         workspaces.map { workspace in
             WorkspaceSummary(
@@ -269,6 +392,10 @@ final class WorkspaceStore {
             self.selectedNoteID = UUID(uuidString: storedNote)
         }
         self.isNotesMode = UserDefaults.standard.bool(forKey: "notesMode")
+        if let storedRemote = UserDefaults.standard.string(forKey: "selectedRemoteConnectionID") {
+            self.selectedRemoteConnectionID = UUID(uuidString: storedRemote)
+        }
+        self.isRemoteDesktopMode = UserDefaults.standard.bool(forKey: "remoteDesktopMode")
         cleanupBadDirectories()
     }
 

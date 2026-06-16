@@ -7,7 +7,7 @@ struct DevicePaneView: View {
     let isActive: Bool
     let isSelected: Bool
 
-    @State private var showCopiedToast = false
+    @State private var toast: DeviceToast?
     @State private var toastDismissWorkItem: DispatchWorkItem?
 
     var body: some View {
@@ -19,8 +19,8 @@ struct DevicePaneView: View {
                 .allowsHitTesting(session.status != .streaming)
                 .animation(.easeInOut(duration: 0.2), value: session.status)
 
-            if showCopiedToast {
-                CopiedToast()
+            if let toast {
+                DeviceToastView(toast: toast)
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
                     .allowsHitTesting(false)
                     .zIndex(20)
@@ -28,30 +28,46 @@ struct DevicePaneView: View {
         }
         .background(Color.black)
         .onChange(of: session.clipboardCopyCount) { _, _ in
-            flashCopiedToast()
+            flash(DeviceToast(text: "Screenshot Copied", systemImage: "checkmark.circle.fill"))
+        }
+        .onChange(of: session.recordingWithoutAudioCount) { _, _ in
+            // Held a touch longer than the copy toast since it's a heads-up, not
+            // a confirmation.
+            flash(
+                DeviceToast(text: "Recording without audio", systemImage: "mic.slash.fill", tint: .orange),
+                duration: 2.5
+            )
         }
     }
 
-    private func flashCopiedToast() {
+    private func flash(_ content: DeviceToast, duration: TimeInterval = 1.0) {
         toastDismissWorkItem?.cancel()
         withAnimation(.snappy(duration: 0.18)) {
-            showCopiedToast = true
+            toast = content
         }
         let work = DispatchWorkItem {
             withAnimation(.snappy(duration: 0.3)) {
-                showCopiedToast = false
+                toast = nil
             }
         }
         toastDismissWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
     }
 }
 
-private struct CopiedToast: View {
+private struct DeviceToast {
+    let text: String
+    let systemImage: String
+    var tint: Color = .primary
+}
+
+private struct DeviceToastView: View {
+    let toast: DeviceToast
+
     var body: some View {
-        Label("Screenshot Copied", systemImage: "checkmark.circle.fill")
+        Label(toast.text, systemImage: toast.systemImage)
             .font(.headline)
-            .foregroundStyle(.primary)
+            .foregroundStyle(toast.tint)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
             .background(.regularMaterial, in: Capsule())

@@ -71,6 +71,7 @@ struct WorkspaceView: View {
             pane: pane,
             isSelected: isSelected,
             isHovering: hoveredPaneID == pane.id,
+            isWorkspaceActive: isActive,
             canClose: workspace.sortedPanes.count > 1,
             onClose: { workspace.removePane(pane) },
             onHide: { workspace.collapsePane(pane) },
@@ -429,6 +430,7 @@ struct TabItemContent: View {
     let pane: Pane
     let isSelected: Bool
     let isHovering: Bool
+    let isWorkspaceActive: Bool
     let canClose: Bool
     let onClose: () -> Void
     let onHide: () -> Void
@@ -469,6 +471,10 @@ struct TabItemContent: View {
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? .primary : .secondary)
 
+            if pane.kind == .terminal {
+                TerminalDirtyBadge(pane: pane, isWorkspaceActive: isWorkspaceActive)
+            }
+
             Spacer(minLength: 0)
 
             if isHovering {
@@ -492,6 +498,38 @@ struct TabItemContent: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+}
+
+/// "Clean" / "Dirty" word shown after "Terminal" in a terminal tab header,
+/// reflecting whether the shell's current directory sits in a git work tree with
+/// uncommitted changes. Polls `git status` every few seconds while its workspace
+/// is active (it reads the shell's live cwd, so it tracks `cd` and file edits);
+/// renders nothing when the directory isn't a git repo.
+private struct TerminalDirtyBadge: View {
+    let pane: Pane
+    let isWorkspaceActive: Bool
+    @State private var isDirty: Bool?
+
+    var body: some View {
+        Group {
+            if let isDirty {
+                Text(isDirty ? "Dirty" : "Clean")
+                    .scaledFont(size: 11, weight: .medium)
+                    .foregroundStyle(isDirty ? Color.orange : Color.green)
+            }
+        }
+        // Restart polling when activation flips; only the visible workspace polls.
+        .task(id: isWorkspaceActive) {
+            guard isWorkspaceActive else { return }
+            while !Task.isCancelled {
+                let directory = pane.liveShellCurrentDirectory() ?? pane.currentDirectory
+                let status: Bool? = directory.isEmpty ? nil : await GitStatus.isDirty(directory: directory)
+                if Task.isCancelled { break }
+                isDirty = status
+                try? await Task.sleep(for: .seconds(3))
+            }
+        }
     }
 }
 

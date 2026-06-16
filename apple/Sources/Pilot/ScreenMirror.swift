@@ -1,5 +1,6 @@
 import Foundation
 import ScreenCaptureKit
+import CoreGraphics
 import CoreImage
 import CoreMedia
 import CoreVideo
@@ -18,6 +19,10 @@ import VideoToolbox
 final class ScreenMirror {
     /// True once a capture stream is actively running.
     private(set) var isRunning = false
+    /// Whether we've already triggered the Screen Recording permission prompt
+    /// this launch. Gates the prompt to once so a denied/unsettled grant can't
+    /// turn the capture-retry into an every-2-seconds nag.
+    private var didRequestScreenAccess = false
 
     private let sender: FrameSender
     private var stream: SCStream?
@@ -93,16 +98,30 @@ final class ScreenMirror {
     // MARK: - Capture setup
 
     private func beginCapture() async {
+        // `SCShareableContent` is what pops the Screen Recording prompt. The old
+        // catch/retry below re-entered it every 2s, so a single unsettled (or
+        // denied) permission decision became an endless nag. Preflight the grant
+        // *without* prompting, and only ever prompt through the capture API once
+        // per launch.
+        guard CGPreflightScreenCaptureAccess() || !didRequestScreenAccess else {
+            // Not granted, and we've already shown the prompt once this launch —
+            // don't ask again. A later grant takes effect on the next attempt
+            // (Plotter reconnect / relaunch).
+            isRunning = false
+            return
+        }
+        didRequestScreenAccess = true
+
         do {
-            // Requesting shareable content implicitly prompts for Screen
-            // Recording permission the first time.
+            // Prompts the first time if not yet granted; silent once granted.
             let content = try await SCShareableContent.excludingDesktopWindows(
                 false,
                 onScreenWindowsOnly: true
             )
 
             guard let window = pickPilotWindow(from: content.windows) else {
-                // No suitable window yet (app may still be launching). Retry.
+                // No suitable window yet (app may still be launching) — a
+                // transient state, not a permission problem. The only retry.
                 isRunning = false
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 if !Task.isCancelled { start() }
@@ -126,10 +145,10 @@ final class ScreenMirror {
             try await stream.startCapture()
             self.stream = stream
         } catch {
+            // Preflight already confirmed access, so a throw here is a transient
+            // capture failure, not a permission problem — don't self-retry into
+            // the prompt loop. The next Plotter (re)connect starts cleanly.
             isRunning = false
-            // Permission denied or transient failure — retry after a delay.
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            if !Task.isCancelled { start() }
         }
     }
 
