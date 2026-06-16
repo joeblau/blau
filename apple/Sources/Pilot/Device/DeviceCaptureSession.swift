@@ -35,6 +35,15 @@ final class DeviceCaptureSession: NSObject {
     /// to this to flash a "Copied" toast — counter instead of `Date?` so
     /// back-to-back copies still fire the observation.
     var clipboardCopyCount: Int = 0
+    /// Whether the live capture has an audio input wired up, so recordings
+    /// include sound. False when no paired audio device was found/added — a
+    /// recording then comes out video-only.
+    var hasAudioInput: Bool = false
+    /// Increments when a recording starts with no audio track, so the UI can
+    /// flash a one-time "recording without audio" notice. Counter (not a flag)
+    /// so back-to-back silent recordings each fire the observation, same idiom
+    /// as `clipboardCopyCount`.
+    var recordingWithoutAudioCount: Int = 0
 
     @ObservationIgnored private let logger = Logger(subsystem: "app.blau.pilot.device", category: "capture")
     @ObservationIgnored private let audioPreview = AVCaptureAudioPreviewOutput()
@@ -120,6 +129,11 @@ final class DeviceCaptureSession: NSObject {
         coordinator.startRecording(to: url)
         isRecording = true
         lastError = nil
+        // No paired audio device means the writer has no audio track to fill —
+        // surface a one-time notice so the silent recording isn't a surprise.
+        if !hasAudioInput {
+            recordingWithoutAudioCount += 1
+        }
     }
 
     fileprivate func recordingDidFinish(url: URL, errorMessage: String?) {
@@ -359,6 +373,7 @@ final class DeviceCaptureSession: NSObject {
 
         for input in session.inputs { session.removeInput(input) }
         for output in session.outputs { session.removeOutput(output) }
+        hasAudioInput = false
 
         useDeviceNativeFormat()
 
@@ -383,14 +398,17 @@ final class DeviceCaptureSession: NSObject {
                 let audioInput = try AVCaptureDeviceInput(device: audioDevice)
                 if session.canAddInput(audioInput) {
                     session.addInput(audioInput)
-                }
-                if session.canAddOutput(audioPreview) {
-                    session.addOutput(audioPreview)
-                }
-                // Separate data output so recordings can capture audio too —
-                // the writer pulls sample buffers from here.
-                if session.canAddOutput(audioDataOutput) {
-                    session.addOutput(audioDataOutput)
+                    if session.canAddOutput(audioPreview) {
+                        session.addOutput(audioPreview)
+                    }
+                    // Separate data output so recordings can capture audio too —
+                    // the writer pulls sample buffers from here. Only once both
+                    // the input and this output are live is there an audio track
+                    // to record.
+                    if session.canAddOutput(audioDataOutput) {
+                        session.addOutput(audioDataOutput)
+                        hasAudioInput = true
+                    }
                 }
             } catch {
                 logger.warning("audio input failed: \(error.localizedDescription)")
@@ -409,6 +427,7 @@ final class DeviceCaptureSession: NSObject {
 
     private func detach() {
         cancelRescan()
+        hasAudioInput = false
         session.beginConfiguration()
         for input in session.inputs { session.removeInput(input) }
         for output in session.outputs { session.removeOutput(output) }

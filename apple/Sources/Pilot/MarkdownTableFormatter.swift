@@ -56,10 +56,13 @@ enum MarkdownTableFormatter {
     }
 
     /// A delimiter row is all cells of the form `:?-+:?` (e.g. `---`, `:--`,
-    /// `:-:`, `--:`) with at least one dash overall.
+    /// `:-:`, `--:`) with at least one dash overall. It must contain a pipe:
+    /// a bare `---` is a thematic break (horizontal rule), not a table delimiter,
+    /// and treating it as one would swallow the line above and overwrite the rule
+    /// itself when the block is reflowed (issue: notes lines vanish after Return).
     private static func isDelimiterRow(_ line: String) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard trimmed.contains("-"), trimmed.contains("|") || trimmed.allSatisfy({ "-:| ".contains($0) }) else {
+        guard trimmed.contains("-"), trimmed.contains("|") else {
             return false
         }
         let cells = cells(of: line)

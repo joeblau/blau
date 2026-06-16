@@ -1,5 +1,5 @@
 {
-  "originHash" : "8714a00b750933c2f497a41aaa6663ac6cff00933ec441deb6bf0b30f3d9cdeb",
+  "originHash" : "2aee01eca0b4ec47c759f7f71accce6dde8b0d566fc432689463305f43fe2bec",
   "pins" : [
     {
       "identity" : "codeeditlanguages",
@@ -38,12 +38,38 @@
       }
     },
     {
+      "identity" : "cryptoswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/royalapplications/CryptoSwift.git",
+      "state" : {
+        "branch" : "foundationessentials",
+        "revision" : "a59b4d91ebb22011656c830f874fe7152e183a57"
+      }
+    },
+    {
+      "identity" : "h",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/rarestype/h",
+      "state" : {
+        "revision" : "aa3626829160917d4378330617971977cbd78f5b",
+        "version" : "1.0.1"
+      }
+    },
+    {
       "identity" : "rearrange",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ChimeHQ/Rearrange",
       "state" : {
         "revision" : "4de8be41dba304192e87dc0a11e0aa39e72aa2e8",
         "version" : "2.1.1"
+      }
+    },
+    {
+      "identity" : "royalvnc",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/royalapplications/royalvnc.git",
+      "state" : {
+        "revision" : "92d4427c73817d8f849bb289ff190aa4b40c44ea"
       }
     },
     {
@@ -89,6 +115,24 @@
       "state" : {
         "revision" : "0b67ecb79139f6addef8699eff3622808aa6c7dc",
         "version" : "2.3.6"
+      }
+    },
+    {
+      "identity" : "swift-jpeg",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tayloraswift/swift-jpeg",
+      "state" : {
+        "revision" : "c7aa48486cd8920120dd69cda5de62aeb93e1708",
+        "version" : "2.1.0"
+      }
+    },
+    {
+      "identity" : "swift-png",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tayloraswift/swift-png",
+      "state" : {
+        "revision" : "8a0bcd4df5e4b307c804937776a56dd6ecdf6396",
+        "version" : "4.5.1"
       }
     },
     {

@@ -29,6 +29,13 @@ packages:
   CodeEditLanguages:
     url: https://github.com/CodeEditApp/CodeEditLanguages.git
     exactVersion: "0.1.20"
+  # Pinned by revision (tag 1.1.0's commit) rather than version: RoyalVNCKit
+  # depends on a branch-pinned CryptoSwift fork, and SwiftPM only allows a
+  # branch sub-dependency when the parent is itself pinned by branch/revision
+  # ("unstable"). The revision keeps the build reproducible.
+  RoyalVNCKit:
+    url: https://github.com/royalapplications/royalvnc.git
+    revision: 92d4427c73817d8f849bb289ff190aa4b40c44ea
 
 schemes:
   SharedTests:
@@ -81,6 +88,8 @@ targets:
         product: CodeEditSourceEditor
       - package: CodeEditLanguages
         product: CodeEditLanguages
+      - package: RoyalVNCKit
+        product: RoyalVNCKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.pilot

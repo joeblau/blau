@@ -19,13 +19,14 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Pilot listens for push-to-talk dictation from the Copilot app.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Pilot connects to nearby Copilot and Plotter devices over the local network.</string>
+	<string>Pilot connects to nearby Copilot and Plotter devices, and discovers Macs offering Screen Sharing, over the local network.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_blau-frames._tcp</string>
 		<string>_blau-annotate._tcp</string>
 		<string>_blau-sync._tcp</string>
 		<string>_blau-sync._udp</string>
+		<string>_rfb._tcp</string>
 	</array>
 </dict>
 </plist>

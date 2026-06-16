@@ -35,7 +35,7 @@ struct PilotApp: App {
     @AppStorage("ui.zoom") private var uiZoom: Double = UIZoomLadder.default
 
     init() {
-        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, EditorState.self, Note.self])
+        let schema = Schema([Workspace.self, Pane.self, BrowserState.self, EditorState.self, Note.self, RemoteDesktopConnection.self])
         let configuration = ModelConfiguration(schema: schema, url: Self.persistentStoreURL())
         let container = try! ModelContainer(for: schema, configurations: configuration)
         self.modelContainer = container
@@ -198,6 +198,11 @@ struct PilotApp: App {
                 }
                 .keyboardShortcut("0", modifiers: .command)
 
+                Button(store.isRemoteDesktopMode ? "Hide Remote Desktop" : "Show Remote Desktop") {
+                    store.toggleRemoteDesktopMode()
+                }
+                .keyboardShortcut("0", modifiers: [.command, .shift])
+
                 Button("Focus Selected Pane") {
                     guard let workspace = store.selectedWorkspace,
                           let pane = workspace.selectedPane else { return }
@@ -353,6 +358,7 @@ struct PilotApp: App {
             switch message {
             case .selectWorkspace(let sel):
                 store.isNotesMode = false
+                store.isRemoteDesktopMode = false
                 store.selectedWorkspaceID = sel.workspaceID
                 // Ensure the workspace's terminal is selected and focused
                 if let workspace = store.workspaces.first(where: { $0.id == sel.workspaceID }),
@@ -366,6 +372,7 @@ struct PilotApp: App {
                 // Copilot tab selector picked a pane: focus that workspace and
                 // make the chosen pane its active tab.
                 store.isNotesMode = false
+                store.isRemoteDesktopMode = false
                 store.selectedWorkspaceID = sel.workspaceID
                 if let workspace = store.workspaces.first(where: { $0.id == sel.workspaceID }) {
                     workspace.selectedPaneID = sel.tabID

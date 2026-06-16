@@ -46,6 +46,11 @@ final class FileFinder {
     nonisolated private static let maxIndexedFiles = 200_000
     nonisolated private static let maxResults = 300
 
+    /// Flat bonus added to a basename match so it reliably outranks a path-only
+    /// (directory-substring) match of equal raw score — keeps quick-open ranking
+    /// intact even though the finder now searches the whole relative path.
+    nonisolated private static let basenameMatchBonus = 40
+
     /// Directory names skipped wholesale during the non-git filesystem walk.
     /// Build artifacts, dependency caches, and VCS metadata — none of which the
     /// user wants to open by hand.
@@ -143,17 +148,24 @@ final class FileFinder {
 
         // Score every item; keep the matches; sort best-first, breaking ties
         // toward shorter paths (the shorter path is usually the tighter match).
-        // Quick-open semantics: match the file *name* by default so typing a
-        // filename (".env.", "Contents") surfaces files actually called that, not
-        // every path whose directory letters happen to spell it (".env." used to
-        // match ".../Assets.xcassets/assets/NVDA.imageset/…" through the dirs).
-        // Match the full relative path only once the query contains "/", the
-        // explicit "I'm typing a path" signal.
-        let matchPath = query.contains("/")
+        //
+        // Score the basename first: that's what quick-open is usually after, and
+        // scoring the bare name keeps the greedy matcher from letting directory
+        // letters "steal" a worse, scattered match (typing "Pane" shouldn't get
+        // out-greedied by the "p…a…n…e" hiding across a long path). Then fall
+        // back to the full relative path so a file is *also* findable by any
+        // directory substring — "rendezvous" or "workers/web" surface the files
+        // *inside* those folders, which the old name-only matcher missed
+        // entirely. The basename bonus keeps name hits ranked above path-only
+        // hits, so quick-open ordering is unchanged.
         let scored = items.compactMap { item -> (item: FileItem, score: Int)? in
-            let candidate = matchPath ? item.relativePath : item.name
-            guard let score = FuzzyMatcher.score(query: query, candidate: candidate) else { return nil }
-            return (item, score)
+            if let nameScore = FuzzyMatcher.score(query: query, candidate: item.name) {
+                return (item, nameScore + basenameMatchBonus)
+            }
+            if let pathScore = FuzzyMatcher.score(query: query, candidate: item.relativePath) {
+                return (item, pathScore)
+            }
+            return nil
         }
         .sorted { lhs, rhs in
             if lhs.score != rhs.score { return lhs.score > rhs.score }
