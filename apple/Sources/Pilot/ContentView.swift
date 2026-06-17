@@ -204,6 +204,8 @@ struct ContentView: View {
                     .keyboardShortcut("i", modifiers: [.command, .shift])
 
                     editorToolbarButton
+
+                    openInFinderButton
                 }
                 .disabled(store.selectedWorkspace == nil || store.isNotesMode)
                 Button {
@@ -220,7 +222,7 @@ struct ContentView: View {
                 } label: {
                     Label("Inspector", systemImage: "sidebar.trailing")
                 }
-                .disabled(store.selectedWorkspace == nil || store.isNotesMode)
+                .disabled(store.selectedWorkspace == nil || store.isNotesMode || store.isRemoteDesktopMode)
             }
         }
         .background {
@@ -563,13 +565,21 @@ struct ContentView: View {
         Binding(
             get: { isInspectorPresentedForSelectedWorkspace },
             set: { isPresented in
+                // Notes / Remote Desktop transiently hide the inspector by
+                // forcing `get` to false. SwiftUI echoes that back through this
+                // setter, which would otherwise persist `false` into the
+                // workspace and lose its real state. Ignore writes while a
+                // global mode is showing; only genuine in-workspace toggles
+                // persist — so the panel restores to what it was on return.
+                guard !store.isNotesMode, !store.isRemoteDesktopMode else { return }
                 store.selectedWorkspace?.setInspectorPresented(isPresented)
             }
         )
     }
 
     private var isInspectorPresentedForSelectedWorkspace: Bool {
-        !store.isNotesMode && (store.selectedWorkspace?.isInspectorPresented ?? false)
+        !store.isNotesMode && !store.isRemoteDesktopMode
+            && (store.selectedWorkspace?.isInspectorPresented ?? false)
     }
 
     private var hasSelectedWorkspace: Bool {
@@ -643,6 +653,21 @@ struct ContentView: View {
         .keyboardShortcut("e", modifiers: .command)
         .disabled(rootPath == nil)
         .help(rootPath == nil ? "Set a workspace root path to open the editor" : "Open a file editor with fuzzy file search")
+    }
+
+    /// Reveals the selected workspace's root directory in macOS Finder.
+    @ViewBuilder
+    private var openInFinderButton: some View {
+        let rootPath = selectedWorkspaceRootPath
+        Button {
+            if let rootPath {
+                NSWorkspace.shared.open(URL(fileURLWithPath: rootPath))
+            }
+        } label: {
+            Label("Open in Finder", systemImage: "folder")
+        }
+        .disabled(rootPath == nil)
+        .help(rootPath == nil ? "Set a workspace root path to open it in Finder" : "Open the workspace folder in Finder")
     }
 
     private func syncSelectedWorkspaceRootPath() {
