@@ -393,25 +393,35 @@ final class DeviceCaptureSession: NSObject {
             return
         }
 
-        if let audioDevice = pairedAudioDevice(forVideo: device) {
+        // Audio. The iPhone screen-capture device is `.muxed`, so its single
+        // input already carries audio alongside video — the audio data output
+        // taps that input's audio port directly, with no separate audio device.
+        // (The old code only wired audio when it found a *separate* external
+        // audio device, which a muxed iPhone doesn't expose, so every recording
+        // came out silent.) A non-muxed, video-only device still needs a paired
+        // external audio input.
+        if device.hasMediaType(.muxed) {
+            hasAudioInput = true
+        } else if let audioDevice = pairedAudioDevice(forVideo: device) {
             do {
                 let audioInput = try AVCaptureDeviceInput(device: audioDevice)
                 if session.canAddInput(audioInput) {
                     session.addInput(audioInput)
-                    if session.canAddOutput(audioPreview) {
-                        session.addOutput(audioPreview)
-                    }
-                    // Separate data output so recordings can capture audio too —
-                    // the writer pulls sample buffers from here. Only once both
-                    // the input and this output are live is there an audio track
-                    // to record.
-                    if session.canAddOutput(audioDataOutput) {
-                        session.addOutput(audioDataOutput)
-                        hasAudioInput = true
-                    }
+                    hasAudioInput = true
                 }
             } catch {
                 logger.warning("audio input failed: \(error.localizedDescription)")
+            }
+        }
+
+        if hasAudioInput {
+            // Live monitor (so you hear the device, like QuickTime does) plus the
+            // data output the recording writer pulls audio sample buffers from.
+            if session.canAddOutput(audioPreview) {
+                session.addOutput(audioPreview)
+            }
+            if session.canAddOutput(audioDataOutput) {
+                session.addOutput(audioDataOutput)
             }
         }
 
