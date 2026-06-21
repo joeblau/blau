@@ -28,6 +28,16 @@ final class RemoteScreenDiscovery {
         let port: Int
     }
 
+    /// What the browser is doing, so the picker can show an actionable message
+    /// rather than an endless spinner when discovery is blocked.
+    enum BrowseState: Equatable {
+        case idle
+        case browsing                 // `.ready` — searching the network
+        case needsPermission(String)  // `.waiting` — Local Network access not granted
+        case failed(String)
+    }
+    private(set) var browseState: BrowseState = .idle
+
     private(set) var services: [Service] = []
     private var browser: NWBrowser?
 
@@ -43,11 +53,24 @@ final class RemoteScreenDiscovery {
             Task { @MainActor in self?.apply(results) }
         }
         browser.stateUpdateHandler = { [weak self] state in
-            switch state {
-            case .failed, .cancelled:
-                Task { @MainActor in self?.restart() }
-            default:
-                break
+            Task { @MainActor in
+                guard let self else { return }
+                switch state {
+                case .ready:
+                    self.browseState = .browsing
+                case .waiting(let error):
+                    // `.waiting` here almost always means macOS hasn't granted
+                    // Pilot Local Network access (or `_rfb._tcp` isn't allowed in
+                    // NSBonjourServices yet) — surface it instead of spinning.
+                    self.browseState = .needsPermission(error.localizedDescription)
+                case .failed(let error):
+                    self.browseState = .failed(error.localizedDescription)
+                    self.restart()
+                case .cancelled:
+                    break
+                default:
+                    break
+                }
             }
         }
 
@@ -59,6 +82,7 @@ final class RemoteScreenDiscovery {
         browser?.cancel()
         browser = nil
         services = []
+        browseState = .idle
     }
 
     private func restart() {

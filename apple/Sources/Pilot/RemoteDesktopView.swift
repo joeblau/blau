@@ -332,15 +332,7 @@ private struct RemoteComputerPicker: View {
     @ViewBuilder
     private var discoveredList: some View {
         if discovery.services.isEmpty {
-            VStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Looking for computers with Screen Sharing enabled…")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(24)
+            emptyState
         } else {
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -371,6 +363,46 @@ private struct RemoteComputerPicker: View {
             .disabled(isResolving)
             .opacity(isResolving ? 0.5 : 1)
         }
+    }
+
+    /// Shown while no machines are listed. Always offers the actionable next
+    /// steps (a Mac needs Screen Sharing on; Pilot needs Local Network access),
+    /// and reads as a clear error — not a perpetual spinner — when the browser
+    /// reports it's blocked.
+    @ViewBuilder
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            switch discovery.browseState {
+            case .needsPermission, .failed:
+                Image(systemName: "wifi.exclamationmark")
+                    .font(.system(size: 26))
+                    .foregroundStyle(.secondary)
+                Text("Pilot can't browse the local network")
+                    .font(.callout.weight(.medium))
+            default:
+                ProgressView().controlSize(.small)
+                Text("Looking for computers with Screen Sharing enabled…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Text("The target Mac needs Screen Sharing on (System Settings → General → Sharing), and Pilot needs Local Network access. You can still connect by typing a host below.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+
+            Button("Open Local Network Settings") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
     }
 
     private func pick(_ service: RemoteScreenDiscovery.Service) {
