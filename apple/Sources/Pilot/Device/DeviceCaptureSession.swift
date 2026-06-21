@@ -56,6 +56,51 @@ final class DeviceCaptureSession: NSObject {
     @ObservationIgnored private var rescanAttemptsRemaining = 0
     @ObservationIgnored private var rescanActive = false
 
+    /// Health watchdog. The capture session can die silently after extended use
+    /// — most often a media-services reset (`mediaserverd` restarts under memory
+    /// or thermal pressure) — which stops the session *without* firing a
+    /// device-disconnect. `status` then stays `.streaming` while the preview goes
+    /// black with no overlay and no way back short of relaunching. We catch this
+    /// two ways: the session's `runtimeErrorNotification` (the immediate signal),
+    /// and a polling watchdog that notices `session.isRunning` has gone false.
+    ///
+    /// We deliberately key on `isRunning`, not on frame delivery: an iPhone
+    /// whose screen sleeps or locks legitimately stops sending frames while the
+    /// session stays healthy and running, and QuickTime doesn't tear that down
+    /// either — it resumes when the screen wakes. Treating a frame stall as
+    /// death would spuriously rebuild (and ultimately fail) a perfectly good
+    /// connection every time the phone auto-locks.
+    @ObservationIgnored private var watchdogActive = false
+    /// Monotonic time the current attach went `.streaming`, so the watchdog
+    /// gives `startRunning()` a beat to take effect before trusting `isRunning`.
+    @ObservationIgnored private var streamingSince: TimeInterval?
+    /// True while a teardown+re-attach is in flight, so overlapping triggers
+    /// (watchdog tick + runtime-error notification) don't stack.
+    @ObservationIgnored private var recovering = false
+    /// Cancellation token for the in-flight recovery's delayed re-attach. Bumped
+    /// by `recover()` (superseding any prior attempt) and by `cancelRecovery()`
+    /// (from `stop()`), so a queued re-attach can't resurrect a torn-down session.
+    @ObservationIgnored private var recoveryGeneration = 0
+    /// Counts deaths that happen almost immediately after a recovery re-attach. A
+    /// stream that survives longer than `thrashWindow` resets it; exceeding
+    /// `maxQuickFailures` stops the thrash and surfaces an actionable failure.
+    @ObservationIgnored private var consecutiveQuickFailures = 0
+    /// Cancellation token for the watchdog tick chain. Bumped on every
+    /// start/stop so a tick scheduled before a teardown dies on its next fire
+    /// even if a fresh attach has since set `watchdogActive` true again —
+    /// guaranteeing exactly one live chain.
+    @ObservationIgnored private var watchdogGeneration = 0
+    private static let watchdogInterval: TimeInterval = 2
+    /// Grace after an attach before the watchdog trusts `isRunning == false`,
+    /// covering the async `startRunning()` latency.
+    private static let recoveryStartupGrace: TimeInterval = 5
+    private static let reattachDelay: TimeInterval = 0.5
+    /// ~`maxReattachAttempts * reattachDelay` seconds of re-discovery before we
+    /// give up and tell the user to replug.
+    private static let maxReattachAttempts = 10
+    private static let thrashWindow: TimeInterval = 10
+    private static let maxQuickFailures = 3
+
     /// Grabs one-shot frames (screenshots) and writes recordings to disk via
     /// `AVAssetWriter`. We write the exact frames the session delivers — the
     /// same ones the preview shows — rather than routing through
@@ -80,6 +125,11 @@ final class DeviceCaptureSession: NSObject {
             }
         }
         observeConnections()
+        observeSessionRuntime()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     func start() {
@@ -102,6 +152,7 @@ final class DeviceCaptureSession: NSObject {
     }
 
     func stop() {
+        cancelRecovery()
         if isRecording {
             coordinator.stopRecording()
         }
@@ -272,7 +323,12 @@ final class DeviceCaptureSession: NSObject {
         rescanAttemptsRemaining -= 1
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, self.deviceUniqueID == nil else {
+                // `rescanActive` gates the queued tick the same way the watchdog
+                // and recovery generations gate theirs: `cancelRescan()` (from
+                // `stop()`/`detach()`/`attach()`) clears it, so a tick queued
+                // before the pane closed can't fire a stray attach() and
+                // resurrect a torn-down session.
+                guard let self, self.rescanActive, self.deviceUniqueID == nil else {
                     self?.rescanActive = false
                     return
                 }
@@ -351,6 +407,16 @@ final class DeviceCaptureSession: NSObject {
         MainActor.assumeIsolated {
             guard deviceUniqueID == nil,
                   let device = Self.firstAttachedScreenCaptureDevice() else { return }
+            // Only a genuine physical replug (not a re-enumeration mid-recovery)
+            // is a clean slate — clearing strikes while recovering would let a
+            // device that dies-and-re-enumerates every cycle dodge the thrash cap
+            // forever. Check before `cancelRecovery()` flips the flag.
+            if !recovering {
+                consecutiveQuickFailures = 0
+            }
+            // Supersede any in-flight recovery re-attach so it can't fire a
+            // second, redundant attach() on the stream we're about to build.
+            cancelRecovery()
             attach(device)
         }
     }
@@ -361,6 +427,149 @@ final class DeviceCaptureSession: NSObject {
             guard let lostID, lostID == deviceUniqueID else { return }
             detach()
         }
+    }
+
+    // MARK: - Session health
+
+    /// A device disconnect is only one way a stream dies. After extended use the
+    /// session itself fails — most often a media-services reset — which stops it
+    /// without firing a device-disconnect. AVFoundation reports that through the
+    /// session's runtime-error notification, so observe it and rebuild on the
+    /// spot. It posts on an arbitrary queue, so the handler hops to the main
+    /// actor (unlike the device notifications, which the existing handlers assume
+    /// are already on main).
+    private func observeSessionRuntime() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleSessionRuntimeError(_:)),
+            name: AVCaptureSession.runtimeErrorNotification,
+            object: session
+        )
+    }
+
+    @objc private func handleSessionRuntimeError(_ note: Notification) {
+        let description = (note.userInfo?[AVCaptureSessionErrorKey] as? NSError)?
+            .localizedDescription ?? "unknown"
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.status == .streaming else { return }
+                self.logger.error("capture session runtime error: \(description)")
+                self.recover(reason: "runtime error")
+            }
+        }
+    }
+
+    private func startWatchdog() {
+        guard !watchdogActive else { return }
+        watchdogActive = true
+        watchdogGeneration &+= 1
+        watchdogTick(generation: watchdogGeneration)
+    }
+
+    private func stopWatchdog() {
+        watchdogActive = false
+        watchdogGeneration &+= 1
+    }
+
+    private func watchdogTick(generation: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.watchdogInterval) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.watchdogActive, generation == self.watchdogGeneration else { return }
+                self.checkStreamHealth()
+                // checkStreamHealth() may have torn the session down; only the
+                // current generation re-arms, so a superseded tick can't persist.
+                guard self.watchdogActive, generation == self.watchdogGeneration else { return }
+                self.watchdogTick(generation: generation)
+            }
+        }
+    }
+
+    /// Backstop for the runtime-error notification: while we believe we're
+    /// `.streaming`, a session whose `isRunning` has gone false is dead (a
+    /// media-services reset stops it), so rebuild. Frame delivery is *not* the
+    /// signal — a sleeping/locked iPhone stops sending frames with the session
+    /// still healthy, and rebuilding that would be a regression. We wait out a
+    /// startup grace so the async `startRunning()` after an attach has time to
+    /// flip `isRunning` true before we judge it.
+    private func checkStreamHealth() {
+        guard status == .streaming, !recovering, let since = streamingSince,
+              ProcessInfo.processInfo.systemUptime - since > Self.recoveryStartupGrace else { return }
+        if !session.isRunning {
+            recover(reason: "session stopped running")
+        }
+    }
+
+    /// Tear the dead session down and re-discover the device so capture restarts
+    /// in place — no unplug/replug. We reuse the existing `AVCaptureSession`,
+    /// re-adding fresh inputs/outputs, rather than a bare `startRunning()` retry:
+    /// after a media-services reset the old device inputs are invalid and must be
+    /// rebuilt. If the device keeps dying right after each rebuild
+    /// (`maxQuickFailures`), or never re-enumerates, we stop and surface an
+    /// actionable failure instead of thrashing or hanging on the wrong overlay.
+    private func recover(reason: String) {
+        guard !recovering else { return }
+
+        // A stream that dropped almost immediately after the last rebuild is
+        // thrashing; one that ran a while is a fresh, independent failure.
+        let now = ProcessInfo.processInfo.systemUptime
+        if let since = streamingSince, now - since < Self.thrashWindow {
+            consecutiveQuickFailures += 1
+        } else {
+            consecutiveQuickFailures = 0
+        }
+        if consecutiveQuickFailures > Self.maxQuickFailures {
+            logger.error("capture recovery gave up: feed keeps dropping")
+            failRecovery("The iPhone video feed keeps dropping. Unplug the device and reconnect it.")
+            return
+        }
+
+        recovering = true
+        recoveryGeneration &+= 1
+        let generation = recoveryGeneration
+        logger.warning("recovering iPhone capture (\(reason))")
+
+        if isRecording {
+            coordinator.stopRecording()
+            isRecording = false
+        }
+        detach()
+        status = .connecting
+        scheduleReattach(generation: generation, attempt: 1)
+    }
+
+    /// Re-discover and attach the device, retrying on `reattachDelay` so
+    /// mediaserverd has time to republish it after a reset. Bails immediately if
+    /// the recovery was superseded or cancelled (`generation` / `recovering`), so
+    /// a queued re-attach can't revive a session that `stop()` already tore down.
+    private func scheduleReattach(generation: Int, attempt: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.reattachDelay) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.recovering, generation == self.recoveryGeneration else { return }
+                if let device = Self.firstAttachedScreenCaptureDevice() {
+                    self.recovering = false
+                    self.attach(device)
+                } else if attempt >= Self.maxReattachAttempts {
+                    self.logger.error("capture recovery gave up: device never re-enumerated")
+                    self.recovering = false
+                    self.failRecovery("Lost the iPhone video feed. Unplug the device and reconnect it.")
+                } else {
+                    self.scheduleReattach(generation: generation, attempt: attempt + 1)
+                }
+            }
+        }
+    }
+
+    private func failRecovery(_ message: String) {
+        cancelRecovery()
+        consecutiveQuickFailures = 0
+        detach()
+        status = .failed(message)
+    }
+
+    /// Invalidate any in-flight delayed re-attach so it can't run after teardown.
+    private func cancelRecovery() {
+        recovering = false
+        recoveryGeneration &+= 1
     }
 
     // MARK: - Session wiring
@@ -432,11 +641,17 @@ final class DeviceCaptureSession: NSObject {
         deviceUniqueID = device.uniqueID
         deviceName = device.localizedName
         status = .streaming
+        streamingSince = ProcessInfo.processInfo.systemUptime
+        startWatchdog()
         run(.start)
     }
 
     private func detach() {
         cancelRescan()
+        // The watchdog only makes sense while attached; stopping it here covers
+        // every teardown path (unplug, recovery rebuild, an attach() that throws)
+        // so no zombie tick survives. attach() restarts it.
+        stopWatchdog()
         hasAudioInput = false
         session.beginConfiguration()
         for input in session.inputs { session.removeInput(input) }
@@ -448,6 +663,7 @@ final class DeviceCaptureSession: NSObject {
         deviceUniqueID = nil
         deviceName = nil
         isRecording = false
+        streamingSince = nil
         status = .waiting
     }
 

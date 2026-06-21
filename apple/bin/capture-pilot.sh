@@ -28,6 +28,29 @@ PROJECT="$APPLE_DIR/blau.xcodeproj"
 SCHEME="Pilot"
 CAPTURE_DELAY="${PILOT_CAPTURE_DELAY:-5}"
 
+# Preflight: the Pilot build pulls in CodeEditSourceEditor, whose targets carry a
+# transitive SwiftLint build-tool plugin. Xcode runs that plugin's swiftlint in a
+# sandbox that strips DEVELOPER_DIR / XCODE_DEFAULT_TOOLCHAIN_OVERRIDE, so swiftlint
+# resolves the toolchain via the *global* `xcode-select`. If that points at the
+# Command Line Tools (which ship no sourcekitdInProc.framework), swiftlint traps and
+# the whole build dies with "Plug-in ended with uncaught signal: 5". Catch it here
+# with the exact remedy instead of a cryptic failure 10 minutes into the build.
+ACTIVE_DEV="$(xcode-select -p 2>/dev/null || true)"
+if [ ! -d "$ACTIVE_DEV/Toolchains/XcodeDefault.xctoolchain/usr/lib/sourcekitdInProc.framework" ]; then
+  XCODE_APP="$(/usr/bin/find /Applications -maxdepth 1 -name 'Xcode*.app' -print -quit 2>/dev/null || true)"
+  {
+    echo "ERROR: active developer dir has no sourcekitd: ${ACTIVE_DEV:-<unset>}"
+    echo "       The SwiftLint build-tool plugin (via CodeEditSourceEditor) will crash"
+    echo "       the build with 'Plug-in ended with uncaught signal: 5'."
+    if [ -n "$XCODE_APP" ]; then
+      echo "       Fix: sudo xcode-select -s \"$XCODE_APP/Contents/Developer\""
+    else
+      echo "       Fix: install Xcode, then: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+    fi
+  } >&2
+  exit 1
+fi
+
 echo "==> Building $SCHEME (Debug)"
 DERIVED="$(mktemp -d)"
 xcodebuild \
