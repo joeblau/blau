@@ -203,7 +203,7 @@ struct ContentView: View {
                     Button {
                         store.selectedWorkspace?.addPane(kind: .device, side: .right)
                     } label: {
-                        Label("New Device", systemImage: "iphone.gen3")
+                        Label("New Device", systemImage: "apps.iphone")
                     }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
 
