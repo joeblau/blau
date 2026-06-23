@@ -1,0 +1,180 @@
+import Foundation
+
+/// Errors surfaced by `simctl` invocations. `toolingMissing` is the friendly
+/// case for a machine with only the Command Line Tools (no full Xcode), where
+/// `xcrun simctl` cannot run — the pane shows guidance instead of crashing.
+enum SimctlError: Error {
+    case toolingMissing
+    case commandFailed(String)
+}
+
+/// One iOS Simulator device from `xcrun simctl list devices available --json`.
+struct SimDevice: Identifiable, Hashable, Sendable {
+    let udid: String
+    let name: String
+    let state: String                 // "Booted", "Shutdown", "Booting", ...
+    let deviceTypeIdentifier: String?
+    let runtimeIdentifier: String     // the dictionary key, e.g. ...SimRuntime.iOS-26-4
+
+    var id: String { udid }
+    var isBooted: Bool { state == "Booted" }
+
+    /// Keep the list focused on the phones/tablets a user actually opens; hide
+    /// watch/tv/vision runtimes that would clutter the picker.
+    var isPhoneOrPad: Bool {
+        guard let deviceTypeIdentifier else { return false }
+        return deviceTypeIdentifier.contains("iPhone") || deviceTypeIdentifier.contains("iPad")
+    }
+}
+
+/// Devices grouped under a single runtime, for sectioned display.
+struct SimRuntimeGroup: Identifiable, Hashable, Sendable {
+    let id: String            // runtime identifier (stable, unique)
+    let displayName: String   // "iOS 26.4"
+    let sortKey: String       // for newest-first ordering
+    let devices: [SimDevice]
+}
+
+/// Typed wrapper over the `xcrun simctl` CLI. All calls are blocking and must be
+/// run off the main actor (the session uses `Task.detached`).
+enum SimctlBridge {
+    /// Run `/usr/bin/xcrun <args>`, draining stdout/stderr concurrently so a
+    /// large JSON payload can't deadlock against a full pipe buffer.
+    static func runXcrun(_ args: [String]) throws -> Data {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        process.arguments = args
+
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+
+        do {
+            try process.run()
+        } catch {
+            // /usr/bin/xcrun missing entirely is effectively "no tooling".
+            throw SimctlError.toolingMissing
+        }
+
+        // Drain stdout on a background thread; stderr (small) on this one.
+        final class Box: @unchecked Sendable { var data = Data() }
+        let outBox = Box()
+        let outHandle = outPipe.fileHandleForReading
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            outBox.data = outHandle.readDataToEndOfFile()
+            group.leave()
+        }
+        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        group.wait()
+
+        if process.terminationStatus != 0 {
+            let message = String(data: errData, encoding: .utf8) ?? "simctl exited \(process.terminationStatus)"
+            if message.contains("unable to find utility")
+                || message.contains("requires Xcode")
+                || message.contains("only the Command Line Tools") {
+                throw SimctlError.toolingMissing
+            }
+            throw SimctlError.commandFailed(message.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return outBox.data
+    }
+
+    // MARK: - Listing
+
+    private struct DeviceListResponse: Decodable {
+        let devices: [String: [Device]]
+        struct Device: Decodable {
+            let udid: String
+            let name: String
+            let state: String
+            let deviceTypeIdentifier: String?
+            let isAvailable: Bool?
+        }
+    }
+
+    /// Available iPhone/iPad simulators, grouped by runtime, newest runtime first
+    /// and booted/alphabetical within each group.
+    static func listDevices() throws -> [SimRuntimeGroup] {
+        let data = try runXcrun(["simctl", "list", "devices", "available", "--json"])
+        let response = try JSONDecoder().decode(DeviceListResponse.self, from: data)
+
+        var groups: [SimRuntimeGroup] = []
+        for (runtimeID, rawDevices) in response.devices {
+            let devices = rawDevices
+                .filter { $0.isAvailable != false }
+                .map { raw in
+                    SimDevice(
+                        udid: raw.udid,
+                        name: raw.name,
+                        state: raw.state,
+                        deviceTypeIdentifier: raw.deviceTypeIdentifier,
+                        runtimeIdentifier: runtimeID
+                    )
+                }
+                .filter(\.isPhoneOrPad)
+                .sorted { lhs, rhs in
+                    if lhs.isBooted != rhs.isBooted { return lhs.isBooted && !rhs.isBooted }
+                    return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+                }
+            guard !devices.isEmpty else { continue }
+            groups.append(
+                SimRuntimeGroup(
+                    id: runtimeID,
+                    displayName: runtimeDisplayName(runtimeID),
+                    sortKey: runtimeSortKey(runtimeID),
+                    devices: devices
+                )
+            )
+        }
+        // Newest runtime first.
+        return groups.sorted { $0.sortKey > $1.sortKey }
+    }
+
+    /// "com.apple.CoreSimulator.SimRuntime.iOS-26-4" -> "iOS 26.4".
+    static func runtimeDisplayName(_ identifier: String) -> String {
+        guard let tail = identifier.split(separator: ".").last else { return identifier }
+        // tail like "iOS-26-4" or "watchOS-11-0"
+        let parts = tail.split(separator: "-")
+        guard let os = parts.first else { return String(tail) }
+        let version = parts.dropFirst().joined(separator: ".")
+        return version.isEmpty ? String(os) : "\(os) \(version)"
+    }
+
+    /// Zero-padded numeric sort key so iOS 9.0 sorts before iOS 26.4 lexically.
+    static func runtimeSortKey(_ identifier: String) -> String {
+        guard let tail = identifier.split(separator: ".").last else { return identifier }
+        let parts = tail.split(separator: "-")
+        let os = parts.first.map(String.init) ?? ""
+        let nums = parts.dropFirst().map { String(format: "%04d", Int($0) ?? 0) }.joined(separator: ".")
+        return "\(os)-\(nums)"
+    }
+
+    // MARK: - Lifecycle
+
+    /// Boot a device. Tolerates an already-booted device (simctl exits non-zero
+    /// with "Unable to boot... current state: Booted", which is success for us).
+    static func boot(udid: String) throws {
+        do {
+            _ = try runXcrun(["simctl", "boot", udid])
+        } catch SimctlError.commandFailed(let message) {
+            if message.localizedCaseInsensitiveContains("current state: Booted")
+                || message.localizedCaseInsensitiveContains("already booted") {
+                return
+            }
+            throw SimctlError.commandFailed(message)
+        }
+    }
+
+    /// Block until the device's boot completes and system services are ready.
+    static func bootStatus(udid: String) {
+        _ = try? runXcrun(["simctl", "bootstatus", udid, "-b"])
+    }
+
+    static func shutdown(udid: String) throws {
+        _ = try runXcrun(["simctl", "shutdown", udid])
+    }
+}

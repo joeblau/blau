@@ -102,7 +102,27 @@ final class RemoteScreenDiscovery {
     /// connects by hostname, so we briefly open a connection to the service
     /// endpoint and read back the resolved remote address, then cancel.
     func resolve(_ service: Service) async -> ResolvedAddress? {
-        await Self.resolveEndpoint(service.endpoint)
+        // Prefer the Bonjour `.local` hostname (exactly what Finder / Screen
+        // Sharing connects to), so the OS resolves a reachable address on every
+        // connect — robust across IPv4/IPv6 and link-local interface zones, and
+        // stable across network changes. Fall back to a direct IP resolve (zone
+        // preserved) only if the hostname can't be resolved.
+        if let byName = await Self.resolveHostname(service.endpoint) {
+            return byName
+        }
+        return await Self.resolveEndpoint(service.endpoint)
+    }
+
+    /// Resolve a Bonjour service to its `.local` hostname + port via `NetService`
+    /// — the API that exposes the SRV target hostname (`NWConnection` only gives
+    /// the resolved IP). Returns nil if the endpoint isn't a Bonjour service or
+    /// resolution times out.
+    @MainActor
+    private static func resolveHostname(_ endpoint: NWEndpoint) async -> ResolvedAddress? {
+        guard case let .service(name, type, domain, _) = endpoint else { return nil }
+        return await withCheckedContinuation { (continuation: CheckedContinuation<ResolvedAddress?, Never>) in
+            BonjourHostnameResolver().start(domain: domain, type: type, name: name, continuation: continuation)
+        }
     }
 
     nonisolated private static let resolveQueue = DispatchQueue(label: "app.blau.remotedesktop.resolve")
@@ -162,9 +182,60 @@ final class RemoteScreenDiscovery {
         case .ipv4(let address):
             return address.debugDescription.components(separatedBy: "%").first ?? address.debugDescription
         case .ipv6(let address):
-            return address.debugDescription.components(separatedBy: "%").first ?? address.debugDescription
+            // Keep the interface zone (e.g. `%en0`). Link-local IPv6 (fe80::/10)
+            // is unreachable WITHOUT its scope id — Network.framework returns
+            // NWError 51 ("Network is unreachable"). `NWEndpoint.Host(_:)` parses
+            // the `%zone` and connects on that interface; routable IPv6 carries no
+            // zone, so this only preserves it where it's actually required.
+            return address.debugDescription
         @unknown default:
             return ""
         }
+    }
+}
+
+/// One-shot `NetService` resolver that returns a Bonjour service's `.local`
+/// hostname + port. Self-retains until it resolves (or times out) so the caller
+/// only needs to `start` it; all work runs on the main run loop, where the
+/// delegate callbacks fire. `@unchecked Sendable` because it is confined to the
+/// main thread (scheduled on `.main`) and resumes its continuation exactly once.
+private final class BonjourHostnameResolver: NSObject, NetServiceDelegate, @unchecked Sendable {
+    private var continuation: CheckedContinuation<RemoteScreenDiscovery.ResolvedAddress?, Never>?
+    private var service: NetService?
+    private var selfRef: BonjourHostnameResolver?
+
+    func start(domain: String, type: String, name: String,
+               continuation: CheckedContinuation<RemoteScreenDiscovery.ResolvedAddress?, Never>) {
+        self.continuation = continuation
+        self.selfRef = self
+        let service = NetService(domain: domain, type: type, name: name)
+        self.service = service
+        service.delegate = self
+        service.schedule(in: .main, forMode: .common)
+        service.resolve(withTimeout: 5)
+    }
+
+    func netServiceDidResolveAddress(_ sender: NetService) {
+        // hostName is like "Mini02.local." — drop the trailing dot.
+        let host = sender.hostName.map { $0.hasSuffix(".") ? String($0.dropLast()) : $0 }
+        finish(host: (host?.isEmpty == false) ? host : nil, port: sender.port)
+    }
+
+    func netService(_ sender: NetService, didNotResolve errorDict: [String: NSNumber]) {
+        finish(host: nil, port: 0)
+    }
+
+    private func finish(host: String?, port: Int) {
+        guard let continuation else { return }
+        self.continuation = nil
+        service?.stop()
+        service?.delegate = nil
+        service = nil
+        if let host, port > 0 {
+            continuation.resume(returning: RemoteScreenDiscovery.ResolvedAddress(host: host, port: port))
+        } else {
+            continuation.resume(returning: nil)
+        }
+        selfRef = nil
     }
 }

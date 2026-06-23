@@ -318,6 +318,7 @@ final class WorkspaceStore {
     func deleteRemoteConnection(_ connection: RemoteDesktopConnection) {
         let wasSelected = selectedRemoteConnectionID == connection.id
         let remaining = remoteConnections.filter { $0.id != connection.id }
+        VNCKeychain.delete(id: connection.id)
         modelContext.delete(connection)
         for (index, item) in remaining.enumerated() {
             item.sortOrder = index

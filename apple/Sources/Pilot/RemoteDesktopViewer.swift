@@ -82,7 +82,10 @@ struct RemoteDesktopViewer: NSViewRepresentable {
                 useDisplayLink: true,
                 inputMode: .forwardKeyboardShortcutsEvenIfInUseLocally,
                 isClipboardRedirectionEnabled: true,
-                colorDepth: .depth24Bit,
+                // 16-bit (thousands of colors) ~halves pixel bandwidth vs 24-bit
+                // for a noticeably smoother feed; the default encodings already
+                // include Tight/zlib/zrle compression.
+                colorDepth: .depth16Bit,
                 frameEncodings: .default
             )
             let connection = VNCConnection(settings: settings)

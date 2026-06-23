@@ -5,6 +5,7 @@ enum PaneKind: String, Codable, CaseIterable {
     case terminal
     case browser
     case device
+    case simulator
     case editor
 
     var displayName: String {
@@ -12,6 +13,7 @@ enum PaneKind: String, Codable, CaseIterable {
         case .terminal: "Terminal"
         case .browser: "Browser"
         case .device: "Device"
+        case .simulator: "Simulator"
         case .editor: "Editor"
         }
     }
@@ -21,6 +23,7 @@ enum PaneKind: String, Codable, CaseIterable {
         case .terminal: "terminal"
         case .browser: "safari"
         case .device: "iphone.gen3"
+        case .simulator: "ipad.landscape.and.ipod"
         case .editor: "curlybraces"
         }
     }
@@ -207,6 +210,8 @@ final class Pane {
         case .browser:
             self.browserState = BrowserState()
         case .device:
+            break
+        case .simulator:
             break
         case .editor:
             self.editorState = EditorState()
@@ -417,13 +422,18 @@ final class Workspace {
 
     func removePane(_ pane: Pane) {
         PersistentTerminalSession.killSession(for: pane)
-        if pane.kind == .device {
+        if pane.kind == .device || pane.kind == .simulator {
             let paneID = pane.id
+            let kind = pane.kind
             // `removePane` is invoked from SwiftUI on the main thread, but
             // isn't `@MainActor`-annotated; assume the isolation rather than
             // jump asynchronously so teardown happens before the row drops.
             MainActor.assumeIsolated {
-                DeviceCaptureRegistry.shared.remove(paneID: paneID)
+                if kind == .device {
+                    DeviceCaptureRegistry.shared.remove(paneID: paneID)
+                } else {
+                    SimulatorRegistry.shared.remove(paneID: paneID)
+                }
             }
         }
         panes.removeAll { $0.id == pane.id }
