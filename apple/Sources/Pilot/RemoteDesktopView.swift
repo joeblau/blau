@@ -173,6 +173,7 @@ private struct RemoteConnectionPane: View {
 
     @State private var session = RemoteConnectionSession()
     @State private var password = ""
+    @State private var savePassword = false
 
     var body: some View {
         ZStack {
@@ -197,6 +198,18 @@ private struct RemoteConnectionPane: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Auto-connect on tab switch when a password is saved. The pane (and its
+        // `session`) is recreated per connection via `.id(connection.id)`, so this
+        // fires once each time you tab to a machine.
+        .onAppear(perform: restoreSavedPasswordAndConnect)
+    }
+
+    private func restoreSavedPasswordAndConnect() {
+        guard password.isEmpty, case .idle = session.status else { return }
+        guard let saved = VNCKeychain.load(id: connection.id), !saved.isEmpty else { return }
+        password = saved
+        savePassword = true
+        connect()
     }
 
     private var connectingOverlay: some View {
@@ -223,7 +236,7 @@ private struct RemoteConnectionPane: View {
             VStack(spacing: 2) {
                 Text(connection.displayTitle)
                     .font(.title3.weight(.semibold))
-                Text("\(connection.host):\(connection.port)")
+                Text(verbatim: "\(connection.host):\(connection.port)")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -236,6 +249,10 @@ private struct RemoteConnectionPane: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 280)
                     .onSubmit(connect)
+                Toggle("Save password & auto-connect", isOn: $savePassword)
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
+                    .frame(width: 280, alignment: .leading)
             }
 
             if let error {
@@ -259,6 +276,11 @@ private struct RemoteConnectionPane: View {
     }
 
     private func connect() {
+        if savePassword, !password.isEmpty {
+            VNCKeychain.save(password, id: connection.id)
+        } else if !savePassword {
+            VNCKeychain.delete(id: connection.id)
+        }
         connection.lastConnectedAt = Date()
         try? connection.modelContext?.save()
         session.status = .connecting

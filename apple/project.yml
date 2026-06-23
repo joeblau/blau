@@ -52,6 +52,10 @@ schemes:
     test:
       targets:
         - PilotTests
+  Pilot:
+    build:
+      targets:
+        Pilot: [run, test, profile, analyze, archive]
   # App schemes wired to run their fastlane snapshot UI-test bundles.
   Copilot:
     build:

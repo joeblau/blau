@@ -178,6 +178,10 @@ struct ContentView: View {
                           let pane = store.selectedWorkspace?.selectedPane,
                           pane.kind == .device {
                     deviceToolbar(paneID: pane.id)
+                } else if !store.isNotesMode,
+                          let pane = store.selectedWorkspace?.selectedPane,
+                          pane.kind == .simulator {
+                    simulatorToolbar(paneID: pane.id)
                 }
             }
             ToolbarItemGroup(placement: .primaryAction) {
@@ -203,10 +207,20 @@ struct ContentView: View {
                     }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
 
+                    Button {
+                        store.selectedWorkspace?.addPane(kind: .simulator, side: .right)
+                    } label: {
+                        Label("New Simulator", systemImage: "ipad.landscape.and.ipod")
+                    }
+                    .keyboardShortcut("s", modifiers: [.command, .shift])
+
                     editorToolbarButton
 
                     openInFinderButton
                 }
+                // Render the six "New …" pane actions as one connected group
+                // rather than separate circular toolbar buttons.
+                .controlGroupStyle(.navigation)
                 .disabled(store.selectedWorkspace == nil || store.isNotesMode)
                 Button {
                     isDrawingActive.toggle()
@@ -454,6 +468,33 @@ struct ContentView: View {
             Label("Developer Tools", systemImage: "hammer")
         }
         .help("Open Safari Web Inspector to debug this device")
+    }
+
+    @ViewBuilder
+    private func simulatorToolbar(paneID: UUID) -> some View {
+        let session = SimulatorRegistry.shared.session(for: paneID)
+        let isStreaming = session.status == .streaming
+
+        Button {
+            session.chooseAnotherDevice()
+        } label: {
+            Label("Choose Device", systemImage: "list.bullet")
+        }
+        .help("Pick a different simulator")
+
+        Button {
+            session.shutdownSimulator()
+        } label: {
+            Label("Shutdown Simulator", systemImage: "power")
+        }
+        .disabled(session.bootedUDID == nil)
+        .help("Power off the booted simulator")
+
+        if isStreaming {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .foregroundStyle(.green)
+                .help("Live")
+        }
     }
 
     @ViewBuilder

@@ -633,6 +633,8 @@ struct PaneView: View {
             }
         case .device:
             DevicePaneView(paneID: pane.id, isActive: isWorkspaceActive, isSelected: isSelected)
+        case .simulator:
+            SimulatorPaneView(paneID: pane.id, isActive: isWorkspaceActive, isSelected: isSelected)
         case .editor:
             if let editorState = pane.editorState {
                 EditorPaneView(state: editorState,

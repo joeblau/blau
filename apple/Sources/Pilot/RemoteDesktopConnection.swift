@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import SwiftData
 
 /// A saved remote-desktop connection — one tab in the global Remote Desktop
@@ -41,5 +42,42 @@ final class RemoteDesktopConnection {
         if !trimmedNickname.isEmpty { return trimmedNickname }
         let trimmedHost = host.trimmingCharacters(in: .whitespaces)
         return trimmedHost.isEmpty ? "New Connection" : trimmedHost
+    }
+}
+
+/// Keychain store for VNC passwords, keyed by a connection's `id`. The password
+/// stays out of the SwiftData model (and the synced store); whether one is saved
+/// is inferred from Keychain presence, so no schema/migration is needed.
+enum VNCKeychain {
+    private static let service = "app.blau.pilot.vnc"
+
+    static func save(_ password: String, id: UUID) {
+        guard let data = password.data(using: .utf8) else { return }
+        var query = baseQuery(id: id)
+        SecItemDelete(query as CFDictionary)
+        query[kSecValueData as String] = data
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    static func load(id: UUID) -> String? {
+        var query = baseQuery(id: id)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func delete(id: UUID) {
+        SecItemDelete(baseQuery(id: id) as CFDictionary)
+    }
+
+    private static func baseQuery(id: UUID) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: id.uuidString,
+        ]
     }
 }
