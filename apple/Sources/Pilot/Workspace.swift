@@ -22,7 +22,7 @@ enum PaneKind: String, Codable, CaseIterable {
         switch self {
         case .terminal: "terminal"
         case .browser: "safari"
-        case .device: "iphone.gen3"
+        case .device: "apps.iphone"
         case .simulator: "ipad.landscape.and.ipod"
         case .editor: "curlybraces"
         }

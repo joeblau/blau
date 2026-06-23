@@ -84,7 +84,7 @@ private struct DeviceStatusOverlay: View {
             switch session.status {
             case .waiting:
                 statusBlock(
-                    icon: "iphone.gen3",
+                    icon: "apps.iphone",
                     title: "Connect an iPhone",
                     detail: "Plug in an iPhone via USB and trust this Mac. The screen will mirror here, like QuickTime."
                 )
