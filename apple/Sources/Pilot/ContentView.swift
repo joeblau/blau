@@ -186,19 +186,19 @@ struct ContentView: View {
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 ControlGroup {
+                    // ⌘T / ⌘B live as main-menu commands (see PilotApp.commands)
+                    // so a focused browser web view can't swallow them.
                     Button {
                         store.selectedWorkspace?.addPane(kind: .terminal, side: .right)
                     } label: {
                         Label("New Terminal", systemImage: "terminal")
                     }
-                    .keyboardShortcut("t", modifiers: .command)
 
                     Button {
                         store.selectedWorkspace?.addPane(kind: .browser, side: .right)
                     } label: {
                         Label("New Browser", systemImage: "safari")
                     }
-                    .keyboardShortcut("b", modifiers: .command)
 
                     Button {
                         store.selectedWorkspace?.addPane(kind: .device, side: .right)
@@ -537,6 +537,17 @@ struct ContentView: View {
         } label: {
             Label("Profile", systemImage: "person.circle")
         }
+
+        Button {
+            state.toggleAnnotateMode()
+        } label: {
+            Label("Annotate", systemImage: "pencil.and.outline")
+        }
+        .foregroundStyle(state.annotateMode ? Color.accentColor : .primary)
+        .keyboardShortcut("a", modifiers: [.command, .shift])
+        .help(state.annotateMode
+              ? "Turn off Annotate (⇧⌘A)"
+              : "Annotate a web element and send it to a terminal agent (⇧⌘A)")
 
         Button {
             state.toggleDeveloperTools()

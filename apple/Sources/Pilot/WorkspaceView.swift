@@ -686,6 +686,8 @@ struct BrowserPaneView: View {
                 state: state,
                 navigationRequestID: state.navigationRequestID,
                 inspectorToggleRequestID: state.inspectorToggleRequestID,
+                annotateMode: state.annotateMode,
+                annotateToggleRequestID: state.annotateToggleRequestID,
                 appearanceMode: state.appearanceMode,
                 isActive: isActive,
                 isSelected: isSelected,
@@ -735,6 +737,8 @@ struct WebViewRepresentable: NSViewRepresentable {
     let state: BrowserState
     let navigationRequestID: Int
     let inspectorToggleRequestID: Int
+    let annotateMode: Bool
+    let annotateToggleRequestID: Int
     let appearanceMode: AppearanceMode
     let isActive: Bool
     let isSelected: Bool
@@ -743,6 +747,16 @@ struct WebViewRepresentable: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        // Browser Annotate: inject the in-page overlay + a message handler for
+        // the single "send" round-trip.
+        config.userContentController.add(context.coordinator, name: BrowserAnnotate.messageName)
+        // Main frame only: the page snapshot covers the top document, so element
+        // rects must be in top-document coordinates. Injecting into subframes
+        // would let the box open inside an iframe with rects the screenshot
+        // can't line up against.
+        config.userContentController.addUserScript(
+            WKUserScript(source: BrowserAnnotate.userScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
         let webView = BrowserWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.isInspectable = true
@@ -761,6 +775,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) {
         _ = navigationRequestID
         _ = inspectorToggleRequestID
+        _ = annotateToggleRequestID
 
         if abs(nsView.pageZoom - uiZoom) > 0.001 {
             nsView.pageZoom = uiZoom
@@ -801,6 +816,12 @@ struct WebViewRepresentable: NSViewRepresentable {
             InspectorHelper.toggleInspector(for: nsView, show: state.showDevTools)
         }
 
+        // Browser Annotate: push the enabled state into the injected overlay.
+        if context.coordinator.lastAnnotateToggleID != annotateToggleRequestID {
+            context.coordinator.lastAnnotateToggleID = annotateToggleRequestID
+            nsView.evaluateJavaScript(BrowserAnnotate.setEnabledScript(annotateMode))
+        }
+
         // Always apply appearance — NSAppearance drives prefers-color-scheme in WKWebView
         let appearance: NSAppearance?
         switch appearanceMode {
@@ -836,8 +857,10 @@ struct WebViewRepresentable: NSViewRepresentable {
         return URL(string: "https://\(trimmed)")
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKDownloadDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKDownloadDelegate, WKScriptMessageHandler {
         let state: BrowserState
+        /// Last annotate-toggle id pushed into the page, to dedupe updateNSView runs.
+        var lastAnnotateToggleID = -1
         private var urlObservation: NSKeyValueObservation?
         private var pendingDestinations: [ObjectIdentifier: URL] = [:]
 
@@ -847,6 +870,41 @@ struct WebViewRepresentable: NSViewRepresentable {
 
         deinit {
             urlObservation?.invalidate()
+        }
+
+        // MARK: - Browser Annotate
+
+        /// The single web→Swift hop: on "send", screenshot the page, compose the
+        /// prompt, and reuse `.pilotSendIssuePrompt` (paste + Enter into the
+        /// active terminal — the one the user just clicked).
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == BrowserAnnotate.messageName,
+                  let body = message.body as? [String: Any],
+                  (body["action"] as? String) == "send" else { return }
+            let instruction = body["instruction"] as? String ?? ""
+            let url = body["url"] as? String ?? ""
+            let selector = body["selector"] as? String ?? ""
+            let outerHTML = body["outerHTML"] as? String ?? ""
+            let rect = body["rect"] as? [String: Any] ?? [:]
+            func intValue(_ key: String) -> Int { Int((rect[key] as? NSNumber)?.doubleValue ?? 0) }
+            let rx = intValue("x"), ry = intValue("y"), rw = intValue("w"), rh = intValue("h")
+            // WebKit calls this on the main thread.
+            MainActor.assumeIsolated {
+                // Only honor sends while the user has annotate mode on — a page
+                // can postMessage to this handler, so don't let an untrusted site
+                // inject a prompt into the user's terminal on its own.
+                guard state.annotateMode else { return }
+                message.webView?.takeSnapshot(with: WKSnapshotConfiguration()) { image, _ in
+                    let path = BrowserAnnotate.writeScreenshot(image)
+                    let prompt = BrowserAnnotate.buildPrompt(
+                        instruction: instruction, url: url, selector: selector, outerHTML: outerHTML,
+                        rectX: rx, rectY: ry, rectW: rw, rectH: rh, screenshotPath: path
+                    )
+                    NotificationCenter.default.post(
+                        name: .pilotSendIssuePrompt, object: nil, userInfo: ["prompt": prompt]
+                    )
+                }
+            }
         }
 
         /// KVO on `WKWebView.url` so the address bar reflects every URL
@@ -957,6 +1015,11 @@ struct WebViewRepresentable: NSViewRepresentable {
                 state.pendingURL = nil
             }
             updateNavState(webView)
+            // The user script re-injects (disabled) on each load — re-assert
+            // annotate mode so it survives navigation.
+            if state.annotateMode {
+                webView.evaluateJavaScript(BrowserAnnotate.setEnabledScript(true))
+            }
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -990,13 +1053,28 @@ final class BrowserWebView: WKWebView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if isPaneSelected,
-           event.type == .keyDown,
-           event.modifierFlags.contains(.command),
-           !event.modifierFlags.contains(.control),
-           !event.modifierFlags.contains(.option),
-           event.charactersIgnoringModifiers?.lowercased() == "r" {
+        guard event.type == .keyDown,
+              event.modifierFlags.contains(.command) else {
+            return super.performKeyEquivalent(with: event)
+        }
+        let plainCommand = !event.modifierFlags.contains(.control)
+            && !event.modifierFlags.contains(.option)
+        let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+
+        if isPaneSelected, plainCommand, chars == "r" {
             onReload?()
+            return true
+        }
+
+        // Keep the standard text-editing shortcuts native to the web content.
+        if plainCommand, ["c", "v", "x", "a", "z"].contains(chars) {
+            return super.performKeyEquivalent(with: event)
+        }
+
+        // Otherwise give the app's main menu first crack — a focused WKWebView
+        // otherwise swallows global shortcuts (⌘T, ⌘B, ⌘L, ⌘0, ⌘±, …) before
+        // they ever reach the menu.
+        if NSApp.mainMenu?.performKeyEquivalent(with: event) == true {
             return true
         }
 

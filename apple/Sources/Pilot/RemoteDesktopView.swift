@@ -329,7 +329,7 @@ private struct RemoteComputerPicker: View {
             HStack(spacing: 8) {
                 Image(systemName: "network")
                     .foregroundStyle(.secondary)
-                TextField("Host or IP (e.g. studio.local)", text: $manualHost)
+                TextField("Host, IP, or MagicDNS (e.g. mini01.tailnet.ts.net)", text: $manualHost)
                     .textFieldStyle(.plain)
                     .focused($manualFocused)
                     .onSubmit(connectManual)
@@ -449,14 +449,36 @@ private struct RemoteComputerPicker: View {
         onPick(host, port, "")
     }
 
-    /// Split a "host" or "host:port" string; defaults to the VNC port 5900.
+    /// Split a manual entry into (host, port), defaulting to the VNC port 5900.
+    /// Accepts a MagicDNS name (`mini01.tailnet.ts.net`), an IPv4 address
+    /// (`100.123.212.24`), or an IPv6 address — bare (`fd7a:115c:a1e0::953b:d419`)
+    /// or bracketed with a port (`[fd7a::1]:5901`). RoyalVNCKit takes the host and
+    /// port separately and its `hostname` accepts a bare IPv6 literal, so the
+    /// brackets are only a way to disambiguate a trailing `:port` and never kept.
     private static func parseHostPort(_ input: String) -> (String, Int) {
-        // Leave bracketed IPv6 literals (and their ports) to the user as-is.
-        guard !input.hasPrefix("["),
-              let colon = input.lastIndex(of: ":"),
-              let port = Int(input[input.index(after: colon)...]) else {
-            return (input, 5900)
+        let defaultPort = 5900
+
+        // Bracketed IPv6, optionally with a `:port` suffix — `[fd7a::1]` / `[fd7a::1]:5901`.
+        if input.hasPrefix("["), let close = input.firstIndex(of: "]") {
+            let host = String(input[input.index(after: input.startIndex)..<close])
+            let rest = input[input.index(after: close)...]   // "" or ":5901"
+            if rest.hasPrefix(":"), let port = Int(rest.dropFirst()) {
+                return (host, port)
+            }
+            return (host, defaultPort)
         }
-        return (String(input[..<colon]), port)
+
+        // Bare IPv6 (two or more colons): a port can't be appended without
+        // brackets, so the whole string is the host — never split on its colons.
+        if input.filter({ $0 == ":" }).count >= 2 {
+            return (input, defaultPort)
+        }
+
+        // IPv4 / hostname / MagicDNS, optionally written as `host:port`.
+        if let colon = input.lastIndex(of: ":"),
+           let port = Int(input[input.index(after: colon)...]) {
+            return (String(input[..<colon]), port)
+        }
+        return (input, defaultPort)
     }
 }

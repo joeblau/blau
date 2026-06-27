@@ -129,6 +129,9 @@ final class BrowserState {
     @Transient var isLoading: Bool = false
     @Transient var showDevTools: Bool = false
     @Transient var needsInspectorToggle: Bool = false
+    /// Browser Annotate mode — runtime only, off after relaunch.
+    @Transient var annotateMode: Bool = false
+    @Transient var annotateToggleRequestID: Int = 0
 
     var appearanceMode: AppearanceMode {
         get { AppearanceMode(rawValue: appearanceModeRaw) ?? .system }
@@ -157,6 +160,11 @@ final class BrowserState {
         showDevTools.toggle()
         needsInspectorToggle = true
         inspectorToggleRequestID += 1
+    }
+
+    func toggleAnnotateMode() {
+        annotateMode.toggle()
+        annotateToggleRequestID += 1
     }
 
     private func issueNavigationRequest(_ request: URL?) {
