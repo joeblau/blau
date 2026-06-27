@@ -100,6 +100,7 @@
 		9C8264CDCBF880BC7E22F2FA /* EditorPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AD2F4B3EA572C1217200CD4 /* EditorPaneView.swift */; };
 		9CCB3AE0ECFF1D2D7C809867 /* HeadphoneDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEF294C6D54F08AFA7316B33 /* HeadphoneDetector.swift */; };
 		9E43FEF6FB23D25B023ED32A /* DeviceCaptureRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40448E5B9EBBD91D642FC080 /* DeviceCaptureRegistry.swift */; };
+		9E60C6698CA50CF143C01A12 /* BrowserAnnotate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D5EBBD224098EACB274641C /* BrowserAnnotate.swift */; };
 		A755A8C5DCFF1165E408136A /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3448A85CDA9475511475C2 /* Workspace.swift */; };
 		A777700135D8A05BAA8AB11D /* ColorChipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB6D8C3263608D267C325CE /* ColorChipTests.swift */; };
 		A88388A8B8A982296E63C85B /* CryptoCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB3905E9A184741F8BBDBC85 /* CryptoCore.swift */; };
@@ -256,6 +257,7 @@
 		47FBC3890175E320C78E68E1 /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentity.swift; sourceTree = "<group>"; };
 		4A912031A64F684013037FBB /* LocalServerScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalServerScanner.swift; sourceTree = "<group>"; };
 		4AD843F2429472CDAB91130E /* FileFinderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileFinderTests.swift; sourceTree = "<group>"; };
+		4D5EBBD224098EACB274641C /* BrowserAnnotate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAnnotate.swift; sourceTree = "<group>"; };
 		4F06639323C2B403D53DEBC7 /* CopilotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotUITests.swift; sourceTree = "<group>"; };
 		51953FE31BA534927A942C96 /* FrameProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameProtocol.swift; sourceTree = "<group>"; };
 		52A71DC4B75C15342693E47C /* SyncMessagesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMessagesTests.swift; sourceTree = "<group>"; };
@@ -555,6 +557,7 @@
 			isa = PBXGroup;
 			children = (
 				7D00A3F70E212149A88CCD63 /* Assets.xcassets */,
+				4D5EBBD224098EACB274641C /* BrowserAnnotate.swift */,
 				F0E9B23F9E541C22DC648C34 /* ColorChip.swift */,
 				B028DA279E32AB30A1A75942 /* CommitListView.swift */,
 				132CB022A0BDFF0DE96316EF /* ContentView.swift */,
@@ -984,6 +987,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9E60C6698CA50CF143C01A12 /* BrowserAnnotate.swift in Sources */,
 				0D500EBE09A6E38A272B0733 /* BrowserStartPageView.swift in Sources */,
 				D0FFBBC93C69BA053BFCFDA3 /* ColorChip.swift in Sources */,
 				CB797869A7D03477CAC989A2 /* CommitListView.swift in Sources */,

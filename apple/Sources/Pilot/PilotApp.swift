@@ -350,17 +350,38 @@ struct PilotApp: App {
                 }
                 .environment(secureIdentity)
                 .onReceive(NotificationCenter.default.publisher(for: .pilotSendIssuePrompt)) { note in
-                    // Issues inspector → paste an "implement this issue" prompt
-                    // into the selected workspace's active terminal and submit
-                    // it so the agent starts working on the task.
-                    guard let prompt = note.userInfo?["prompt"] as? String,
-                          let terminal = activeTerminalView else { return }
+                    // Issues inspector / Browser Annotate → paste a prompt into
+                    // the selected workspace's active terminal and submit it so
+                    // the agent starts working on the task.
+                    guard let prompt = note.userInfo?["prompt"] as? String else { return }
+                    guard let terminal = activeTerminalView else {
+                        // No terminal to receive it — beep rather than silently
+                        // swallowing the request the user just dispatched.
+                        NSSound.beep()
+                        return
+                    }
                     terminal.pasteText(prompt)
                     terminal.sendEnter()
                 }
         }
         .modelContainer(modelContainer)
         .commands {
+            // New Terminal / New Browser as real main-menu commands. As toolbar
+            // ControlGroup button shortcuts they were swallowed by a focused
+            // WKWebView; menu key-equivalents take precedence over the web view.
+            CommandGroup(after: .newItem) {
+                Button("New Terminal") {
+                    store.selectedWorkspace?.addPane(kind: .terminal, side: .right)
+                }
+                .keyboardShortcut("t", modifiers: .command)
+                .disabled(store.selectedWorkspace == nil || store.isNotesMode)
+
+                Button("New Browser") {
+                    store.selectedWorkspace?.addPane(kind: .browser, side: .right)
+                }
+                .keyboardShortcut("b", modifiers: .command)
+                .disabled(store.selectedWorkspace == nil || store.isNotesMode)
+            }
             CommandGroup(replacing: .pasteboard) {
                 Button("Cut") {
                     sendStandardEditAction(#selector(NSText.cut(_:)))

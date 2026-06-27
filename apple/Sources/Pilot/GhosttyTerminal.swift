@@ -878,6 +878,20 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         // Cmd+V, Cmd+C, etc. before the active terminal sees them.
         guard window?.firstResponder === self else { return false }
 
+        // Give Pilot's main menu first crack at its global shortcuts (⌘T new
+        // terminal, ⌘B new browser, ⌘0 notes, …) before Ghostty's binding
+        // system swallows the Cmd combo. Terminal editing keys (⌘C/V/X/A/Z),
+        // pane focus (⌘F), and Settings (⌘,) keep Ghostty's handling below.
+        if event.modifierFlags.contains(.command),
+           !event.modifierFlags.contains(.control),
+           !event.modifierFlags.contains(.option) {
+            let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+            if !["c", "v", "x", "a", "z", "f", ","].contains(chars),
+               NSApp.mainMenu?.performKeyEquivalent(with: event) == true {
+                return true
+            }
+        }
+
         // Let ⌘, fall through to the app menu so it opens Pilot's Settings
         // window, instead of being swallowed by Ghostty's binding system.
         if event.modifierFlags.contains(.command),
