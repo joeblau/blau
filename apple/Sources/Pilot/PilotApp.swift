@@ -365,6 +365,9 @@ struct PilotApp: App {
                 }
         }
         .modelContainer(modelContainer)
+        // A roomier default for the sidebar + panes + inspector layout. Only
+        // applies to a fresh window; a restored window keeps its saved frame.
+        .defaultSize(width: 1440, height: 920)
         .commands {
             // New Terminal / New Browser as real main-menu commands. As toolbar
             // ControlGroup button shortcuts they were swallowed by a focused
