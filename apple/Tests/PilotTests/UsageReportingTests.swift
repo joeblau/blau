@@ -171,6 +171,70 @@ struct UsageReportingTests {
         #expect(session.teamId == "team-1")
     }
 
+    @Test("Codex labels additional multi-window pools so they are distinguishable")
+    func codexLabelsAdditionalPools() throws {
+        let usage = UsageStore.parseCodexUsage([
+            "plan_type": "pro",
+            "rate_limit": [
+                "primary_window": ["used_percent": 1, "limit_window_seconds": 18_000],
+                "secondary_window": ["used_percent": 0, "limit_window_seconds": 604_800],
+            ],
+            "additional_rate_limits": [[
+                "limit_name": "gpt_5_codex",
+                "rate_limit": [
+                    "primary_window": ["used_percent": 0, "limit_window_seconds": 18_000],
+                    "secondary_window": ["used_percent": 0, "limit_window_seconds": 604_800],
+                ],
+            ]],
+        ])
+
+        // Main pool stays plain; the additional pool is labeled on both windows.
+        #expect(usage.windows.contains { $0.name == "5-hour" })
+        #expect(usage.windows.contains { $0.name == "Weekly" })
+        #expect(usage.windows.contains { $0.name == "Gpt 5 Codex · 5-hour" })
+        #expect(usage.windows.contains { $0.name == "Gpt 5 Codex · Weekly" })
+    }
+
+    @Test("Claude surfaces model-scoped limits like Fable and dedupes flat fields")
+    func claudeScopedLimits() throws {
+        let usage = UsageStore.parseClaudeUsage([
+            "five_hour": ["utilization": 3, "resets_at": "2026-07-12T20:00:00Z"],
+            "seven_day": ["utilization": 66, "resets_at": "2026-07-19T20:00:00Z"],
+            "seven_day_opus": ["utilization": 12, "resets_at": "2026-07-19T20:00:00Z"],
+            "limits": [
+                [
+                    "group": "weekly",
+                    "percent": 5,
+                    "resets_at": "2026-07-19T20:00:00Z",
+                    "scope": ["model": ["display_name": "Fable"]],
+                    "is_active": true,
+                ],
+                [
+                    "group": "weekly",
+                    "percent": 20,
+                    "resets_at": "2026-07-19T20:00:00Z",
+                    "scope": ["model": ["display_name": "Opus"]],
+                    "is_active": true,
+                ],
+                [
+                    "group": "weekly",
+                    "percent": 99,
+                    "scope": ["model": ["display_name": "Haiku"]],
+                    "is_active": false,
+                ],
+            ],
+        ], planLabel: "max")
+
+        let fable = try #require(usage.windows.first { $0.name == "Weekly (Fable)" })
+        #expect(abs(fable.utilization - 0.05) < 0.000_001)
+        // Opus comes from `limits` (20%), superseding the flat seven_day_opus (12%).
+        let opus = try #require(usage.windows.first { $0.name == "Weekly (Opus)" })
+        #expect(abs(opus.utilization - 0.20) < 0.000_001)
+        #expect(usage.windows.filter { $0.name == "Weekly (Opus)" }.count == 1)
+        // Inactive scoped limits are excluded.
+        #expect(!usage.windows.contains { $0.name == "Weekly (Haiku)" })
+    }
+
     @Test(
         "Reset countdown formats fixed boundaries",
         arguments: [
