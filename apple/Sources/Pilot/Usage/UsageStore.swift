@@ -63,8 +63,25 @@ final class UsageStore {
     private var loadTask: Task<Void, Never>?
     private var pollTimer: Timer?
 
-    /// Matches `GitCommitStore` / `GitHubTasksStore` cadence.
-    private static let pollInterval: TimeInterval = 60
+    /// These are undocumented, aggressively rate-limited endpoints. Poll rarely —
+    /// reset countdowns tick client-side, so the network data only needs to be
+    /// roughly current. On top of this we enforce per-provider spacing + backoff
+    /// so we never hammer an endpoint (and risk a ban).
+    private static let pollInterval: TimeInterval = 600            // 10 min
+    /// Never hit the same provider more often than this, even on manual refresh
+    /// or tab switches.
+    private static let minSpacing: TimeInterval = 120             // 2 min
+    /// Backoff schedule after a 429, doubling per consecutive strike.
+    private static let backoffBase: TimeInterval = 300           // 5 min
+    private static let backoffCap: TimeInterval = 3600           // 1 hour
+
+    private enum Provider: CaseIterable { case anthropic, openAI, xAI }
+    /// When a provider was last actually hit (for min-spacing).
+    private var lastAttempt: [Provider: Date] = [:]
+    /// When a rate-limited provider may be hit again.
+    private var blockedUntil: [Provider: Date] = [:]
+    /// Consecutive 429 count per provider (drives the exponential backoff).
+    private var rateLimitStrikes: [Provider: Int] = [:]
 
     /// Begin (or restart) periodic refresh. Safe to call repeatedly.
     func start() {
@@ -82,37 +99,91 @@ final class UsageStore {
         loadTask = nil
     }
 
-    /// Detect sessions and fetch all providers concurrently.
+    /// May we hit `provider` right now? Respects both the rate-limit backoff and
+    /// the minimum spacing between attempts.
+    private func mayFetch(_ provider: Provider, now: Date) -> Bool {
+        if let until = blockedUntil[provider], now < until { return false }
+        if let last = lastAttempt[provider], now.timeIntervalSince(last) < Self.minSpacing { return false }
+        return true
+    }
+
+    /// Detect sessions and fetch providers that aren't spaced-out or backed-off.
     func reload() {
         loadTask?.cancel()
+        let now = Date()
+        let doAnthropic = mayFetch(.anthropic, now: now)
+        let doOpenAI = mayFetch(.openAI, now: now)
+        let doGrok = mayFetch(.xAI, now: now)
+        if doAnthropic { lastAttempt[.anthropic] = now }
+        if doOpenAI { lastAttempt[.openAI] = now }
+        if doGrok { lastAttempt[.xAI] = now }
+
+        // Nothing to do this tick — everything is spaced-out or backed-off.
+        guard doAnthropic || doOpenAI || doGrok else { return }
+
         isLoading = true
         loadTask = Task {
-            async let anthropicResult = Self.fetchClaude()
-            async let openAIResult = Self.fetchCodex()
-            async let xAIResult = Self.fetchGrok()
+            async let anthropicResult = Self.fetchClaude(allowed: doAnthropic)
+            async let openAIResult = Self.fetchCodex(allowed: doOpenAI)
+            async let xAIResult = Self.fetchGrok(allowed: doGrok)
             let (aRes, oRes, xRes) = await (anthropicResult, openAIResult, xAIResult)
             if Task.isCancelled { return }
-            anthropic = Self.merge(previous: anthropic, result: aRes)
-            openAI = Self.merge(previous: openAI, result: oRes)
-            xAI = Self.merge(previous: xAI, result: xRes)
+            anthropic = resolve(.anthropic, previous: anthropic, result: aRes)
+            openAI = resolve(.openAI, previous: openAI, result: oRes)
+            xAI = resolve(.xAI, previous: xAI, result: xRes)
             isLoading = false
         }
     }
 
-    /// Keep the last good usage on a transient fetch error, otherwise adopt the result.
-    private static func merge(previous: ProviderState, result: ProviderFetch) -> ProviderState {
+    /// Fold a fetch result into the provider's state and update its backoff.
+    private func resolve(_ provider: Provider, previous: ProviderState, result: ProviderFetch) -> ProviderState {
         switch result {
-        case .success(let usage): return .usage(usage)
-        case .notSignedIn: return .notSignedIn
+        case .success(let usage):
+            rateLimitStrikes[provider] = 0
+            blockedUntil[provider] = nil
+            return .usage(usage)
+
+        case .notSignedIn:
+            rateLimitStrikes[provider] = 0
+            blockedUntil[provider] = nil
+            return .notSignedIn
+
+        case .rateLimited(let retryAfter):
+            let strikes = (rateLimitStrikes[provider] ?? 0) + 1
+            rateLimitStrikes[provider] = strikes
+            let delay = Self.backoffDelay(strikes: strikes, retryAfter: retryAfter)
+            blockedUntil[provider] = Date().addingTimeInterval(delay)
+            if case .usage = previous { return previous } // keep showing last data
+            return .error("Rate limited — backing off ~\(Int((delay / 60).rounded()))m.")
+
         case .failure(let message):
             if case .usage = previous { return previous }
             return .error(message)
+
+        case .skipped:
+            // Spaced-out or backed-off this tick; keep whatever we last showed.
+            if case .usage = previous { return previous }
+            if let until = blockedUntil[provider], Date() < until {
+                let remaining = Int((until.timeIntervalSinceNow / 60).rounded(.up))
+                return .error("Rate limited — retrying in ~\(max(1, remaining))m.")
+            }
+            return previous
         }
+    }
+
+    /// Exponential backoff, honoring a server `Retry-After` when longer.
+    private static func backoffDelay(strikes: Int, retryAfter: TimeInterval?) -> TimeInterval {
+        let exponential = min(backoffBase * pow(2, Double(max(0, strikes - 1))), backoffCap)
+        if let retryAfter, retryAfter > 0 {
+            return min(max(retryAfter, exponential), backoffCap)
+        }
+        return exponential
     }
 
     // MARK: - Codex (OpenAI)
 
-    nonisolated private static func fetchCodex() async -> ProviderFetch {
+    nonisolated private static func fetchCodex(allowed: Bool) async -> ProviderFetch {
+        guard allowed else { return .skipped }
         guard let session = UsageSessions.CodexSession.load() else { return .notSignedIn }
 
         var headers = [
@@ -129,7 +200,7 @@ final class UsageStore {
         do {
             root = try await getJSONObject(url: url, headers: headers)
         } catch {
-            return .failure(describe(error, provider: "Codex", reauth: "codex"))
+            return classify(error, provider: "Codex", cli: "codex")
         }
 
         return .success(Self.parseCodexUsage(root, receivedAt: Date()))
@@ -267,7 +338,8 @@ final class UsageStore {
 
     // MARK: - Claude (Claude Code)
 
-    nonisolated private static func fetchClaude() async -> ProviderFetch {
+    nonisolated private static func fetchClaude(allowed: Bool) async -> ProviderFetch {
+        guard allowed else { return .skipped }
         guard let session = UsageSessions.ClaudeSession.load() else { return .notSignedIn }
         guard session.hasProfileScope else {
             return .failure("Claude: this session lacks the user:profile scope — re-run `claude` to sign in.")
@@ -283,7 +355,7 @@ final class UsageStore {
         do {
             root = try await getJSONObject(url: url, headers: headers)
         } catch {
-            return .failure(describe(error, provider: "Claude", reauth: "claude"))
+            return classify(error, provider: "Claude", cli: "claude")
         }
 
         return .success(Self.parseClaudeUsage(root, planLabel: session.subscriptionType))
@@ -409,7 +481,8 @@ final class UsageStore {
 
     // MARK: - Grok (xAI)
 
-    nonisolated private static func fetchGrok() async -> ProviderFetch {
+    nonisolated private static func fetchGrok(allowed: Bool) async -> ProviderFetch {
+        guard allowed else { return .skipped }
         guard let session = UsageSessions.GrokSession.load() else { return .notSignedIn }
         let clientVersion = UsageSessions.GrokSession.installedVersion() ?? "0.2.93"
         let headers = [
@@ -423,7 +496,7 @@ final class UsageStore {
             let root = try await getJSONObject(url: url, headers: headers)
             return .success(Self.parseGrokUsage(root, fallbackPlan: session.authMode))
         } catch {
-            return .failure(describe(error, provider: "Grok", reauth: "grok"))
+            return classify(error, provider: "Grok", cli: "grok")
         }
     }
 
@@ -522,7 +595,8 @@ final class UsageStore {
         for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
         let (data, response) = try await URLSession.shared.data(for: request)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            throw UsageFetchError.http(status: http.statusCode)
+            let retryAfter = (http.value(forHTTPHeaderField: "Retry-After")).flatMap { Double($0) }
+            throw UsageFetchError.http(status: http.statusCode, retryAfter: retryAfter)
         }
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw UsageFetchError.malformed
@@ -624,13 +698,20 @@ final class UsageStore {
         return Date(timeIntervalSince1970: seconds)
     }
 
+    /// Turn a thrown fetch error into a `ProviderFetch`, routing 429s to the
+    /// backoff path and everything else to a displayable failure.
+    nonisolated private static func classify(_ error: Error, provider: String, cli: String) -> ProviderFetch {
+        if case let UsageFetchError.http(status, retryAfter) = error, status == 429 {
+            return .rateLimited(retryAfter: retryAfter)
+        }
+        return .failure(describe(error, provider: provider, reauth: cli))
+    }
+
     nonisolated private static func describe(_ error: Error, provider: String, reauth cli: String) -> String {
         switch error {
-        case UsageFetchError.http(let status) where status == 401 || status == 403:
+        case UsageFetchError.http(let status, _) where status == 401 || status == 403:
             return "\(provider): session expired — re-run `\(cli)` to sign in."
-        case UsageFetchError.http(let status) where status == 429:
-            return "\(provider): usage endpoint is rate limited. Try again in a few minutes."
-        case UsageFetchError.http(let status):
+        case UsageFetchError.http(let status, _):
             return "\(provider): request failed (HTTP \(status))."
         default:
             return "\(provider): couldn’t read the usage response."
@@ -639,7 +720,7 @@ final class UsageStore {
 }
 
 private enum UsageFetchError: Error {
-    case http(status: Int)
+    case http(status: Int, retryAfter: TimeInterval?)
     case malformed
 }
 
@@ -647,5 +728,9 @@ private enum UsageFetchError: Error {
 private enum ProviderFetch {
     case success(ProviderUsage)
     case notSignedIn
+    /// The endpoint returned 429; `retryAfter` is the server's hint, if any.
+    case rateLimited(retryAfter: TimeInterval?)
+    /// Not attempted this tick (min-spacing / backoff).
+    case skipped
     case failure(String)
 }

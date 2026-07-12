@@ -19,14 +19,41 @@ enum BrowserAnnotate {
     static let userScript = """
     (function () {
       if (window.__pilotAnnotate) return;
-      var enabled = false, highlight = null, box = null, current = null;
+      var initiallyEnabled = !!window.__pilotAnnotateDesiredEnabled;
+      var enabled = false;
+      var highlight = null, cursorStyle = null, box = null;
+      var hovered = null, selected = null, sending = false;
+      var selectionID = 0, sendingID = null;
+
+      function ensureCursorStyle() {
+        if (cursorStyle) return;
+        cursorStyle = document.createElement('style');
+        cursorStyle.setAttribute('data-pilot-annotate-cursor', '');
+        cursorStyle.textContent = 'html.__pilot-lasso-active, html.__pilot-lasso-active body, html.__pilot-lasso-active body * { cursor: crosshair !important; } html.__pilot-lasso-active [data-pilot-annotate-box], html.__pilot-lasso-active [data-pilot-annotate-box] * { cursor: default !important; } html.__pilot-lasso-active [data-pilot-annotate-box] textarea { cursor: text !important; } html.__pilot-lasso-active [data-pilot-annotate-box] button { cursor: pointer !important; }';
+        document.documentElement.appendChild(cursorStyle);
+      }
 
       function ensureHighlight() {
         if (highlight) return highlight;
         highlight = document.createElement('div');
-        highlight.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483646;border:2px solid #3b82f6;background:rgba(59,130,246,0.12);border-radius:3px;display:none;';
+        highlight.setAttribute('data-pilot-annotate-highlight', '');
+        highlight.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483646;box-sizing:border-box;border:2px solid #3b82f6;background:rgba(59,130,246,0.12);border-radius:3px;display:none;';
         document.documentElement.appendChild(highlight);
         return highlight;
+      }
+
+      function isPilotUI(el) {
+        return !el || el === highlight || (box && (el === box || box.contains(el)));
+      }
+
+      function eventElement(e) {
+        var path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+        for (var i = 0; i < path.length; i++) {
+          var node = path[i];
+          if (node && node.nodeType === 1 && !isPilotUI(node)) return node;
+        }
+        var fallback = document.elementFromPoint(e.clientX, e.clientY);
+        return isPilotUI(fallback) ? null : fallback;
       }
 
       function cssPath(el) {
@@ -50,7 +77,7 @@ enum BrowserAnnotate {
       }
 
       function positionHighlight(el) {
-        if (!el) return;
+        if (!el || !el.isConnected) { hideHighlight(); return; }
         var r = el.getBoundingClientRect();
         var h = ensureHighlight();
         h.style.display = 'block';
@@ -58,13 +85,20 @@ enum BrowserAnnotate {
         h.style.top = r.top + 'px';
         h.style.width = r.width + 'px';
         h.style.height = r.height + 'px';
+        h.style.borderColor = selected === el ? '#0a84ff' : '#3b82f6';
+        h.style.background = selected === el ? 'rgba(10,132,255,0.18)' : 'rgba(59,130,246,0.12)';
+        h.style.boxShadow = selected === el ? '0 0 0 1px rgba(255,255,255,0.8)' : 'none';
+      }
+
+      function hideHighlight() {
+        if (highlight) highlight.style.display = 'none';
       }
 
       function onMove(e) {
-        if (!enabled) return;
-        var el = document.elementFromPoint(e.clientX, e.clientY);
-        if (!el || el === highlight || (box && box.contains(el))) return;
-        current = el;
+        if (!enabled || selected || sending) return;
+        var el = eventElement(e);
+        if (!el) return;
+        hovered = el;
         positionHighlight(el);
       }
 
@@ -72,31 +106,58 @@ enum BrowserAnnotate {
       // is position:fixed so it stays put on its own.
       function onScroll() {
         if (!enabled) return;
-        if (highlight && highlight.style.display !== 'none' && current && current.isConnected) {
-          positionHighlight(current);
+        var target = selected || hovered;
+        if (target && target.isConnected) {
+          positionHighlight(target);
+        } else {
+          if (selected) clearSelection();
+          hovered = null;
+          hideHighlight();
         }
+      }
+
+      function blockPagePointer(e) {
+        if (!enabled || (box && box.contains(e.target))) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
       }
 
       function onClick(e) {
         if (!enabled) return;
         if (box && box.contains(e.target)) return;
+        if (sending) { blockPagePointer(e); return; }
+        var target = eventElement(e);
         e.preventDefault();
-        e.stopPropagation();
-        showBox(current || e.target);
+        e.stopImmediatePropagation();
+        if (target) showBox(target);
       }
 
       function removeBox() { if (box) { box.remove(); box = null; } }
 
+      function clearSelection() {
+        removeBox();
+        hovered = null;
+        selected = null;
+        sending = false;
+        sendingID = null;
+        hideHighlight();
+      }
+
       function showBox(el) {
         removeBox();
+        selectionID += 1;
+        selected = el;
+        hovered = el;
+        positionHighlight(el);
         var r = el.getBoundingClientRect();
         box = document.createElement('div');
+        box.setAttribute('data-pilot-annotate-box', '');
         box.style.cssText = 'position:fixed;z-index:2147483647;left:' + Math.max(8, Math.min(r.left, window.innerWidth - 320)) + 'px;top:' + Math.min(r.bottom + 6, window.innerHeight - 170) + 'px;width:300px;background:#1c1c1e;color:#fff;border:1px solid #3b82f6;border-radius:10px;padding:10px;box-shadow:0 8px 30px rgba(0,0,0,0.55);font:13px -apple-system,system-ui;';
         var close = document.createElement('button');
         close.textContent = '×';
         close.title = 'Dismiss';
         close.style.cssText = 'position:absolute;top:4px;right:6px;width:20px;height:20px;line-height:18px;text-align:center;background:transparent;color:#8e8e93;border:none;border-radius:4px;font-size:17px;cursor:pointer;padding:0;';
-        close.addEventListener('click', function () { removeBox(); if (highlight) highlight.style.display = 'none'; });
+        close.addEventListener('click', clearSelection);
         box.appendChild(close);
         var ta = document.createElement('textarea');
         ta.placeholder = 'Describe what you want to happen…';
@@ -115,7 +176,7 @@ enum BrowserAnnotate {
 
         ta.addEventListener('keydown', function (ev) {
           if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); send.style.display = 'block'; hint.textContent = 'Click a terminal, then Send'; }
-          else if (ev.key === 'Escape') { removeBox(); }
+          else if (ev.key === 'Escape') { clearSelection(); }
         });
         send.addEventListener('click', function () {
           // Re-read geometry now — the page may have scrolled or reflowed since
@@ -127,31 +188,65 @@ enum BrowserAnnotate {
             selector: cssPath(el),
             outerHTML: (el.outerHTML || '').slice(0, 8000),
             rect: { x: live.left, y: live.top, w: live.width, h: live.height },
+            selectionID: selectionID,
             url: document.location.href
           };
+          // Keep the selected outline visible while Swift snapshots the page.
+          // `finishSend` clears it only after the image has been captured.
+          sending = true;
+          sendingID = selectionID;
           removeBox();
-          if (highlight) highlight.style.display = 'none';
-          window.webkit.messageHandlers.pilotAnnotate.postMessage(payload);
+          selected = el;
+          positionHighlight(el);
+          try {
+            window.webkit.messageHandlers.pilotAnnotate.postMessage(payload);
+          } catch (_) {
+            finishSend(selectionID);
+          }
         });
       }
 
       function setEnabled(v) {
+        window.__pilotAnnotateDesiredEnabled = !!v;
         enabled = !!v;
-        document.documentElement.style.cursor = enabled ? 'crosshair' : '';
-        if (!enabled) { removeBox(); if (highlight) highlight.style.display = 'none'; }
+        ensureCursorStyle();
+        document.documentElement.classList.toggle('__pilot-lasso-active', enabled);
+        if (!enabled) clearSelection();
+      }
+
+      function finishSend(completedSelectionID) {
+        // A stale snapshot must not clear a newer selection made after a rapid
+        // off/on toggle. Only the send that owns the outline may release it.
+        if (completedSelectionID !== sendingID) return;
+        removeBox();
+        hovered = null;
+        selected = null;
+        sending = false;
+        sendingID = null;
+        hideHighlight();
       }
 
       document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('pointerdown', blockPagePointer, true);
       document.addEventListener('click', onClick, true);
       document.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll, true);
-      window.__pilotAnnotate = { setEnabled: setEnabled };
+      window.__pilotAnnotate = { setEnabled: setEnabled, finishSend: finishSend };
+      setEnabled(initiallyEnabled);
     })();
     """
 
     /// JS to push the current enabled state into the page (after toggle / load).
     static func setEnabledScript(_ enabled: Bool) -> String {
-        "window.__pilotAnnotate && window.__pilotAnnotate.setEnabled(\(enabled))"
+        """
+        window.__pilotAnnotateDesiredEnabled = \(enabled);
+        window.__pilotAnnotate && window.__pilotAnnotate.setEnabled(\(enabled));
+        """
+    }
+
+    /// Clears the locked selection only after WebKit has captured its outline.
+    static func finishSendScript(selectionID: Int) -> String {
+        "window.__pilotAnnotate && window.__pilotAnnotate.finishSend(\(selectionID))"
     }
 
     /// Collapse control chars (newlines, tabs, ESC sequences) + whitespace runs

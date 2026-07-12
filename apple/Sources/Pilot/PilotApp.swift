@@ -464,6 +464,12 @@ struct PilotApp: App {
                 .keyboardShortcut("l", modifiers: .command)
                 .disabled(!hasBrowserPaneInActiveWorkspace)
 
+                Button(selectedBrowserState?.annotateMode == true ? "Turn Off Lasso" : "Turn On Lasso") {
+                    selectedBrowserState?.toggleAnnotateMode()
+                }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .disabled(selectedBrowserState == nil)
+
                 Divider()
 
                 // One-click jump to web debugging for the mobile app (#75).

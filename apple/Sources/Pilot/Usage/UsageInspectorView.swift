@@ -183,11 +183,11 @@ private struct ProviderCard: View {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let countdown = UsageResetCountdown.text(until: resetsAt, now: context.date)
                     Text(countdown)
-                        .scaledFont(size: 9)
-                        .foregroundStyle(.tertiary)
+                        .scaledFont(size: 11, weight: .medium)
+                        .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .contentTransition(.numericText(countsDown: true))
-                        .animation(.smooth(duration: 0.2), value: countdown)
+                        .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.7), value: countdown)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }

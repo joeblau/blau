@@ -564,23 +564,6 @@ struct ContentView: View {
         browserAddressField(state: state)
 
         Menu {
-            ForEach(AppearanceMode.allCases, id: \.self) { mode in
-                Button {
-                    state.appearanceMode = mode
-                } label: {
-                    HStack {
-                        Text(mode.rawValue)
-                        if state.appearanceMode == mode {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-        } label: {
-            Label("Appearance", systemImage: appearanceIcon(for: state.appearanceMode))
-        }
-
-        Menu {
             Button("Default Profile") {}
             Divider()
             Button("Manage Profiles...") {}
@@ -588,22 +571,48 @@ struct ContentView: View {
             Label("Profile", systemImage: "person.circle")
         }
 
-        Button {
-            state.toggleAnnotateMode()
-        } label: {
-            Label("Annotate", systemImage: "pencil.and.outline")
-        }
-        .foregroundStyle(state.annotateMode ? Color.accentColor : .primary)
-        .keyboardShortcut("a", modifiers: [.command, .shift])
-        .help(state.annotateMode
-              ? "Turn off Annotate (⇧⌘A)"
-              : "Annotate a web element and send it to a terminal agent (⇧⌘A)")
+        ControlGroup {
+            Menu {
+                ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                    Button {
+                        state.appearanceMode = mode
+                    } label: {
+                        HStack {
+                            Text(mode.rawValue)
+                            if state.appearanceMode == mode {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label("Appearance", systemImage: appearanceIcon(for: state.appearanceMode))
+            }
+            .help("Browser appearance: System, Light, or Dark")
+            .accessibilityIdentifier("browser.appearance")
 
-        Button {
-            state.toggleDeveloperTools()
-        } label: {
-            Label("Developer Tools", systemImage: "hammer")
+            Toggle(isOn: Binding(
+                get: { state.annotateMode },
+                set: { state.setAnnotateMode($0) }
+            )) {
+                Label("Lasso", systemImage: "lasso")
+            }
+            .toggleStyle(.button)
+            .help(state.annotateMode
+                  ? "Turn off Lasso (⇧⌘A)"
+                  : "Select a web element and tell an agent what to fix (⇧⌘A)")
+            .accessibilityIdentifier("browser.lasso")
+
+            Button {
+                state.toggleDeveloperTools()
+            } label: {
+                Label("Developer Tools", systemImage: "hammer")
+            }
+            .help(state.showDevTools ? "Close Developer Tools" : "Open Developer Tools")
+            .accessibilityIdentifier("browser.developer-tools")
         }
+        .controlGroupStyle(.navigation)
+        .accessibilityIdentifier("browser.tools")
     }
 
     private func browserAddressField(state: BrowserState) -> some View {

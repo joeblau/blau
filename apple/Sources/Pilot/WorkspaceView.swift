@@ -885,6 +885,7 @@ struct WebViewRepresentable: NSViewRepresentable {
             let url = body["url"] as? String ?? ""
             let selector = body["selector"] as? String ?? ""
             let outerHTML = body["outerHTML"] as? String ?? ""
+            let selectionID = (body["selectionID"] as? NSNumber)?.intValue ?? -1
             let rect = body["rect"] as? [String: Any] ?? [:]
             func intValue(_ key: String) -> Int { Int((rect[key] as? NSNumber)?.doubleValue ?? 0) }
             let rx = intValue("x"), ry = intValue("y"), rw = intValue("w"), rh = intValue("h")
@@ -893,8 +894,12 @@ struct WebViewRepresentable: NSViewRepresentable {
                 // Only honor sends while the user has annotate mode on — a page
                 // can postMessage to this handler, so don't let an untrusted site
                 // inject a prompt into the user's terminal on its own.
-                guard state.annotateMode else { return }
-                message.webView?.takeSnapshot(with: WKSnapshotConfiguration()) { image, _ in
+                guard state.annotateMode, let webView = message.webView else { return }
+                webView.takeSnapshot(with: WKSnapshotConfiguration()) { image, _ in
+                    // The page intentionally keeps the selected element outlined
+                    // until this completion so the screenshot marks exactly what
+                    // the user asked the agent to change.
+                    webView.evaluateJavaScript(BrowserAnnotate.finishSendScript(selectionID: selectionID))
                     let path = BrowserAnnotate.writeScreenshot(image)
                     let prompt = BrowserAnnotate.buildPrompt(
                         instruction: instruction, url: url, selector: selector, outerHTML: outerHTML,
@@ -1039,6 +1044,15 @@ struct WebViewRepresentable: NSViewRepresentable {
     }
 }
 
+enum BrowserWebShortcutPolicy {
+    /// Browser editing shortcuts that should stay inside WKWebView. Shifted ⌘A
+    /// is deliberately excluded because Pilot owns it for Lasso.
+    static func keepsNativeEditingShortcut(characters: String, hasShift: Bool) -> Bool {
+        (!hasShift && ["c", "v", "x", "a"].contains(characters))
+            || characters == "z" // both ⌘Z and ⇧⌘Z (Redo)
+    }
+}
+
 final class BrowserWebView: WKWebView {
     var onReload: (() -> Void)?
     var onSelect: (() -> Void)?
@@ -1066,8 +1080,14 @@ final class BrowserWebView: WKWebView {
             return true
         }
 
-        // Keep the standard text-editing shortcuts native to the web content.
-        if plainCommand, ["c", "v", "x", "a", "z"].contains(chars) {
+        // Keep standard editing shortcuts native, but only plain ⌘A is Select
+        // All. ⇧⌘A belongs to Pilot's Lasso command and must reach the menu.
+        let hasShift = event.modifierFlags.contains(.shift)
+        if plainCommand,
+           BrowserWebShortcutPolicy.keepsNativeEditingShortcut(
+               characters: chars,
+               hasShift: hasShift
+           ) {
             return super.performKeyEquivalent(with: event)
         }
 
