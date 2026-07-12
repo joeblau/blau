@@ -1,107 +1,60 @@
 import Foundation
 
-/// Per-model usage within a provider (Claude Fable, Opus, GPT-5, …).
-struct ModelUsage: Equatable, Identifiable {
-    let model: String
-    var inputTokens = 0
-    var outputTokens = 0
-    var cachedTokens = 0
-    var requests = 0
-    var costUSD = 0.0
+/// A single usage window (rolling quota) for a provider — e.g. Codex's 5-hour
+/// and weekly windows, or Claude's five-hour / seven-day windows.
+struct UsageWindow: Equatable, Identifiable {
+    let name: String
+    /// Fraction used, 0...1.
+    let utilization: Double
+    /// When this window's quota resets, if known.
+    let resetsAt: Date?
 
-    var id: String { model }
-    var totalTokens: Int { inputTokens + outputTokens }
-    /// Whether this is a Claude Fable–family model, which the user wants called out.
-    var isFable: Bool { model.localizedCaseInsensitiveContains("fable") }
+    var id: String { name }
 }
 
-/// A non-token cost line (Anthropic Cost Report `cost_type`s beyond tokens:
-/// web search, code execution, session usage). This is the "extra usage" spend.
-struct ExtraCost: Equatable, Identifiable {
-    let label: String
-    var costUSD: Double
-    var id: String { label }
+/// Credit balance / allowance, when the provider reports one.
+struct CreditInfo: Equatable {
+    var balanceUSD: Double?
+    var unlimited: Bool = false
+    /// Monthly-credit utilization (0...1), when reported instead of a balance.
+    var utilization: Double?
+
+    var isEmpty: Bool { balanceUSD == nil && !unlimited && utilization == nil }
 }
 
-/// Aggregated usage for one provider over the selected window.
+/// Plan usage for one provider.
 struct ProviderUsage: Equatable {
-    var inputTokens = 0
-    var outputTokens = 0
-    var cachedTokens = 0
-    var requests = 0
-    var costUSD = 0.0
-    var webSearchRequests = 0
-    /// Per-model breakdown, sorted by cost then tokens (descending).
-    var models: [ModelUsage] = []
-    /// Non-token cost lines (Anthropic only). Empty for providers that don't
-    /// break cost down by type.
-    var extraCosts: [ExtraCost] = []
-
-    var totalTokens: Int { inputTokens + outputTokens }
-    /// Fable-family total tokens (the "Claude Fable" bucket).
-    var fableTokens: Int { models.filter(\.isFable).reduce(0) { $0 + $1.totalTokens } }
-    /// All non-Fable models' total tokens.
-    var otherModelTokens: Int { models.filter { !$0.isFable }.reduce(0) { $0 + $1.totalTokens } }
+    var planLabel: String?
+    var windows: [UsageWindow] = []
+    var credits: CreditInfo?
 }
 
-/// The reporting window, in whole days ending "now".
-enum UsageWindow: Int, CaseIterable, Identifiable {
-    case today = 1
-    case sevenDays = 7
-    case thirtyDays = 30
-
-    var id: Int { rawValue }
-
-    var label: String {
-        switch self {
-        case .today: "Today"
-        case .sevenDays: "7 days"
-        case .thirtyDays: "30 days"
-        }
-    }
-
-    /// Anthropic/OpenAI usage data updates roughly hourly; the `today` window
-    /// buckets by the hour for freshness, longer windows by the day.
-    var bucketWidthAnthropic: String { self == .today ? "1h" : "1d" }
-    var bucketWidthOpenAI: String { self == .today ? "1h" : "1d" }
-    /// Max buckets to request per page (Anthropic caps 1d at 31, 1h at 168).
-    var pageLimit: Int { self == .today ? 24 : 31 }
+/// Per-provider fetch state for the inspector.
+enum ProviderState: Equatable {
+    case loading
+    case notSignedIn
+    case usage(ProviderUsage)
+    case error(String)
 }
 
-/// Pulls comprehensive AI usage + cost stats from the Claude and OpenAI ("Codex")
-/// **Admin** APIs and exposes per-provider aggregates — including per-model
-/// breakdowns and non-token cost lines — for the inspector's Usage tab.
+/// Pulls **plan usage, reset windows, and credits** for Claude and Codex by
+/// reusing the local `codex` / `claude` CLI OAuth sessions (see `UsageSessions`)
+/// and calling each CLI's own usage endpoint — no admin keys, no separate login.
 ///
-/// Both providers gate usage/cost behind an org-scoped admin key (see
-/// `UsageCredentials`); a regular inference key yields 401/403, surfaced here as
-/// a per-provider error so one provider failing never blanks the other.
-/// Credentials are read fresh from the Keychain on every `reload()`.
-///
-/// Note: Anthropic exposes **no credit-balance endpoint** — only spend (Cost
-/// Report). We capture every `cost_type` it reports (tokens + web search + code
-/// execution + session usage), which is the closest the API gets to "everything".
+/// ⚠️ These are undocumented endpoints the CLIs call internally; they can change.
+/// Access is read-only; expired tokens surface a "re-run the CLI" message.
 @Observable
 @MainActor
 final class UsageStore {
-    private(set) var anthropic: ProviderUsage?
-    private(set) var openAI: ProviderUsage?
-    private(set) var anthropicError: String?
-    private(set) var openAIError: String?
+    private(set) var anthropic: ProviderState = .loading
+    private(set) var openAI: ProviderState = .loading
     private(set) var isLoading = false
-    var window: UsageWindow = .thirtyDays {
-        didSet { if oldValue != window { reload() } }
-    }
 
     private var loadTask: Task<Void, Never>?
     private var pollTimer: Timer?
 
     /// Matches `GitCommitStore` / `GitHubTasksStore` cadence.
     private static let pollInterval: TimeInterval = 60
-
-    /// True when at least one provider has an admin key stored.
-    var hasAnyCredentials: Bool {
-        UsageCredentials.hasKey(for: .anthropic) || UsageCredentials.hasKey(for: .openAI)
-    }
 
     /// Begin (or restart) periodic refresh. Safe to call repeatedly.
     func start() {
@@ -119,284 +72,128 @@ final class UsageStore {
         loadTask = nil
     }
 
-    /// Fetch both providers concurrently, reading keys fresh from the Keychain.
+    /// Detect sessions and fetch both providers concurrently.
     func reload() {
         loadTask?.cancel()
-        let window = window
-        let anthropicKey = UsageCredentials.key(for: .anthropic)
-        let openAIKey = UsageCredentials.key(for: .openAI)
-
-        guard anthropicKey != nil || openAIKey != nil else {
-            anthropic = nil; openAI = nil
-            anthropicError = nil; openAIError = nil
-            isLoading = false
-            return
-        }
-
         isLoading = true
         loadTask = Task {
-            async let anthropicResult = Self.fetchAnthropicOptional(key: anthropicKey, window: window)
-            async let openAIResult = Self.fetchOpenAIOptional(key: openAIKey, window: window)
-
+            async let anthropicResult = Self.fetchClaude()
+            async let openAIResult = Self.fetchCodex()
             let (aRes, oRes) = await (anthropicResult, openAIResult)
             if Task.isCancelled { return }
-
-            switch aRes {
-            case .some(.success(let usage)): anthropic = usage; anthropicError = nil
-            case .some(.failure(let error)): anthropicError = error // keep last good `anthropic`
-            case .none: anthropic = nil; anthropicError = nil
-            }
-            switch oRes {
-            case .some(.success(let usage)): openAI = usage; openAIError = nil
-            case .some(.failure(let error)): openAIError = error
-            case .none: openAI = nil; openAIError = nil
-            }
+            anthropic = Self.merge(previous: anthropic, result: aRes)
+            openAI = Self.merge(previous: openAI, result: oRes)
             isLoading = false
         }
     }
 
-    // MARK: - Window helpers
-
-    /// Start-of-window as an RFC 3339 UTC timestamp (bucket-aligned) and its unix seconds.
-    nonisolated private static func startOfWindow(_ window: UsageWindow) -> (rfc3339: String, unix: Int) {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let now = Date()
-        let start: Date
-        if window == .today {
-            start = calendar.startOfDay(for: now)
-        } else {
-            let startOfToday = calendar.startOfDay(for: now)
-            start = calendar.date(byAdding: .day, value: -(window.rawValue - 1), to: startOfToday) ?? startOfToday
-        }
-        let formatter = ISO8601DateFormatter()
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        return (formatter.string(from: start), Int(start.timeIntervalSince1970))
-    }
-
-    /// Sort a model map into a stable, cost-then-token-descending list.
-    nonisolated private static func sortedModels(_ map: [String: ModelUsage]) -> [ModelUsage] {
-        map.values.sorted {
-            if $0.costUSD != $1.costUSD { return $0.costUSD > $1.costUSD }
-            if $0.totalTokens != $1.totalTokens { return $0.totalTokens > $1.totalTokens }
-            return $0.model < $1.model
+    /// Keep the last good usage on a transient fetch error, otherwise adopt the result.
+    private static func merge(previous: ProviderState, result: ProviderFetch) -> ProviderState {
+        switch result {
+        case .success(let usage): return .usage(usage)
+        case .notSignedIn: return .notSignedIn
+        case .failure(let message):
+            if case .usage = previous { return previous }
+            return .error(message)
         }
     }
 
-    // MARK: - Anthropic
+    // MARK: - Codex (OpenAI)
 
-    nonisolated private static func fetchAnthropicOptional(key: String?, window: UsageWindow) async -> ProviderFetch? {
-        guard let key else { return nil }
-        return await fetchAnthropic(key: key, window: window)
-    }
+    nonisolated private static func fetchCodex() async -> ProviderFetch {
+        guard let session = UsageSessions.CodexSession.load() else { return .notSignedIn }
 
-    nonisolated private static func fetchAnthropic(key: String, window: UsageWindow) async -> ProviderFetch {
-        let start = startOfWindow(window).rfc3339
-        let headers = ["x-api-key": key, "anthropic-version": "2023-06-01"]
-        var usage = ProviderUsage()
-        var models: [String: ModelUsage] = [:]
+        var headers = [
+            "Authorization": "Bearer \(session.accessToken)",
+            "User-Agent": "codex-cli",
+        ]
+        if let account = session.accountId { headers["ChatGPT-Account-Id"] = account }
 
-        // 1. Token usage, grouped by model.
+        let url = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
+        let response: CodexUsageResponse
         do {
-            var page: String?
-            var guardCounter = 0
-            repeat {
-                var components = URLComponents(string: "https://api.anthropic.com/v1/organizations/usage_report/messages")!
-                var items = [
-                    URLQueryItem(name: "starting_at", value: start),
-                    URLQueryItem(name: "bucket_width", value: window.bucketWidthAnthropic),
-                    URLQueryItem(name: "limit", value: String(window.pageLimit)),
-                    URLQueryItem(name: "group_by[]", value: "model"),
-                ]
-                if let page { items.append(URLQueryItem(name: "page", value: page)) }
-                components.queryItems = items
-
-                let report: AnthropicUsageReport = try await getJSON(url: components.url!, headers: headers)
-                for bucket in report.data {
-                    for result in bucket.results {
-                        let inputTokens = result.uncached_input_tokens ?? 0
-                        let cache = (result.cache_read_input_tokens ?? 0)
-                            + (result.cache_creation?.ephemeral_1h_input_tokens ?? 0)
-                            + (result.cache_creation?.ephemeral_5m_input_tokens ?? 0)
-                        let outputTokens = result.output_tokens ?? 0
-                        let webSearch = result.server_tool_use?.web_search_requests ?? 0
-
-                        usage.inputTokens += inputTokens
-                        usage.cachedTokens += cache
-                        usage.outputTokens += outputTokens
-                        usage.webSearchRequests += webSearch
-
-                        let name = result.model ?? "Other"
-                        var entry = models[name] ?? ModelUsage(model: name)
-                        entry.inputTokens += inputTokens
-                        entry.cachedTokens += cache
-                        entry.outputTokens += outputTokens
-                        models[name] = entry
-                    }
-                }
-                page = report.has_more ? report.next_page : nil
-                guardCounter += 1
-            } while page != nil && guardCounter < 40
+            response = try await getJSON(url: url, headers: headers)
         } catch {
-            return .failure(describe(error, provider: "Claude"))
+            return .failure(describe(error, provider: "Codex", reauth: "codex"))
         }
 
-        // 2. Cost, grouped by description (fills `model`, `cost_type`, `token_type`).
-        //    `amount` is a decimal string in CENTS → divide by 100 for dollars.
-        var extraCosts: [String: Double] = [:]
-        do {
-            var page: String?
-            var guardCounter = 0
-            repeat {
-                var components = URLComponents(string: "https://api.anthropic.com/v1/organizations/cost_report")!
-                var items = [
-                    URLQueryItem(name: "starting_at", value: start),
-                    URLQueryItem(name: "bucket_width", value: "1d"),
-                    URLQueryItem(name: "limit", value: "31"),
-                    URLQueryItem(name: "group_by[]", value: "description"),
-                ]
-                if let page { items.append(URLQueryItem(name: "page", value: page)) }
-                components.queryItems = items
-
-                let report: AnthropicCostReport = try await getJSON(url: components.url!, headers: headers)
-                for bucket in report.data {
-                    for result in bucket.results {
-                        let dollars = (Double(result.amount) ?? 0) / 100.0
-                        usage.costUSD += dollars
-
-                        if result.cost_type == "tokens", let name = result.model {
-                            var entry = models[name] ?? ModelUsage(model: name)
-                            entry.costUSD += dollars
-                            models[name] = entry
-                        } else {
-                            // Non-token spend: web_search / code_execution / session_usage.
-                            let label = costTypeLabel(result.cost_type)
-                            extraCosts[label, default: 0] += dollars
-                        }
-                    }
-                }
-                page = report.has_more ? report.next_page : nil
-                guardCounter += 1
-            } while page != nil && guardCounter < 40
-        } catch {
-            return .failure(describe(error, provider: "Claude"))
+        var usage = ProviderUsage(planLabel: response.plan_type?.capitalized)
+        if let primary = response.rate_limit?.primary_window {
+            usage.windows.append(Self.codexWindow(primary))
         }
-
-        usage.models = sortedModels(models)
-        usage.extraCosts = extraCosts
-            .filter { $0.value > 0 }
-            .map { ExtraCost(label: $0.key, costUSD: $0.value) }
-            .sorted { $0.costUSD > $1.costUSD }
+        if let secondary = response.rate_limit?.secondary_window {
+            usage.windows.append(Self.codexWindow(secondary))
+        }
+        if let credits = response.credits, credits.has_credits != false {
+            usage.credits = CreditInfo(balanceUSD: credits.balance, unlimited: credits.unlimited ?? false)
+        }
         return .success(usage)
     }
 
-    nonisolated private static func costTypeLabel(_ raw: String?) -> String {
-        switch raw {
-        case "web_search": "Web search"
-        case "code_execution": "Code execution"
-        case "session_usage": "Session usage"
-        case "tokens": "Tokens"
-        default: (raw?.replacingOccurrences(of: "_", with: " ").capitalized) ?? "Other"
-        }
+    nonisolated private static func codexWindow(_ window: CodexUsageResponse.Window) -> UsageWindow {
+        UsageWindow(
+            name: windowName(seconds: window.limit_window_seconds),
+            utilization: (window.used_percent ?? 0) / 100.0,
+            resetsAt: window.reset_at?.date
+        )
     }
 
-    // MARK: - OpenAI ("Codex")
+    // MARK: - Claude (Claude Code)
 
-    nonisolated private static func fetchOpenAIOptional(key: String?, window: UsageWindow) async -> ProviderFetch? {
-        guard let key else { return nil }
-        return await fetchOpenAI(key: key, window: window)
-    }
-
-    nonisolated private static func fetchOpenAI(key: String, window: UsageWindow) async -> ProviderFetch {
-        let start = startOfWindow(window).unix
-        let headers = ["Authorization": "Bearer \(key)"]
-        var usage = ProviderUsage()
-        var models: [String: ModelUsage] = [:]
-
-        // 1. Completions token usage, grouped by model.
-        do {
-            var page: String?
-            var guardCounter = 0
-            repeat {
-                var components = URLComponents(string: "https://api.openai.com/v1/organizations/usage/completions")!
-                var items = [
-                    URLQueryItem(name: "start_time", value: String(start)),
-                    URLQueryItem(name: "bucket_width", value: window.bucketWidthOpenAI),
-                    URLQueryItem(name: "limit", value: String(window.pageLimit)),
-                    URLQueryItem(name: "group_by", value: "model"),
-                ]
-                if let page { items.append(URLQueryItem(name: "page", value: page)) }
-                components.queryItems = items
-
-                let report: OpenAIUsageReport = try await getJSON(url: components.url!, headers: headers)
-                for bucket in report.data {
-                    for result in bucket.results {
-                        let inputTokens = result.input_tokens ?? 0
-                        let cached = result.input_cached_tokens ?? 0
-                        let outputTokens = result.output_tokens ?? 0
-                        let requests = result.num_model_requests ?? 0
-
-                        usage.inputTokens += inputTokens
-                        usage.cachedTokens += cached
-                        usage.outputTokens += outputTokens
-                        usage.requests += requests
-
-                        let name = result.model ?? "Other"
-                        var entry = models[name] ?? ModelUsage(model: name)
-                        entry.inputTokens += inputTokens
-                        entry.cachedTokens += cached
-                        entry.outputTokens += outputTokens
-                        entry.requests += requests
-                        models[name] = entry
-                    }
-                }
-                page = (report.has_more == true) ? report.next_page : nil
-                guardCounter += 1
-            } while page != nil && guardCounter < 40
-        } catch {
-            return .failure(describe(error, provider: "Codex"))
+    nonisolated private static func fetchClaude() async -> ProviderFetch {
+        guard let session = UsageSessions.ClaudeSession.load() else { return .notSignedIn }
+        guard session.hasProfileScope else {
+            return .failure("Claude: this session lacks the user:profile scope — re-run `claude` to sign in.")
         }
 
-        // 2. Cost (dollars — OpenAI reports `amount.value` already in USD).
-        //    OpenAI's Costs endpoint can't group by model, so this is a total only.
+        let headers = [
+            "Authorization": "Bearer \(session.accessToken)",
+            "anthropic-beta": "oauth-2025-04-20",
+            "User-Agent": "claude-cli/2.1.0 (external, cli)",
+        ]
+        let url = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+        let response: ClaudeUsageResponse
         do {
-            var page: String?
-            var guardCounter = 0
-            repeat {
-                var components = URLComponents(string: "https://api.openai.com/v1/organizations/costs")!
-                var items = [
-                    URLQueryItem(name: "start_time", value: String(start)),
-                    URLQueryItem(name: "bucket_width", value: "1d"),
-                    URLQueryItem(name: "limit", value: "31"),
-                ]
-                if let page { items.append(URLQueryItem(name: "page", value: page)) }
-                components.queryItems = items
-
-                let report: OpenAICostReport = try await getJSON(url: components.url!, headers: headers)
-                for bucket in report.data {
-                    for result in bucket.results {
-                        usage.costUSD += result.amount?.value ?? 0
-                    }
-                }
-                page = (report.has_more == true) ? report.next_page : nil
-                guardCounter += 1
-            } while page != nil && guardCounter < 40
+            response = try await getJSON(url: url, headers: headers)
         } catch {
-            return .failure(describe(error, provider: "Codex"))
+            return .failure(describe(error, provider: "Claude", reauth: "claude"))
         }
 
-        usage.models = sortedModels(models)
+        var usage = ProviderUsage(planLabel: session.subscriptionType?.capitalized)
+        if let window = response.five_hour { usage.windows.append(Self.claudeWindow("5-hour", window)) }
+        if let window = response.seven_day { usage.windows.append(Self.claudeWindow("Weekly", window)) }
+        if let window = response.seven_day_oauth_apps {
+            usage.windows.append(Self.claudeWindow("Weekly (apps)", window))
+        }
         return .success(usage)
     }
 
-    // MARK: - Networking
+    nonisolated private static func claudeWindow(_ name: String, _ window: ClaudeUsageResponse.Window) -> UsageWindow {
+        // Claude reports `utilization`; normalize a percent (>1) to a fraction.
+        let raw = window.utilization ?? 0
+        let fraction = raw > 1 ? raw / 100.0 : raw
+        return UsageWindow(name: name, utilization: fraction, resetsAt: window.resets_at?.date)
+    }
+
+    // MARK: - Shared helpers
+
+    /// Human name for a rolling window given its length in seconds.
+    nonisolated private static func windowName(seconds: Double?) -> String {
+        guard let seconds, seconds > 0 else { return "Usage" }
+        let hours = seconds / 3600
+        if hours <= 1.5 { return "Hourly" }
+        if hours < 24 { return "\(Int(hours.rounded()))-hour" }
+        let days = seconds / 86400
+        if days <= 1.5 { return "Daily" }
+        if days <= 7.5 { return "Weekly" }
+        if days <= 31 { return "Monthly" }
+        return "\(Int(days.rounded()))-day"
+    }
 
     nonisolated private static func getJSON<T: Decodable>(url: URL, headers: [String: String]) async throws -> T {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        for (field, value) in headers {
-            request.setValue(value, forHTTPHeaderField: field)
-        }
+        for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
         let (data, response) = try await URLSession.shared.data(for: request)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw UsageFetchError.http(status: http.statusCode)
@@ -404,16 +201,18 @@ final class UsageStore {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    nonisolated private static func describe(_ error: Error, provider: String) -> String {
+    nonisolated private static func describe(_ error: Error, provider: String, reauth cli: String) -> String {
         switch error {
         case UsageFetchError.http(let status) where status == 401 || status == 403:
-            return "\(provider): key rejected — an Admin API key is required for usage."
+            return "\(provider): session expired — re-run `\(cli)` to sign in."
+        case UsageFetchError.http(let status) where status == 429:
+            return "\(provider): usage endpoint is rate limited. Try again in a few minutes."
         case UsageFetchError.http(let status):
             return "\(provider): request failed (HTTP \(status))."
         case is DecodingError:
             return "\(provider): couldn’t read the usage response."
         default:
-            return "\(provider): couldn’t reach the usage API."
+            return "\(provider): couldn’t reach the usage endpoint."
         }
     }
 }
@@ -422,75 +221,72 @@ private enum UsageFetchError: Error {
     case http(status: Int)
 }
 
-/// Outcome of one provider fetch. A plain two-case enum (rather than
-/// `Result<_, String>`, whose `Failure` must be an `Error`) so failures can
-/// carry a ready-to-display message.
+/// Outcome of one provider fetch.
 private enum ProviderFetch {
     case success(ProviderUsage)
+    case notSignedIn
     case failure(String)
 }
 
-// MARK: - Anthropic response models
+// MARK: - Flexible date
 
-private struct AnthropicUsageReport: Decodable {
-    let data: [Bucket]
-    let has_more: Bool
-    let next_page: String?
+/// A timestamp that may arrive as unix seconds (Codex) or an RFC-1123 / ISO
+/// string (Claude).
+private struct FlexibleDate: Decodable {
+    let date: Date?
 
-    struct Bucket: Decodable { let results: [Item] }
-    struct Item: Decodable {
-        let model: String?
-        let uncached_input_tokens: Int?
-        let cache_read_input_tokens: Int?
-        let output_tokens: Int?
-        let cache_creation: CacheCreation?
-        let server_tool_use: ServerToolUse?
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let unix = try? container.decode(Double.self) {
+            date = Date(timeIntervalSince1970: unix)
+        } else if let string = try? container.decode(String.self) {
+            date = FlexibleDate.parse(string)
+        } else {
+            date = nil
+        }
     }
-    struct CacheCreation: Decodable {
-        let ephemeral_1h_input_tokens: Int?
-        let ephemeral_5m_input_tokens: Int?
-    }
-    struct ServerToolUse: Decodable {
-        let web_search_requests: Int?
-    }
-}
 
-private struct AnthropicCostReport: Decodable {
-    let data: [Bucket]
-    let has_more: Bool
-    let next_page: String?
-
-    struct Bucket: Decodable { let results: [Item] }
-    struct Item: Decodable {
-        let amount: String
-        let cost_type: String?
-        let model: String?
+    private static func parse(_ string: String) -> Date? {
+        if let iso = ISO8601DateFormatter().date(from: string) { return iso }
+        let rfc1123 = DateFormatter()
+        rfc1123.locale = Locale(identifier: "en_US_POSIX")
+        rfc1123.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss zzz"
+        return rfc1123.date(from: string)
     }
 }
 
-// MARK: - OpenAI response models
+// MARK: - Codex response models
 
-private struct OpenAIUsageReport: Decodable {
-    let data: [Bucket]
-    let has_more: Bool?
-    let next_page: String?
+private struct CodexUsageResponse: Decodable {
+    let plan_type: String?
+    let rate_limit: RateLimit?
+    let credits: Credits?
 
-    struct Bucket: Decodable { let results: [Item] }
-    struct Item: Decodable {
-        let model: String?
-        let input_tokens: Int?
-        let output_tokens: Int?
-        let input_cached_tokens: Int?
-        let num_model_requests: Int?
+    struct RateLimit: Decodable {
+        let primary_window: Window?
+        let secondary_window: Window?
+    }
+    struct Window: Decodable {
+        let used_percent: Double?
+        let reset_at: FlexibleDate?
+        let limit_window_seconds: Double?
+    }
+    struct Credits: Decodable {
+        let has_credits: Bool?
+        let unlimited: Bool?
+        let balance: Double?
     }
 }
 
-private struct OpenAICostReport: Decodable {
-    let data: [Bucket]
-    let has_more: Bool?
-    let next_page: String?
+// MARK: - Claude response models
 
-    struct Bucket: Decodable { let results: [Item] }
-    struct Item: Decodable { let amount: Amount? }
-    struct Amount: Decodable { let value: Double? }
+private struct ClaudeUsageResponse: Decodable {
+    let five_hour: Window?
+    let seven_day: Window?
+    let seven_day_oauth_apps: Window?
+
+    struct Window: Decodable {
+        let utilization: Double?
+        let resets_at: FlexibleDate?
+    }
 }

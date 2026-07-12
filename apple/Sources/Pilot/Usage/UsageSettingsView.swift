@@ -1,70 +1,70 @@
 import SwiftUI
 
-/// Settings tab for connecting the Claude and OpenAI **Admin** APIs so the
-/// inspector's Usage tab can report tokens and cost.
-///
-/// These endpoints require an org-scoped *admin* key — a regular inference key
-/// is rejected — so the fields and footers say so explicitly.
+/// Settings section for AI usage. There are **no keys to enter** — usage is read
+/// from the `claude` and `codex` CLI sessions already on this Mac. This page
+/// shows whether each is signed in and how to sign in if not.
 struct UsageSettingsView: View {
-    @State private var model = UsageSettingsModel()
-    @State private var savedFlash = false
+    @State private var claudeSignedIn: Bool?
+    @State private var codexSignedIn: Bool?
+
+    private static let claudeDocsURL = URL(string: "https://code.claude.com/docs/en/overview")!
+    private static let codexDocsURL = URL(string: "https://developers.openai.com/codex/cli")!
 
     var body: some View {
         Form {
             Section {
-                SecureField("sk-ant-admin…", text: $model.anthropicKey)
-                    .textContentType(.password)
-            } header: {
-                statusHeader("Claude Admin Key", connected: model.hasAnthropicKey)
-            } footer: {
-                Text("Create an Admin key in the Anthropic Console under Settings → Admin Keys. Usage & cost reporting needs an admin key, not a standard API key.")
-            }
-
-            Section {
-                SecureField("sk-admin-…", text: $model.openAIKey)
-                    .textContentType(.password)
-            } header: {
-                statusHeader("Codex (OpenAI) Admin Key", connected: model.hasOpenAIKey)
-            } footer: {
-                Text("Create an Admin key in the OpenAI platform under Settings → Admin keys. The Usage & Costs APIs require an admin key.")
-            }
-
-            Section {
-                HStack {
-                    Button {
-                        model.save()
-                        savedFlash = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { savedFlash = false }
-                    } label: {
-                        Label("Save Keys", systemImage: "checkmark.circle")
-                    }
-                    if savedFlash {
-                        Text("Saved")
-                            .font(.caption)
-                            .foregroundStyle(.green)
-                            .transition(.opacity)
-                    }
-                    Spacer()
+                statusRow(signedIn: claudeSignedIn)
+                Link(destination: Self.claudeDocsURL) {
+                    Label("Install & sign in to Claude Code", systemImage: "arrow.up.forward.app")
                 }
+            } header: {
+                Text("Claude")
             } footer: {
-                Text("Keys are stored in your macOS Keychain and never leave this device except to call each provider's usage API.")
+                Text("Run `claude` in a terminal to sign in. Usage is read from Claude Code's session — reading it from the Keychain may prompt you to Allow once.")
+            }
+
+            Section {
+                statusRow(signedIn: codexSignedIn)
+                Link(destination: Self.codexDocsURL) {
+                    Label("Install & sign in to Codex", systemImage: "arrow.up.forward.app")
+                }
+            } header: {
+                Text("Codex")
+            } footer: {
+                Text("Run `codex` in a terminal to sign in. Usage is read from ~/.codex/auth.json.")
+            }
+
+            Section {
+                EmptyView()
+            } footer: {
+                Text("Usage is read only, using your existing CLI logins — no keys are stored. It calls each provider's internal plan-usage endpoint, which is undocumented and may change.")
             }
         }
-        .animation(.snappy, value: savedFlash)
+        .task { await detect() }
     }
 
-    private func statusHeader(_ title: String, connected: Bool) -> some View {
-        HStack(spacing: 6) {
-            Text(title)
-            if connected {
-                Text("Connected")
-                    .font(.caption2.weight(.semibold))
+    @ViewBuilder
+    private func statusRow(signedIn: Bool?) -> some View {
+        LabeledContent("Status") {
+            switch signedIn {
+            case .some(true):
+                Label("Signed in", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.green.opacity(0.15), in: Capsule())
-                    .textCase(nil)
+                    .labelStyle(.titleAndIcon)
+            case .some(false):
+                Label("Not signed in", systemImage: "xmark.circle")
+                    .foregroundStyle(.secondary)
+                    .labelStyle(.titleAndIcon)
+            case .none:
+                ProgressView().controlSize(.small)
             }
         }
+    }
+
+    private func detect() async {
+        let claude = await Task.detached { UsageSessions.ClaudeSession.load() != nil }.value
+        let codex = await Task.detached { UsageSessions.CodexSession.load() != nil }.value
+        claudeSignedIn = claude
+        codexSignedIn = codex
     }
 }
