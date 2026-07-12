@@ -40,6 +40,7 @@ enum InspectorTab: String, Codable, CaseIterable {
     case tasks = "Tasks"
     case commits = "Commits"
     case filesystem = "Files"
+    case usage = "Usage"
 }
 
 enum RootPathSource: String, Codable {
