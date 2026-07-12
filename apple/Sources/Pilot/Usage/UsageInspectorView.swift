@@ -8,9 +8,8 @@ enum SettingsTab {
     static let usage = "usage"
 }
 
-/// Inspector "Usage" tab. Two stacked cards — **Claude** on top, **Codex**
-/// (OpenAI) below — each showing plan usage windows (utilization + reset
-/// countdown) and credits, read from your local `claude` / `codex` CLI sessions.
+/// Inspector "Usage" tab. Provider cards show plan usage windows (utilization + reset
+/// countdown) and credits, read from local `claude`, `codex`, and `grok` CLI sessions.
 /// A not-signed-in card links to the Usage settings section for setup help.
 struct UsageListView: View {
     let store: UsageStore
@@ -38,6 +37,14 @@ struct UsageListView: View {
                         tint: .green,
                         cli: "codex",
                         state: store.openAI,
+                        openSetup: openSetup
+                    )
+                    ProviderCard(
+                        title: "Grok",
+                        systemImage: "bolt.fill",
+                        tint: .purple,
+                        cli: "grok",
+                        state: store.xAI,
                         openSetup: openSetup
                     )
                 }
@@ -71,6 +78,21 @@ struct UsageListView: View {
     private func openSetup() {
         selectedSettingsTab = SettingsTab.usage
         openSettings()
+    }
+}
+
+enum UsageResetCountdown {
+    /// Live countdown text: "resets in 2d 4h" / "3h 12m" / "12m 05s".
+    static func text(until date: Date, now: Date) -> String {
+        let remaining = Int(date.timeIntervalSince(now))
+        guard remaining > 0 else { return "resetting…" }
+        let days = remaining / 86400
+        let hours = (remaining % 86400) / 3600
+        let minutes = (remaining % 3600) / 60
+        let seconds = remaining % 60
+        if days > 0 { return "resets in \(days)d \(hours)h" }
+        if hours > 0 { return "resets in \(hours)h \(minutes)m" }
+        return String(format: "resets in %dm %02ds", minutes, seconds)
     }
 }
 
@@ -156,10 +178,18 @@ private struct ProviderCard: View {
             ProgressView(value: min(max(window.utilization, 0), 1))
                 .progressViewStyle(.linear)
                 .tint(barColor(window.utilization))
-            if let reset = Self.resetText(window.resetsAt) {
-                Text(reset)
-                    .scaledFont(size: 9)
-                    .foregroundStyle(.tertiary)
+            if let resetsAt = window.resetsAt {
+                // Live countdown — reticks every second.
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let countdown = UsageResetCountdown.text(until: resetsAt, now: context.date)
+                    Text(countdown)
+                        .scaledFont(size: 9)
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                        .contentTransition(.numericText(countsDown: true))
+                        .animation(.smooth(duration: 0.2), value: countdown)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
             }
         }
     }
@@ -173,13 +203,36 @@ private struct ProviderCard: View {
             if credits.unlimited {
                 Text("Unlimited")
                     .scaledFont(size: 11, weight: .semibold)
-            } else if let balance = credits.balanceUSD {
-                Text(balance.formatted(.currency(code: "USD").precision(.fractionLength(2))))
+            } else if let used = credits.used, let limit = credits.limit {
+                let usedText = creditAmount(used, unit: credits.unit)
+                let limitText = creditAmount(limit, unit: credits.unit)
+                Text("\(usedText) / \(limitText) used")
+                    .scaledFont(size: 11, design: .monospaced)
+            } else if let balance = credits.balance {
+                Text(creditAmount(balance, unit: credits.unit))
                     .scaledFont(size: 11, design: .monospaced)
             } else if let utilization = credits.utilization {
                 Text("\(Int((utilization * 100).rounded()))% used")
                     .scaledFont(size: 11, design: .monospaced)
+            } else if let used = credits.used {
+                Text("\(creditAmount(used, unit: credits.unit)) used")
+                    .scaledFont(size: 11, design: .monospaced)
+            } else if let limit = credits.limit {
+                Text("\(creditAmount(limit, unit: credits.unit)) limit")
+                    .scaledFont(size: 11, design: .monospaced)
             }
+        }
+    }
+
+    private func creditAmount(_ value: Double, unit: CreditUnit) -> String {
+        switch unit {
+        case .credits:
+            let number = value.formatted(
+                .number.grouping(.automatic).precision(.fractionLength(0...2))
+            )
+            return "\(number) credits"
+        case .currency(let code):
+            return value.formatted(.currency(code: code).precision(.fractionLength(2)))
         }
     }
 
@@ -203,19 +256,5 @@ private struct ProviderCard: View {
         case ..<0.9: .yellow
         default: .red
         }
-    }
-
-    /// "resets in 3h 12m" / "resets in 2d 4h", or nil when unknown.
-    private static func resetText(_ date: Date?) -> String? {
-        guard let date else { return nil }
-        let remaining = date.timeIntervalSinceNow
-        guard remaining > 0 else { return "resetting…" }
-        let totalMinutes = Int(remaining / 60)
-        let days = totalMinutes / 1440
-        let hours = (totalMinutes % 1440) / 60
-        let minutes = totalMinutes % 60
-        if days > 0 { return "resets in \(days)d \(hours)h" }
-        if hours > 0 { return "resets in \(hours)h \(minutes)m" }
-        return "resets in \(minutes)m"
     }
 }

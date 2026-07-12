@@ -19,6 +19,10 @@ struct ContentView: View {
     @State private var isDrawingActive = false
     @AppStorage("sidebar.pinnedExpanded") private var pinnedSectionExpanded = true
     @AppStorage("sidebar.workspacesExpanded") private var workspacesSectionExpanded = true
+    /// Persisted inspector column width. SwiftUI's `.inspector` resets to its
+    /// `ideal` every time it re-presents (e.g. toggling Notes/Remote Desktop),
+    /// so we remember the user's chosen width and feed it back as the ideal.
+    @AppStorage("inspector.width") private var inspectorWidth = 280.0
     @FocusState private var isBrowserURLFieldFocused: Bool
     @State private var notesToggleMonitor: Any?
 
@@ -134,7 +138,14 @@ struct ContentView: View {
                 usageStore: usageStore,
                 selectedTab: selectedWorkspaceInspectorTabBinding
             )
-                .inspectorColumnWidth(min: 220, ideal: 280, max: 400)
+                // Capture the user's resize so the width survives re-presentation.
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.width
+                } action: { width in
+                    let clamped = min(max(Double(width), 220), 600)
+                    if abs(clamped - inspectorWidth) > 1 { inspectorWidth = clamped }
+                }
+                .inspectorColumnWidth(min: 220, ideal: CGFloat(inspectorWidth), max: 600)
         }
         .onChange(of: activeInspectorRepoPath) {
             syncInspectorRepo(activeInspectorRepoPath)
