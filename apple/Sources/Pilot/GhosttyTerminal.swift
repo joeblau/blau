@@ -14,6 +14,14 @@ final class GhosttyRuntime: @unchecked Sendable {
         alpha: 1.0
     )
     static let terminalBackgroundHex = "#1c1c1c"
+    static var terminalOverrideConfig: String {
+        """
+        background = \(terminalBackgroundHex)
+        macos-option-as-alt = true
+        mouse-scroll-multiplier = precision:1,discrete:1
+        mouse-shift-capture = never
+        """
+    }
     private static let defaultTerminalFontSizePoints: CGFloat = 13.0
     private static let nativeDisplayModeFlag: UInt32 = 0x02000000
 
@@ -245,13 +253,9 @@ final class GhosttyRuntime: @unchecked Sendable {
     /// Writes a temporary Ghostty config file that forces a consistent dark
     /// terminal background to avoid light empty regions in terminal panes.
     private static func writeBackgroundConfig() -> String? {
-        let content = """
-        background = \(terminalBackgroundHex)
-        macos-option-as-alt = true
-        """
         return writeOverrideConfig(
             named: "ghostty-bg-\(ProcessInfo.processInfo.processIdentifier)",
-            content: content
+            content: terminalOverrideConfig
         )
     }
 
@@ -334,6 +338,43 @@ final class GhosttyRuntime: @unchecked Sendable {
 
 // MARK: - Metal Surface NSView
 
+enum GhosttyScrollModifiers {
+    /// `ghostty_input_scroll_mods_t` is a packed byte, not a keyboard-modifier
+    /// bitset. Bit 0 marks pixel-precise input and bits 1...3 contain momentum.
+    static func packedValue(precision: Bool, momentumPhase: NSEvent.Phase) -> Int32 {
+        let momentum: Int32 = switch momentumPhase {
+        case .began: Int32(GHOSTTY_MOUSE_MOMENTUM_BEGAN.rawValue)
+        case .stationary: Int32(GHOSTTY_MOUSE_MOMENTUM_STATIONARY.rawValue)
+        case .changed: Int32(GHOSTTY_MOUSE_MOMENTUM_CHANGED.rawValue)
+        case .ended: Int32(GHOSTTY_MOUSE_MOMENTUM_ENDED.rawValue)
+        case .cancelled: Int32(GHOSTTY_MOUSE_MOMENTUM_CANCELLED.rawValue)
+        case .mayBegin: Int32(GHOSTTY_MOUSE_MOMENTUM_MAY_BEGIN.rawValue)
+        default: Int32(GHOSTTY_MOUSE_MOMENTUM_NONE.rawValue)
+        }
+
+        return (precision ? 1 : 0) | (momentum << 1)
+    }
+}
+
+enum GhosttyCapturedMouseSelectionPolicy {
+    static let dragThreshold: Double = 3.0
+
+    static func shouldDeferPress(
+        isMouseCaptured: Bool,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        isMouseCaptured && !modifierFlags.contains(.shift)
+    }
+
+    static func shouldBeginSelection(clickCount: Int, dragDistance: Double) -> Bool {
+        clickCount > 1 || dragDistance >= dragThreshold
+    }
+
+    static func selectionModifiers(from modifiers: ghostty_input_mods_e) -> ghostty_input_mods_e {
+        ghostty_input_mods_e(rawValue: modifiers.rawValue | GHOSTTY_MODS_SHIFT.rawValue)
+    }
+}
+
 /// An NSView that hosts a Ghostty terminal surface with Metal rendering.
 /// The surface creates its own Metal renderer using the NSView's layer.
 @MainActor
@@ -343,6 +384,13 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     private static let transientShrinkPixelWidth: CGFloat = 500
     private static let transientShrinkPixelHeight: CGFloat = 300
     private static let defaultContentScale: CGFloat = 2.0
+    private struct DeferredLeftMouseDown {
+        let x: Double
+        let y: Double
+        let modifiers: ghostty_input_mods_e
+        let clickCount: Int
+        var isSelecting = false
+    }
 
     /// Registry of live terminal views keyed by Pane ID.
     /// Used to target the active terminal for remote input (voice paste, watch Enter).
@@ -372,6 +420,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     private var pendingSurfaceResize: DispatchWorkItem?
     private var pendingGeometryRefresh = false
     private var isPresentationActive = true
+    private var deferredLeftMouseDown: DeferredLeftMouseDown?
 
     init(app: ghostty_app_t, pane: Pane) {
         self.pane = pane
@@ -1051,13 +1100,85 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         window?.makeFirstResponder(self)
         guard let surface else { return }
         let pt = mousePoint(event)
-        ghostty_surface_mouse_pos(surface, pt.x, pt.y, mods(event))
-        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods(event))
+        let eventMods = mods(event)
+        ghostty_surface_mouse_pos(surface, pt.x, pt.y, eventMods)
+
+        // Pilot keeps shells alive inside an invisible tmux session with mouse
+        // reporting enabled for scrollback. If we forward the press immediately,
+        // tmux also owns every drag and its default MouseDragEnd binding clears the
+        // highlight on release. Defer an unmodified captured press until we know
+        // whether it is a click (forward to tmux/TUI) or a drag (native Ghostty
+        // selection). Explicit Shift keeps Ghostty's standard override behavior.
+        if GhosttyCapturedMouseSelectionPolicy.shouldDeferPress(
+            isMouseCaptured: ghostty_surface_mouse_captured(surface),
+            modifierFlags: event.modifierFlags
+        ) {
+            deferredLeftMouseDown = DeferredLeftMouseDown(
+                x: pt.x,
+                y: pt.y,
+                modifiers: eventMods,
+                clickCount: min(max(event.clickCount, 1), 3)
+            )
+
+            // Double/triple clicks are selections even before a drag begins.
+            if GhosttyCapturedMouseSelectionPolicy.shouldBeginSelection(
+                clickCount: event.clickCount,
+                dragDistance: 0
+            ), var deferred = deferredLeftMouseDown {
+                beginCapturedSelection(surface: surface, deferred: &deferred)
+                deferredLeftMouseDown = deferred
+            }
+            return
+        }
+
+        deferredLeftMouseDown = nil
+        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, eventMods)
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard let surface else { return }
-        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods(event))
+        guard let surface else {
+            deferredLeftMouseDown = nil
+            return
+        }
+
+        let pt = mousePoint(event)
+        if let deferred = deferredLeftMouseDown {
+            deferredLeftMouseDown = nil
+
+            if deferred.isSelecting {
+                let selectionMods = GhosttyCapturedMouseSelectionPolicy.selectionModifiers(from: mods(event))
+                ghostty_surface_mouse_pos(surface, pt.x, pt.y, selectionMods)
+                _ = ghostty_surface_mouse_button(
+                    surface,
+                    GHOSTTY_MOUSE_RELEASE,
+                    GHOSTTY_MOUSE_LEFT,
+                    selectionMods
+                )
+            } else {
+                // It was a click, not a selection drag. Replay the deferred
+                // press/release so mouse-aware terminal applications still work.
+                ghostty_surface_mouse_pos(surface, deferred.x, deferred.y, deferred.modifiers)
+                _ = ghostty_surface_mouse_button(
+                    surface,
+                    GHOSTTY_MOUSE_PRESS,
+                    GHOSTTY_MOUSE_LEFT,
+                    deferred.modifiers
+                )
+                let eventMods = mods(event)
+                ghostty_surface_mouse_pos(surface, pt.x, pt.y, eventMods)
+                _ = ghostty_surface_mouse_button(
+                    surface,
+                    GHOSTTY_MOUSE_RELEASE,
+                    GHOSTTY_MOUSE_LEFT,
+                    eventMods
+                )
+            }
+            return
+        }
+
+        let eventMods = mods(event)
+        ghostty_surface_mouse_pos(surface, pt.x, pt.y, eventMods)
+        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, eventMods)
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -1066,7 +1187,32 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         ghostty_surface_mouse_pos(surface, pt.x, pt.y, mods(event))
     }
 
-    override func mouseDragged(with event: NSEvent) { mouseMoved(with: event) }
+    override func mouseDragged(with event: NSEvent) {
+        guard let surface else { return }
+        let pt = mousePoint(event)
+
+        if var deferred = deferredLeftMouseDown {
+            if !deferred.isSelecting {
+                let distance = hypot(pt.x - deferred.x, pt.y - deferred.y)
+                guard GhosttyCapturedMouseSelectionPolicy.shouldBeginSelection(
+                    clickCount: deferred.clickCount,
+                    dragDistance: distance
+                ) else { return }
+                beginCapturedSelection(surface: surface, deferred: &deferred)
+                deferredLeftMouseDown = deferred
+            }
+
+            ghostty_surface_mouse_pos(
+                surface,
+                pt.x,
+                pt.y,
+                GhosttyCapturedMouseSelectionPolicy.selectionModifiers(from: mods(event))
+            )
+            return
+        }
+
+        ghostty_surface_mouse_pos(surface, pt.x, pt.y, mods(event))
+    }
 
     override func rightMouseDown(with event: NSEvent) {
         guard let surface else { super.rightMouseDown(with: event); return }
@@ -1098,23 +1244,18 @@ class GhosttyMetalView: NSView, CALayerDelegate {
 
     override func mouseExited(with event: NSEvent) {
         guard let surface else { return }
+        // AppKit keeps delivering drag events outside the view. Preserve the
+        // real position so Ghostty can extend/autoscroll the active selection.
+        guard NSEvent.pressedMouseButtons == 0 else { return }
         ghostty_surface_mouse_pos(surface, -1, -1, mods(event))
     }
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
-        // Damp raw scroll deltas — trackpad precise pixel deltas feel too
-        // aggressive, and mouse-wheel line deltas also scroll faster than
-        // we want in the terminal.
-        let preciseScrollScale = 0.004
-        let lineScrollScale = 0.05
-        let scale = event.hasPreciseScrollingDeltas ? preciseScrollScale : lineScrollScale
-        let x = event.scrollingDeltaX * scale
-        let y = event.scrollingDeltaY * scale
         ghostty_surface_mouse_scroll(
             surface,
-            x,
-            y,
+            event.scrollingDeltaX,
+            event.scrollingDeltaY,
             scrollMods(event)
         )
     }
@@ -1155,11 +1296,52 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     }
 
     private func scrollMods(_ event: NSEvent) -> ghostty_input_scroll_mods_t {
-        // Newer Ghostty headers expose scroll modifiers as an opaque packed int
-        // and no longer vend the precise/momentum constants directly. Preserve
-        // the keyboard modifier bits and let Ghostty handle the rest internally.
-        let baseMods = Int32(bitPattern: ghosttyMods(event.modifierFlags).rawValue)
-        return ghostty_input_scroll_mods_t(baseMods)
+        ghostty_input_scroll_mods_t(GhosttyScrollModifiers.packedValue(
+            precision: event.hasPreciseScrollingDeltas,
+            momentumPhase: event.momentumPhase
+        ))
+    }
+
+    /// Starts a native Ghostty selection while a terminal application has mouse
+    /// reporting enabled. The unknown-button pair clears any previous selection
+    /// and resets Ghostty's click counter, but encodes no bytes for tmux/TUIs.
+    private func beginCapturedSelection(
+        surface: ghostty_surface_t,
+        deferred: inout DeferredLeftMouseDown
+    ) {
+        ghostty_surface_mouse_pos(surface, deferred.x, deferred.y, deferred.modifiers)
+        _ = ghostty_surface_mouse_button(
+            surface,
+            GHOSTTY_MOUSE_PRESS,
+            GHOSTTY_MOUSE_UNKNOWN,
+            deferred.modifiers
+        )
+        _ = ghostty_surface_mouse_button(
+            surface,
+            GHOSTTY_MOUSE_RELEASE,
+            GHOSTTY_MOUSE_UNKNOWN,
+            deferred.modifiers
+        )
+
+        let selectionMods = GhosttyCapturedMouseSelectionPolicy.selectionModifiers(from: deferred.modifiers)
+        for clickIndex in 0..<deferred.clickCount {
+            ghostty_surface_mouse_pos(surface, deferred.x, deferred.y, selectionMods)
+            _ = ghostty_surface_mouse_button(
+                surface,
+                GHOSTTY_MOUSE_PRESS,
+                GHOSTTY_MOUSE_LEFT,
+                selectionMods
+            )
+            if clickIndex < deferred.clickCount - 1 {
+                _ = ghostty_surface_mouse_button(
+                    surface,
+                    GHOSTTY_MOUSE_RELEASE,
+                    GHOSTTY_MOUSE_LEFT,
+                    selectionMods
+                )
+            }
+        }
+        deferred.isSelecting = true
     }
 
     private func keyAction(

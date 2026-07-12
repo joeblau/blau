@@ -100,13 +100,22 @@ private struct DeviceStatusOverlay: View {
                 statusBlock(
                     icon: "exclamationmark.triangle",
                     title: "Capture failed",
-                    detail: message
+                    detail: message,
+                    // Self-heal polls in the background, but give the user an
+                    // immediate way out too — start() re-requests access and
+                    // re-attaches without waiting for the next poll tick.
+                    retry: { session.start() }
                 )
             }
         }
     }
 
-    private func statusBlock(icon: String, title: String, detail: String?) -> some View {
+    private func statusBlock(
+        icon: String,
+        title: String,
+        detail: String?,
+        retry: (() -> Void)? = nil
+    ) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .scaledFont(size: 36)
@@ -119,6 +128,11 @@ private struct DeviceStatusOverlay: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
+            }
+            if let retry {
+                Button("Retry", action: retry)
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 8)
             }
         }
         .foregroundStyle(.white)

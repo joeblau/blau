@@ -56,6 +56,18 @@ final class DeviceCaptureSession: NSObject {
     @ObservationIgnored private var rescanAttemptsRemaining = 0
     @ObservationIgnored private var rescanActive = false
 
+    /// Persistent, slow rescan that runs while `status == .failed`. A
+    /// media-services reset can republish the capture device *without* firing
+    /// `wasConnectedNotification` — from AVFoundation's view the device never
+    /// "disconnected", the whole media stack reset — so `handleDeviceConnected`
+    /// can't be our only escape from `.failed`. A genuine reset that outlasts the
+    /// bounded recovery budget would otherwise strand the pane forever (the
+    /// watchdog, recovery, and startup rescan are all torn down when we give up).
+    /// This poll watches for the device to become discoverable again and
+    /// re-attaches on the spot: no unplug/replug, no manual retry required.
+    @ObservationIgnored private var failedRescanActive = false
+    @ObservationIgnored private var failedRescanGeneration = 0
+
     /// Health watchdog. The capture session can die silently after extended use
     /// — most often a media-services reset (`mediaserverd` restarts under memory
     /// or thermal pressure) — which stops the session *without* firing a
@@ -100,6 +112,10 @@ final class DeviceCaptureSession: NSObject {
     private static let maxReattachAttempts = 10
     private static let thrashWindow: TimeInterval = 10
     private static let maxQuickFailures = 3
+    /// Cadence of the `.failed`-state self-heal poll. Slower than the startup
+    /// rescan (0.5s): this is a passive background heal, not a launch race, so a
+    /// gentle 2s beat is enough and keeps it from reading as a tight retry nag.
+    private static let failedRescanInterval: TimeInterval = 2
 
     /// Grabs one-shot frames (screenshots) and writes recordings to disk via
     /// `AVAssetWriter`. We write the exact frames the session delivers — the
@@ -294,6 +310,9 @@ final class DeviceCaptureSession: NSObject {
     }
 
     private func attachIfAvailable() {
+        // A manual retry (or fresh start) supersedes the passive self-heal poll,
+        // so it doesn't run in parallel with the bounded startup rescan below.
+        stopFailedRescan()
         if let device = Self.firstAttachedScreenCaptureDevice() {
             attach(device)
         } else {
@@ -344,6 +363,42 @@ final class DeviceCaptureSession: NSObject {
     private func cancelRescan() {
         rescanAttemptsRemaining = 0
         rescanActive = false
+    }
+
+    // MARK: - Failed-state self-heal
+
+    /// Begin polling for the device to reappear while we're stranded in
+    /// `.failed`. Idempotent; superseded cleanly by `stopFailedRescan` (which
+    /// `attach`/`detach` call), so exactly one chain is ever live.
+    private func startFailedRescan() {
+        guard !failedRescanActive else { return }
+        failedRescanActive = true
+        failedRescanGeneration &+= 1
+        failedRescanTick(generation: failedRescanGeneration)
+    }
+
+    private func stopFailedRescan() {
+        failedRescanActive = false
+        failedRescanGeneration &+= 1
+    }
+
+    private func failedRescanTick(generation: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.failedRescanInterval) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.failedRescanActive,
+                      generation == self.failedRescanGeneration else { return }
+                if let device = Self.firstAttachedScreenCaptureDevice() {
+                    // The device is discoverable again. Treat this like a physical
+                    // replug: clear the thrash count so the reconnect gets a real
+                    // chance instead of instantly re-tripping the quick-failure cap
+                    // and bouncing straight back to `.failed`.
+                    self.consecutiveQuickFailures = 0
+                    self.attach(device)  // attach() calls stopFailedRescan()
+                } else {
+                    self.failedRescanTick(generation: generation)
+                }
+            }
+        }
     }
 
     private static func firstAttachedScreenCaptureDevice() -> AVCaptureDevice? {
@@ -564,6 +619,10 @@ final class DeviceCaptureSession: NSObject {
         consecutiveQuickFailures = 0
         detach()
         status = .failed(message)
+        // The bounded recovery budget expired, but the device may still come back
+        // (a slow media-services reset can outlast it, and won't fire a device
+        // reconnect notification). Keep watching so we heal without a replug.
+        startFailedRescan()
     }
 
     /// Invalidate any in-flight delayed re-attach so it can't run after teardown.
@@ -576,6 +635,7 @@ final class DeviceCaptureSession: NSObject {
 
     private func attach(_ device: AVCaptureDevice) {
         cancelRescan()
+        stopFailedRescan()
         status = .connecting
         session.beginConfiguration()
         defer { session.commitConfiguration() }
@@ -599,6 +659,9 @@ final class DeviceCaptureSession: NSObject {
         } catch {
             logger.error("video input failed: \(error.localizedDescription)")
             status = .failed(error.localizedDescription)
+            // Same dead-end as recovery giving up: keep watching so a device that
+            // recovers (or is replugged) reconnects without a relaunch.
+            startFailedRescan()
             return
         }
 
@@ -648,6 +711,7 @@ final class DeviceCaptureSession: NSObject {
 
     private func detach() {
         cancelRescan()
+        stopFailedRescan()
         // The watchdog only makes sense while attached; stopping it here covers
         // every teardown path (unplug, recovery rebuild, an attach() that throws)
         // so no zombie tick survives. attach() restarts it.

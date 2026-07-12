@@ -29,6 +29,10 @@ final class SimulatorSession {
     var devices: [SimRuntimeGroup] = []
     var isRefreshing = false
     var lastError: String?
+    var isRecording = false
+    /// Increments after each successful clipboard write so the pane can show a
+    /// confirmation even when screenshots are copied back-to-back.
+    var clipboardCopyCount = 0
 
     private(set) var bootedDeviceName: String?
     private(set) var bootedUDID: String?
@@ -42,6 +46,10 @@ final class SimulatorSession {
     @ObservationIgnored private var framebuffer: SimulatorFramebuffer?
     @ObservationIgnored private var hid: SimulatorHID?
     @ObservationIgnored private var captureGeneration = 0
+    @ObservationIgnored private var recordingProcess: Process?
+    @ObservationIgnored private var recordingID: UUID?
+    @ObservationIgnored private var recordingURL: URL?
+    @ObservationIgnored private var recordingStopWasRequested = false
     @ObservationIgnored private let logger = Logger(subsystem: "app.blau.pilot.simulator", category: "session")
 
     init() {
@@ -157,6 +165,7 @@ final class SimulatorSession {
     // MARK: - Teardown
 
     private func teardownCapture() {
+        stopRecording()
         framebuffer?.stop()
         framebuffer = nil
         hid = nil
@@ -197,6 +206,186 @@ final class SimulatorSession {
 
     private static func performShutdown(_ udid: String) async {
         await Task.detached(priority: .utility) { try? SimctlBridge.shutdown(udid: udid) }.value
+    }
+
+    // MARK: - Media capture
+
+    func toggleRecording() {
+        guard status == .streaming || isRecording else { return }
+        if isRecording {
+            stopRecording()
+        } else {
+            startRecording()
+        }
+    }
+
+    private func startRecording() {
+        guard !isRecording, status == .streaming, let udid = bootedUDID else { return }
+
+        let url = Self.timestampedURL(name: "Simulator Recording", ext: "mov")
+        let process = SimctlBridge.makeVideoRecordingProcess(udid: udid, to: url)
+        let id = UUID()
+        process.terminationHandler = { [weak self] process in
+            let status = process.terminationStatus
+            Task { @MainActor [weak self] in
+                self?.recordingDidFinish(id: id, terminationStatus: status)
+            }
+        }
+
+        // Install the identity before launch so even an immediate simctl exit
+        // is matched by the termination callback. Roll it back if launch itself
+        // throws before a child process exists.
+        recordingProcess = process
+        recordingID = id
+        recordingURL = url
+        recordingStopWasRequested = false
+        isRecording = true
+        lastError = nil
+
+        do {
+            try process.run()
+        } catch {
+            recordingProcess = nil
+            recordingID = nil
+            recordingURL = nil
+            recordingStopWasRequested = false
+            isRecording = false
+            lastError = "Couldn't start recording: \(error.localizedDescription)"
+            logger.error("start recording failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Send SIGINT instead of terminating the process so `simctl` writes the
+    /// movie trailer and leaves a playable file on the Desktop.
+    private func stopRecording() {
+        guard let process = recordingProcess else { return }
+        recordingStopWasRequested = true
+        if process.isRunning {
+            process.interrupt()
+        }
+    }
+
+    private func recordingDidFinish(id: UUID, terminationStatus: Int32) {
+        guard recordingID == id else { return }
+
+        let stopWasRequested = recordingStopWasRequested
+        let url = recordingURL
+        recordingProcess = nil
+        recordingID = nil
+        recordingURL = nil
+        recordingStopWasRequested = false
+        isRecording = false
+
+        let fileSize = url.flatMap { url -> Int64? in
+            let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+            return (attributes?[.size] as? NSNumber)?.int64Value
+        } ?? 0
+        guard fileSize > 0 else {
+            lastError = "Recording ended without producing a video."
+            logger.error("simulator recording produced no video")
+            return
+        }
+
+        if !stopWasRequested, terminationStatus != 0 {
+            lastError = "Recording stopped unexpectedly (simctl exited \(terminationStatus))."
+            logger.error("simulator recording exited unexpectedly: \(terminationStatus)")
+        } else {
+            lastError = nil
+        }
+    }
+
+    func takeScreenshot() {
+        guard status == .streaming, let udid = bootedUDID else { return }
+        let url = Self.timestampedURL(name: "Simulator Screenshot", ext: "png")
+        Task { [weak self] in
+            let errorMessage = await Self.saveScreenshot(udid: udid, to: url)
+            guard let self, self.bootedUDID == udid else { return }
+            if let errorMessage {
+                self.lastError = "Couldn't save screenshot: \(errorMessage)"
+                self.logger.error("save screenshot failed: \(errorMessage, privacy: .public)")
+            } else {
+                self.lastError = nil
+            }
+        }
+    }
+
+    func copyScreenshotToClipboard() {
+        guard status == .streaming, let udid = bootedUDID else { return }
+        Task { [weak self] in
+            let result = await Self.captureScreenshotData(udid: udid)
+            guard let self, self.bootedUDID == udid else { return }
+            switch result {
+            case .success(let pngData):
+                guard let image = NSImage(data: pngData) else {
+                    self.lastError = "Couldn't decode the simulator screenshot."
+                    return
+                }
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                let wroteImage = pasteboard.writeObjects([image])
+                let wrotePNG = pasteboard.setData(pngData, forType: .png)
+                let wroteAny = wroteImage || wrotePNG
+                if wroteAny {
+                    self.lastError = nil
+                    self.clipboardCopyCount &+= 1
+                } else {
+                    self.lastError = "Couldn't put the screenshot on the clipboard."
+                }
+            case .failure(let message):
+                self.lastError = "Couldn't copy screenshot: \(message)"
+                self.logger.error("copy screenshot failed: \(message, privacy: .public)")
+            }
+        }
+    }
+
+    private enum ScreenshotDataResult: Sendable {
+        case success(Data)
+        case failure(String)
+    }
+
+    private static func saveScreenshot(udid: String, to url: URL) async -> String? {
+        await Task.detached(priority: .userInitiated) {
+            do {
+                try SimctlBridge.takeScreenshot(udid: udid, to: url)
+                return nil
+            } catch {
+                return simctlErrorMessage(error)
+            }
+        }.value
+    }
+
+    private static func captureScreenshotData(udid: String) async -> ScreenshotDataResult {
+        await Task.detached(priority: .userInitiated) {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("Pilot Simulator Screenshot \(UUID().uuidString).png")
+            defer { try? FileManager.default.removeItem(at: url) }
+            do {
+                try SimctlBridge.takeScreenshot(udid: udid, to: url)
+                return .success(try Data(contentsOf: url))
+            } catch {
+                return .failure(simctlErrorMessage(error))
+            }
+        }.value
+    }
+
+    nonisolated private static func simctlErrorMessage(_ error: Error) -> String {
+        switch error {
+        case SimctlError.toolingMissing:
+            "Full Xcode is required to capture the simulator."
+        case SimctlError.commandFailed(let message):
+            message
+        default:
+            error.localizedDescription
+        }
+    }
+
+    private static func timestampedURL(name: String, ext: String) -> URL {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss.SSS"
+        let filename = "\(name) \(formatter.string(from: Date())).\(ext)"
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Desktop", isDirectory: true)
+            .appendingPathComponent(filename)
     }
 
     // MARK: - Input (normalized 0…1 coords, forwarded straight to the simulator)
