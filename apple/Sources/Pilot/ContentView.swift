@@ -15,6 +15,7 @@ struct ContentView: View {
     var isPeerRecording: Bool
     @State private var gitStore = GitCommitStore()
     @State private var tasksStore = GitHubTasksStore()
+    @State private var usageStore = UsageStore()
     @State private var isDrawingActive = false
     @AppStorage("sidebar.pinnedExpanded") private var pinnedSectionExpanded = true
     @AppStorage("sidebar.workspacesExpanded") private var workspacesSectionExpanded = true
@@ -130,6 +131,7 @@ struct ContentView: View {
             InspectorPanelView(
                 gitStore: gitStore,
                 tasksStore: tasksStore,
+                usageStore: usageStore,
                 selectedTab: selectedWorkspaceInspectorTabBinding
             )
                 .inspectorColumnWidth(min: 220, ideal: 280, max: 400)
@@ -156,9 +158,18 @@ struct ContentView: View {
             syncSelectedWorkspaceRootPath()
             syncInspectorRepo(activeInspectorRepoPath)
             focusSelectedWorkspaceTerminal()
+            usageStore.start()
+        }
+        // Refetch usage the moment the inspector switches to the Usage tab, so a
+        // key just saved in Settings shows results without waiting for the poll.
+        .onChange(of: store.selectedWorkspace?.inspectorTab) { _, tab in
+            if tab == .usage { usageStore.reload() }
         }
         .onAppear { installNotesToggleMonitor() }
-        .onDisappear { removeNotesToggleMonitor() }
+        .onDisappear {
+            removeNotesToggleMonitor()
+            usageStore.stop()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .pilotFocusBrowserAddressBar)) { _ in
             focusBrowserAddressBar()
         }
@@ -474,6 +485,34 @@ struct ContentView: View {
     private func simulatorToolbar(paneID: UUID) -> some View {
         let session = SimulatorRegistry.shared.session(for: paneID)
         let isStreaming = session.status == .streaming
+
+        Button {
+            session.toggleRecording()
+        } label: {
+            Label(
+                session.isRecording ? "Stop Recording" : "Record Screen",
+                systemImage: session.isRecording ? "stop.circle.fill" : "record.circle"
+            )
+            .foregroundStyle(session.isRecording ? .red : .primary)
+        }
+        .disabled(!isStreaming)
+        .help(session.isRecording ? "Stop recording" : "Record the simulator screen")
+
+        Button {
+            session.takeScreenshot()
+        } label: {
+            Label("Take Screenshot", systemImage: "camera")
+        }
+        .disabled(!isStreaming)
+        .help("Save a screenshot of the simulator screen to the Desktop")
+
+        Button {
+            session.copyScreenshotToClipboard()
+        } label: {
+            Label("Copy Screenshot", systemImage: "doc.on.clipboard")
+        }
+        .disabled(!isStreaming)
+        .help("Copy a screenshot of the simulator screen to the clipboard")
 
         Button {
             session.chooseAnotherDevice()

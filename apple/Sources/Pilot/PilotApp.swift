@@ -709,16 +709,28 @@ private struct AppearanceReporter: View {
     }
 }
 
-/// Pilot's Settings window contents (⌘,). Reuses the shared `SettingsSections`
-/// (Identity & Keys + About) in a grouped macOS form. Extend by adding more
-/// sections here or in `SettingsSections`.
+/// Pilot's Settings window contents (⌘,). A tabbed shell: "General" reuses the
+/// shared `SettingsSections` (Identity & Keys + About); "Usage" connects the AI
+/// usage APIs. The selected tab is backed by `AppStorage` so the inspector's
+/// Usage empty-state can deep-link straight here.
 private struct PilotSettingsView: View {
+    @AppStorage(SettingsTab.storageKey) private var selectedTab = SettingsTab.general
+
     var body: some View {
-        Form {
-            SettingsSections()
+        TabView(selection: $selectedTab) {
+            Form {
+                SettingsSections()
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("General", systemImage: "gearshape") }
+            .tag(SettingsTab.general)
+
+            UsageSettingsView()
+                .formStyle(.grouped)
+                .tabItem { Label("Usage", systemImage: "chart.bar.xaxis") }
+                .tag(SettingsTab.usage)
         }
-        .formStyle(.grouped)
-        .frame(width: 460, height: 380)
+        .frame(width: 480, height: 420)
     }
 }
 

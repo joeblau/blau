@@ -73,6 +73,7 @@ struct InspectorTabSelector: View {
 struct InspectorPanelView: View {
     let gitStore: GitCommitStore
     let tasksStore: GitHubTasksStore
+    let usageStore: UsageStore
     @Binding var selectedTab: InspectorTab
 
     var body: some View {
@@ -98,6 +99,8 @@ struct InspectorPanelView: View {
                     CommitListView(store: gitStore)
                 case .filesystem:
                     FilesystemListView(store: gitStore)
+                case .usage:
+                    UsageListView(store: usageStore)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
