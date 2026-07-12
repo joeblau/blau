@@ -164,7 +164,14 @@ final class BrowserState {
     }
 
     func toggleAnnotateMode() {
-        annotateMode.toggle()
+        setAnnotateMode(!annotateMode)
+    }
+
+    /// Set lasso mode explicitly. The request ID is the WebView update trigger,
+    /// so repeated writes of the current value must not generate phantom toggles.
+    func setAnnotateMode(_ enabled: Bool) {
+        guard annotateMode != enabled else { return }
+        annotateMode = enabled
         annotateToggleRequestID += 1
     }
 

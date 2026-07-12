@@ -10,10 +10,10 @@ struct FileItem: Identifiable, Hashable {
 
 /// In-memory file index + fuzzy search for the editor's "open file" finder.
 ///
-/// `start(root:)` builds the index once per root (off the main actor), then
-/// `setQuery(_:)` filters it *off the main actor* on every keystroke via
-/// `FuzzyMatcher` — the full scan is ~280ms at the 200k cap, far too much to
-/// run on the MainActor without freezing typing. Indexing prefers
+/// `start(root:)` recursively builds or refreshes the index off the main actor,
+/// then `setQuery(_:)` filters it off the main actor on every keystroke via
+/// `FuzzyMatcher`. Obsolete scans are cancelled and only the best 300 results
+/// are retained, keeping the 200k-file ceiling away from the MainActor. Indexing prefers
 /// `git ls-files` so `.gitignore` is honored for free (plus a pruned scan that
 /// adds back `.env*` / `.dev.vars` — gitignored, but exactly the files you open
 /// by hand), and falls back to a pruned filesystem walk outside git repos.
@@ -39,6 +39,13 @@ final class FileFinder {
     /// still matches — so a slow scan for an old keystroke can't clobber a newer
     /// one (last-write-wins by generation, not by completion order).
     @ObservationIgnored private var queryGeneration = 0
+    /// Handles let a new root/query stop obsolete work instead of merely hiding
+    /// its eventual result. This is essential at the 200k-file ceiling: stale
+    /// scans should not compete with the query the user is still typing.
+    @ObservationIgnored private var indexTask: Task<Void, Never>?
+    @ObservationIgnored private var filterTask: Task<Void, Never>?
+    /// A separate scan generation also invalidates same-path refreshes.
+    @ObservationIgnored private var indexGeneration = 0
 
     /// Caps:
     /// - `maxIndexedFiles` bounds memory and indexing time on huge trees.
@@ -46,10 +53,17 @@ final class FileFinder {
     nonisolated private static let maxIndexedFiles = 200_000
     nonisolated private static let maxResults = 300
 
-    /// Flat bonus added to a basename match so it reliably outranks a path-only
-    /// (directory-substring) match of equal raw score — keeps quick-open ranking
-    /// intact even though the finder now searches the whole relative path.
-    nonisolated private static let basenameMatchBonus = 40
+    // Ranking tiers. A compact filename hit beats a directory hit, while an
+    // exact path component can still beat a very weak/scattered basename match.
+    nonisolated private static let basenameLocationBonus = 240
+    nonisolated private static let basenameExactBonus = 2_200
+    nonisolated private static let basenamePrefixBonus = 1_400
+    nonisolated private static let basenameSubstringBonus = 800
+    nonisolated private static let pathExactBonus = 1_800
+    nonisolated private static let pathPrefixBonus = 900
+    nonisolated private static let pathComponentExactBonus = 650
+    nonisolated private static let pathComponentPrefixBonus = 450
+    nonisolated private static let pathSubstringBonus = 250
 
     /// Directory names skipped wholesale during the non-git filesystem walk.
     /// Build artifacts, dependency caches, and VCS metadata — none of which the
@@ -63,10 +77,14 @@ final class FileFinder {
 
     init() {}
 
-    /// Kicks off indexing of `root`. Idempotent: calling it again with a root we
-    /// already indexed (or are mid-indexing) is a no-op, so it's safe to call
-    /// straight from `.onAppear`. Calling it with a *different* root replaces the
-    /// index and invalidates any in-flight task for the old root.
+    deinit {
+        indexTask?.cancel()
+        filterTask?.cancel()
+    }
+
+    /// Kicks off indexing of `root`. Duplicate calls are coalesced while a scan
+    /// is running; a later call refreshes the completed index. Calling it with a
+    /// different root replaces the index and invalidates old-root work.
     func start(root: String) {
         let normalized = Self.normalize(root)
         let isNewRoot = indexedRoot != normalized
@@ -78,6 +96,16 @@ final class FileFinder {
         // scan for this exact root is already in flight.
         if !isNewRoot && isIndexing { return }
 
+        if isNewRoot {
+            // A filter over the previous root must never publish into this one.
+            queryGeneration += 1
+            filterTask?.cancel()
+            filterTask = nil
+        }
+
+        indexTask?.cancel()
+        indexGeneration += 1
+        let scanGeneration = indexGeneration
         indexedRoot = normalized
         if isNewRoot {
             // Switched workspaces: drop the previous project's files so they
@@ -89,20 +117,39 @@ final class FileFinder {
         }
         isIndexing = true
 
-        Task.detached(priority: .userInitiated) {
+        indexTask = Task.detached(priority: .userInitiated) { [weak self] in
             let items = Self.buildIndex(root: normalized)
-            await MainActor.run {
-                // Guard against a stale task: if `start` was called again with a
-                // different root while we were walking the disk, this result is
-                // obsolete — drop it and let the newer task win.
-                guard self.indexedRoot == normalized else { return }
-                self.index = items
-                self.isIndexing = false
-                // Populate the initial/empty-query results now that the index
-                // exists — reflecting whatever the user has already typed.
-                self.refilter()
-            }
+            guard !Task.isCancelled else { return }
+            await self?.publishIndex(
+                items,
+                root: normalized,
+                generation: scanGeneration
+            )
         }
+    }
+
+    private func publishIndex(_ items: [FileItem], root: String, generation: Int) {
+        // A newer root/refresh owns the finder now; discard this scan.
+        guard indexedRoot == root, indexGeneration == generation else { return }
+        indexTask = nil
+        index = items
+        isIndexing = false
+        // Reflect whatever the user typed while indexing was in flight.
+        refilter()
+    }
+
+    /// Clears the finder when an editor loses its workspace root.
+    func reset() {
+        indexTask?.cancel()
+        filterTask?.cancel()
+        indexTask = nil
+        filterTask = nil
+        indexGeneration += 1
+        queryGeneration += 1
+        indexedRoot = nil
+        index = []
+        results = []
+        isIndexing = false
     }
 
     /// Updates the query and recomputes `results` off the main actor. Cheap on
@@ -118,82 +165,217 @@ final class FileFinder {
     /// actor. Only immutable snapshots cross the actor boundary, and the result
     /// is published only if no newer query has superseded this one.
     private func refilter() {
+        filterTask?.cancel()
         queryGeneration += 1
         let gen = queryGeneration
         let snapshot = index
         let q = self.query
-        Task.detached(priority: .userInitiated) {
+        filterTask = Task.detached(priority: .userInitiated) { [weak self] in
             // Brief debounce so a burst of keystrokes only scans once.
-            try? await Task.sleep(for: .milliseconds(20))
-            let computed = Self.filter(items: snapshot, query: q)
-            await MainActor.run {
-                // Drop stale results: a newer keystroke (or refilter) wins.
-                guard self.queryGeneration == gen else { return }
-                self.results = computed
+            do {
+                try await Task.sleep(for: .milliseconds(20))
+            } catch {
+                return
             }
+            guard !Task.isCancelled else { return }
+            let computed = Self.filter(items: snapshot, query: q)
+            guard !Task.isCancelled else { return }
+            await self?.publishResults(computed, generation: gen)
         }
+    }
+
+    private func publishResults(_ computed: [FileItem], generation: Int) {
+        guard queryGeneration == generation else { return }
+        filterTask = nil
+        results = computed
     }
 
     /// Filters/sorts `items` against `query` and returns the top slice. Pure and
     /// `nonisolated` so it can run off the main actor over an immutable snapshot.
     nonisolated static func filter(items: [FileItem], query: String) -> [FileItem] {
-        if query.isEmpty {
-            // No query: show the first chunk of the tree, alphabetized. A plain
-            // case-insensitive compare is fine here — we're off the main actor.
-            return items
-                .sorted { $0.relativePath.localizedCaseInsensitiveCompare($1.relativePath) == .orderedAscending }
-                .prefix(maxResults)
-                .map { $0 }
+        let normalizedQuery = query
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\", with: "/")
+
+        if normalizedQuery.isEmpty {
+            return topAlphabeticalItems(items)
         }
 
-        // Score every item; keep the matches; sort best-first, breaking ties
-        // toward shorter paths (the shorter path is usually the tighter match).
-        //
-        // Score the basename first: that's what quick-open is usually after, and
-        // scoring the bare name keeps the greedy matcher from letting directory
-        // letters "steal" a worse, scattered match (typing "Pane" shouldn't get
-        // out-greedied by the "p…a…n…e" hiding across a long path). Then fall
-        // back to the full relative path so a file is *also* findable by any
-        // directory substring — "rendezvous" or "workers/web" surface the files
-        // *inside* those folders, which the old name-only matcher missed
-        // entirely. The basename bonus keeps name hits ranked above path-only
-        // hits, so quick-open ordering is unchanged.
-        let scored = items.compactMap { item -> (item: FileItem, score: Int)? in
-            if let nameScore = FuzzyMatcher.score(query: query, candidate: item.name) {
-                return (item, nameScore + basenameMatchBonus)
+        // Whitespace creates independent terms. Every term must match, but they
+        // may appear in any order and in different path components, so natural
+        // queries such as "pilot editor pane" work without punctuation tricks.
+        let terms = normalizedQuery
+            .split(whereSeparator: \Character.isWhitespace)
+            .map { SearchTerm(String($0)) }
+        guard !terms.isEmpty else { return topAlphabeticalItems(items) }
+
+        var ranked: [RankedItem] = []
+        ranked.reserveCapacity(min(items.count, maxResults * 4))
+
+        for (offset, item) in items.enumerated() {
+            if offset.isMultiple(of: 256), currentTaskIsCancelled() { return [] }
+
+            var totalScore = 0
+            var matchesAllTerms = true
+            for term in terms {
+                guard let termScore = score(term: term, item: item) else {
+                    matchesAllTerms = false
+                    break
+                }
+                totalScore += termScore
             }
-            if let pathScore = FuzzyMatcher.score(query: query, candidate: item.relativePath) {
-                return (item, pathScore)
+            guard matchesAllTerms else { continue }
+
+            ranked.append(RankedItem(item: item, score: totalScore))
+
+            // Keep only the best prefix periodically. Sorting all 200k matches
+            // for a broad one-letter query wastes work when the UI shows 300.
+            if ranked.count >= maxResults * 4 {
+                ranked.sort(by: ranksBefore)
+                ranked.removeSubrange(maxResults...)
             }
+        }
+
+        ranked.sort(by: ranksBefore)
+        return ranked.prefix(maxResults).map(\.item)
+    }
+
+    private nonisolated struct SearchTerm: Sendable {
+        let folded: String
+        let fuzzy: FuzzyMatcher.PreparedQuery
+
+        init(_ text: String) {
+            folded = text.lowercased()
+            fuzzy = FuzzyMatcher.PreparedQuery(text)
+        }
+    }
+
+    private nonisolated struct RankedItem {
+        let item: FileItem
+        let score: Int
+    }
+
+    /// Evaluates both filename and relative path. Taking the stronger score fixes
+    /// the old early-return behavior where any weak basename subsequence hid a
+    /// much better exact directory/path match.
+    private nonisolated static func score(term: SearchTerm, item: FileItem) -> Int? {
+        let nameScore = smartScore(term: term, candidate: item.name, isBasename: true)
+        let pathScore = smartScore(term: term, candidate: item.relativePath, isBasename: false)
+        switch (nameScore, pathScore) {
+        case let (name?, path?): return max(name, path)
+        case let (name?, nil): return name
+        case let (nil, path?): return path
+        case (nil, nil): return nil
+        }
+    }
+
+    private nonisolated static func smartScore(
+        term: SearchTerm,
+        candidate: String,
+        isBasename: Bool
+    ) -> Int? {
+        guard let fuzzyScore = FuzzyMatcher.score(query: term.fuzzy, candidate: candidate) else {
             return nil
         }
-        .sorted { lhs, rhs in
-            if lhs.score != rhs.score { return lhs.score > rhs.score }
-            return lhs.item.relativePath.count < rhs.item.relativePath.count
+
+        let foldedCandidate = candidate.lowercased()
+        var tierBonus = 0
+
+        if isBasename {
+            if foldedCandidate == term.folded {
+                tierBonus = basenameExactBonus
+            } else if foldedCandidate.hasPrefix(term.folded) {
+                tierBonus = basenamePrefixBonus
+            } else if foldedCandidate.contains(term.folded) {
+                tierBonus = basenameSubstringBonus
+            }
+            return fuzzyScore + basenameLocationBonus + tierBonus
         }
 
-        return scored.prefix(maxResults).map { $0.item }
+        if foldedCandidate == term.folded {
+            tierBonus = pathExactBonus
+        } else if foldedCandidate.hasPrefix(term.folded) {
+            tierBonus = pathPrefixBonus
+        } else if foldedCandidate.contains(term.folded) {
+            tierBonus = pathSubstringBonus
+        }
+
+        // Component tiers make an exact directory name meaningful without
+        // allowing it to beat a compact/contiguous basename match.
+        for component in foldedCandidate.split(separator: "/") {
+            if component == term.folded {
+                tierBonus = max(tierBonus, pathComponentExactBonus)
+            } else if component.hasPrefix(term.folded) {
+                tierBonus = max(tierBonus, pathComponentPrefixBonus)
+            }
+        }
+        return fuzzyScore + tierBonus
+    }
+
+    private nonisolated static func ranksBefore(_ lhs: RankedItem, _ rhs: RankedItem) -> Bool {
+        if lhs.score != rhs.score { return lhs.score > rhs.score }
+        if lhs.item.relativePath.count != rhs.item.relativePath.count {
+            return lhs.item.relativePath.count < rhs.item.relativePath.count
+        }
+        let lhsFolded = lhs.item.relativePath.lowercased()
+        let rhsFolded = rhs.item.relativePath.lowercased()
+        if lhsFolded != rhsFolded { return lhsFolded < rhsFolded }
+        return lhs.item.relativePath < rhs.item.relativePath
+    }
+
+    private nonisolated static func topAlphabeticalItems(_ items: [FileItem]) -> [FileItem] {
+        var top: [FileItem] = []
+        top.reserveCapacity(min(items.count, maxResults * 4))
+
+        for (offset, item) in items.enumerated() {
+            if offset.isMultiple(of: 256), currentTaskIsCancelled() { return [] }
+            top.append(item)
+            if top.count >= maxResults * 4 {
+                top.sort(by: alphabeticallyBefore)
+                top.removeSubrange(maxResults...)
+            }
+        }
+        top.sort(by: alphabeticallyBefore)
+        return Array(top.prefix(maxResults))
+    }
+
+    private nonisolated static func alphabeticallyBefore(_ lhs: FileItem, _ rhs: FileItem) -> Bool {
+        let lhsFolded = lhs.relativePath.lowercased()
+        let rhsFolded = rhs.relativePath.lowercased()
+        if lhsFolded != rhsFolded { return lhsFolded < rhsFolded }
+        return lhs.relativePath < rhs.relativePath
+    }
+
+    private nonisolated static func currentTaskIsCancelled() -> Bool {
+        withUnsafeCurrentTask { $0?.isCancelled ?? false }
     }
 
     // MARK: - Indexing (runs off the main actor)
 
     /// Builds the file list for `root`: git-aware first, filesystem walk second.
-    private nonisolated static func buildIndex(root: String) -> [FileItem] {
-        if let gitFiles = gitListFiles(root: root) {
+    /// Internal visibility keeps the recursive behavior integration-testable.
+    nonisolated static func buildIndex(root: String) -> [FileItem] {
+        if currentTaskIsCancelled() { return [] }
+        // Keep this boundary correct for direct callers too. macOS exposes /tmp
+        // and /var through symlinks while FileManager enumerates /private/…;
+        // without normalization nested paths can collapse to bare basenames.
+        let normalizedRoot = normalize(root)
+        if let gitFiles = gitListFiles(root: normalizedRoot) {
             // git ls-files omits .gitignored files, but .env* / .dev.vars are
             // exactly the ignored files a developer opens by hand. Add them back
             // via a pruned walk (node_modules and friends stay skipped), deduped
             // against the git set so non-ignored env files aren't listed twice.
             var seen = Set(gitFiles.map(\.path))
             var merged = gitFiles
-            for item in walkFilesystem(root: root, includeName: { Self.isDevConfigFile($0) })
+            for item in walkFilesystem(root: normalizedRoot, includeName: { Self.isDevConfigFile($0) })
             where merged.count < maxIndexedFiles && !seen.contains(item.path) {
+                if currentTaskIsCancelled() { return [] }
                 merged.append(item)
                 seen.insert(item.path)
             }
             return merged
         }
-        return walkFilesystem(root: root)
+        return walkFilesystem(root: normalizedRoot)
     }
 
     /// Gitignored files worth surfacing anyway: env files and wrangler's local
@@ -208,6 +390,7 @@ final class FileFinder {
     /// Returns `nil` when `root` isn't a git work tree or git fails/missing, so
     /// the caller can fall back to a filesystem walk.
     private nonisolated static func gitListFiles(root: String) -> [FileItem]? {
+        if currentTaskIsCancelled() { return [] }
         let process = Process()
         let stdout = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -230,6 +413,7 @@ final class FileFinder {
 
         let data = stdout.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
+        if currentTaskIsCancelled() { return [] }
         // Non-zero exit means "not a git repository" (or similar): bail to the walk.
         guard process.terminationStatus == 0 else { return nil }
 
@@ -243,6 +427,7 @@ final class FileFinder {
         // which would throw away the entire git index; per-path decoding drops at
         // most the one bad entry.
         for chunk in data.split(separator: 0x00, omittingEmptySubsequences: true) {
+            if items.count.isMultiple(of: 256), currentTaskIsCancelled() { return [] }
             let relativePath = String(decoding: chunk, as: UTF8.self)
             if relativePath.isEmpty { continue }
             items.append(FileItem(
@@ -280,8 +465,11 @@ final class FileFinder {
 
         let prefix = root.hasSuffix("/") ? root : root + "/"
         var items: [FileItem] = []
+        var visitedEntries = 0
 
         for case let url as URL in enumerator {
+            if visitedEntries.isMultiple(of: 256), currentTaskIsCancelled() { return [] }
+            visitedEntries += 1
             let values = try? url.resourceValues(forKeys: Set(keys))
 
             if values?.isDirectory == true {
@@ -319,8 +507,20 @@ final class FileFinder {
     /// `git -C` works fine with the resolved path.
     private nonisolated static func normalize(_ root: String) -> String {
         let expanded = (root as NSString).expandingTildeInPath
-        let resolved = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().path
-        var path = (resolved as NSString).standardizingPath
+        let url = URL(fileURLWithPath: expanded, isDirectory: true)
+        // `resolvingSymlinksInPath()` preserves the spelling of /var on recent
+        // Foundation releases even though enumeration returns /private/var.
+        // canonicalPath is the filesystem spelling FileManager itself uses.
+        let canonicalPath: String?
+        do {
+            canonicalPath = try url.resourceValues(forKeys: [.canonicalPathKey]).canonicalPath
+        } catch {
+            canonicalPath = nil
+        }
+        let resolved = canonicalPath ?? url.resolvingSymlinksInPath().path
+        // Do not run NSString.standardizingPath after canonicalization: it maps
+        // `/private/var` back to `/var`, recreating the prefix mismatch above.
+        var path = resolved
         if path.count > 1 && path.hasSuffix("/") {
             path.removeLast()
         }

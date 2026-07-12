@@ -121,6 +121,17 @@ struct EditorPaneView: View {
             finder.setQuery(searchQuery)
             selectedIndex = 0
         }
+        .onChange(of: rootPath) {
+            // Keep quick-open attached to the active workspace even when its
+            // inferred/manual root changes while the finder is already open.
+            // FileFinder invalidates old-root indexing and filtering work.
+            selectedIndex = 0
+            if let rootPath {
+                finder.start(root: rootPath)
+            } else {
+                finder.reset()
+            }
+        }
         .onChange(of: finder.isIndexing) {
             // Populate the initial list once the background index finishes.
             finder.setQuery(searchQuery)
@@ -385,7 +396,7 @@ struct EditorPaneView: View {
         searchQuery = ""
         selectedIndex = 0
         if rootPath != nil {
-            finder.start(root: rootPath!)   // idempotent; safe to call repeatedly
+            finder.start(root: rootPath!)   // coalesces while an index scan is in flight
         }
         showFinder = true
     }

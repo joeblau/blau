@@ -67,4 +67,94 @@ struct FileFinderTests {
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
         #expect(results.map(\.relativePath) == expected)
     }
+
+    /// A greedy matcher commits to the first `a` and misses the stronger `ab`
+    /// run later in the same candidate. The scorer should choose the best
+    /// alignment, not merely the first valid subsequence.
+    @Test("The best later fuzzy alignment wins")
+    func bestLaterAlignmentWins() throws {
+        let laterRun = try #require(FuzzyMatcher.score(query: "ab", candidate: "a---ab.swift"))
+        let scattered = try #require(FuzzyMatcher.score(query: "ab", candidate: "axxb.swift"))
+
+        #expect(laterRun > scattered)
+    }
+
+    /// Boundary bonuses make acronym-style matching useful, but they must not
+    /// outweigh an exact contiguous filename match for the same query.
+    @Test("A contiguous exact match outranks scattered boundary matches")
+    func contiguousMatchOutranksScatteredBoundaries() throws {
+        let contiguous = try #require(FuzzyMatcher.score(query: "abc", candidate: "abc.swift"))
+        let boundaryScattered = try #require(FuzzyMatcher.score(query: "abc", candidate: "a_x_b_c.swift"))
+
+        #expect(contiguous > boundaryScattered)
+    }
+
+    /// Space-separated terms may target different path components and need not
+    /// be typed in path order. This is the common "project + filename" flow.
+    @Test("Multiple search terms may match independently")
+    func multipleTermsMatchIndependently() {
+        let files = [
+            item("apple/Sources/Pilot/EditorPaneView.swift"),
+            item("apple/Sources/Pilot/FileFinder.swift"),
+            item("docs/EditorPaneView.md"),
+        ]
+
+        let forward = FileFinder.filter(items: files, query: "pilot editor")
+        let reversed = FileFinder.filter(items: files, query: "editor pilot")
+
+        #expect(forward.map(\.relativePath) == ["apple/Sources/Pilot/EditorPaneView.swift"])
+        #expect(reversed.map(\.relativePath) == ["apple/Sources/Pilot/EditorPaneView.swift"])
+    }
+
+    /// Both common path separator styles should work, and omitted intermediate
+    /// directories should not prevent a recursively indexed file from matching.
+    @Test("Recursive path queries accept either separator style")
+    func pathQueriesAcceptFlexibleSeparators() {
+        let files = [
+            item("packages/editor/Sources/Search/FileFinder.swift"),
+            item("packages/terminal/Sources/Search/FileFinder.swift"),
+        ]
+
+        let slash = FileFinder.filter(items: files, query: "packages/editor/file")
+        let backslash = FileFinder.filter(items: files, query: "packages\\editor\\file")
+
+        #expect(slash.first?.relativePath == "packages/editor/Sources/Search/FileFinder.swift")
+        #expect(backslash.first?.relativePath == "packages/editor/Sources/Search/FileFinder.swift")
+    }
+
+    /// Equal-scoring, equal-length paths need a stable lexical tiebreaker rather
+    /// than inheriting filesystem enumeration or caller input order.
+    @Test("Equal fuzzy matches have deterministic lexical ordering")
+    func equalMatchesAreDeterministic() {
+        let firstOrder = [item("zulu/Target.swift"), item("able/Target.swift")]
+        let secondOrder = firstOrder.reversed()
+        let expected = ["able/Target.swift", "zulu/Target.swift"]
+
+        #expect(FileFinder.filter(items: firstOrder, query: "target").map(\.relativePath) == expected)
+        #expect(FileFinder.filter(items: Array(secondOrder), query: "target").map(\.relativePath) == expected)
+    }
+
+    /// Exercises indexing against a real nested tree so this catches regressions
+    /// in the non-git recursive-walk fallback, not just the in-memory filter.
+    @Test("A real nested directory is indexed recursively")
+    func indexesRealNestedDirectory() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("BlauFileFinderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let nestedDirectory = root
+            .appendingPathComponent("Sources", isDirectory: true)
+            .appendingPathComponent("Features", isDirectory: true)
+            .appendingPathComponent("Search", isDirectory: true)
+        try fileManager.createDirectory(at: nestedDirectory, withIntermediateDirectories: true)
+        let nestedFile = nestedDirectory.appendingPathComponent("NestedResult.swift")
+        try "struct NestedResult {}\n".write(to: nestedFile, atomically: true, encoding: .utf8)
+
+        let indexed = FileFinder.buildIndex(root: root.path)
+
+        #expect(indexed.contains {
+            $0.relativePath == "Sources/Features/Search/NestedResult.swift"
+        }, "Indexed paths: \(indexed.map(\.relativePath))")
+    }
 }
