@@ -10,6 +10,9 @@ struct SimulatorPaneView: View {
     let isActive: Bool
     let isSelected: Bool
 
+    @State private var showsCopiedToast = false
+    @State private var toastDismissWorkItem: DispatchWorkItem?
+
     var body: some View {
         let session = SimulatorRegistry.shared.session(for: paneID)
         ZStack {
@@ -23,13 +26,46 @@ struct SimulatorPaneView: View {
             case .booting, .starting, .failed:
                 SimulatorStatusOverlay(session: session)
             }
+
+            if showsCopiedToast {
+                Label("Screenshot Copied", systemImage: "checkmark.circle.fill")
+                    .font(.headline)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(.separator.opacity(0.4), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    .allowsHitTesting(false)
+                    .zIndex(20)
+            }
         }
         .background(Color.black)
+        .onChange(of: session.clipboardCopyCount) { _, _ in
+            flashCopiedToast()
+        }
         .onAppear {
             if session.status == .picking, session.devices.isEmpty {
                 session.refreshDevices()
             }
         }
+        .onDisappear {
+            toastDismissWorkItem?.cancel()
+        }
+    }
+
+    private func flashCopiedToast() {
+        toastDismissWorkItem?.cancel()
+        withAnimation(.snappy(duration: 0.18)) {
+            showsCopiedToast = true
+        }
+        let work = DispatchWorkItem {
+            withAnimation(.snappy(duration: 0.3)) {
+                showsCopiedToast = false
+            }
+        }
+        toastDismissWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
     }
 }
 

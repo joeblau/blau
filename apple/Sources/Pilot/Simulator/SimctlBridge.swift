@@ -177,4 +177,27 @@ enum SimctlBridge {
     static func shutdown(udid: String) throws {
         _ = try runXcrun(["simctl", "shutdown", udid])
     }
+
+    // MARK: - Media capture
+
+    /// Save the simulator's native display as a PNG. `simctl io` captures the
+    /// framebuffer directly, so the result is full resolution and contains no
+    /// Pilot window chrome.
+    static func takeScreenshot(udid: String, to url: URL) throws {
+        _ = try runXcrun([
+            "simctl", "io", udid, "screenshot", "--type=png", url.path,
+        ])
+    }
+
+    /// Configure the long-running `simctl io … recordVideo` process. The caller
+    /// owns its lifecycle and stops it with `Process.interrupt()` so simctl can
+    /// finalize the movie, just as it does when receiving Control-C in Terminal.
+    static func makeVideoRecordingProcess(udid: String, to url: URL) -> Process {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        process.arguments = [
+            "simctl", "io", udid, "recordVideo", "--codec=h264", "--force", url.path,
+        ]
+        return process
+    }
 }
