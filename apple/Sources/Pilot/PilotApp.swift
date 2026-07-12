@@ -709,28 +709,56 @@ private struct AppearanceReporter: View {
     }
 }
 
-/// Pilot's Settings window contents (⌘,). A tabbed shell: "General" reuses the
-/// shared `SettingsSections` (Identity & Keys + About); "Usage" connects the AI
-/// usage APIs. The selected tab is backed by `AppStorage` so the inspector's
-/// Usage empty-state can deep-link straight here.
+/// Pilot's Settings window contents (⌘,). A source-list shell — sections on the
+/// left, detail on the right — matching the modern macOS/Xcode settings layout.
+/// "General" reuses the shared `SettingsSections` (Identity & Keys + About);
+/// "Usage" connects the AI usage APIs. The selected section is backed by
+/// `AppStorage` so the inspector's Usage empty-state can deep-link straight here.
 private struct PilotSettingsView: View {
     @AppStorage(SettingsTab.storageKey) private var selectedTab = SettingsTab.general
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        NavigationSplitView {
+            List(selection: sidebarSelection) {
+                Label("General", systemImage: "gearshape")
+                    .tag(SettingsTab.general)
+                Label("Usage", systemImage: "chart.bar.xaxis")
+                    .tag(SettingsTab.usage)
+            }
+            .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 230)
+        } detail: {
+            detail
+                .navigationTitle(sectionTitle)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 680, idealWidth: 720, minHeight: 440, idealHeight: 500)
+    }
+
+    /// Bridges the non-optional `AppStorage` string to `List`'s optional selection.
+    private var sidebarSelection: Binding<String?> {
+        Binding(get: { selectedTab }, set: { selectedTab = $0 ?? SettingsTab.general })
+    }
+
+    private var sectionTitle: String {
+        switch selectedTab {
+        case SettingsTab.usage: "Usage"
+        default: "General"
+        }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch selectedTab {
+        case SettingsTab.usage:
+            UsageSettingsView()
+                .formStyle(.grouped)
+        default:
             Form {
                 SettingsSections()
             }
             .formStyle(.grouped)
-            .tabItem { Label("General", systemImage: "gearshape") }
-            .tag(SettingsTab.general)
-
-            UsageSettingsView()
-                .formStyle(.grouped)
-                .tabItem { Label("Usage", systemImage: "chart.bar.xaxis") }
-                .tag(SettingsTab.usage)
         }
-        .frame(width: 480, height: 420)
     }
 }
 
