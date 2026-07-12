@@ -161,12 +161,14 @@ final class UsageStore {
                 rateLimit,
                 keys: ["secondary_window", "secondaryWindow", "secondary"]
             )
-            let hasTwoWindows = primary != nil && secondary != nil
+            // Keep the pool's label on every window — Codex returns a main
+            // rate limit plus scoped "additional" pools that share the same
+            // 5-hour/weekly cadence, so the label is what tells them apart.
             if let primary,
                let window = Self.codexWindow(
                 primary,
                 id: "\(idPrefix)-primary",
-                displayName: hasTwoWindows ? nil : displayName,
+                displayName: displayName,
                 receivedAt: receivedAt)
             {
                 usage.windows.append(window)
@@ -175,7 +177,7 @@ final class UsageStore {
                let window = Self.codexWindow(
                 secondary,
                 id: "\(idPrefix)-secondary",
-                displayName: hasTwoWindows ? nil : displayName,
+                displayName: displayName,
                 receivedAt: receivedAt)
             {
                 usage.windows.append(window)
@@ -198,6 +200,9 @@ final class UsageStore {
                 let id = string(entry, keys: ["limit_id", "limitId", "metered_feature", "meteredFeature"])
                     ?? "additional-\(index)"
                 let label = string(entry, keys: ["limit_name", "limitName", "metered_feature", "meteredFeature"])
+                    ?? (id.hasPrefix("additional-")
+                        ? "Additional \(index + 1)"
+                        : id.replacingOccurrences(of: "_", with: " "))
                 let rateLimit = dictionary(entry, keys: ["rate_limit", "rateLimits"]) ?? entry
                 appendRateLimit(
                     rateLimit,
@@ -213,6 +218,7 @@ final class UsageStore {
             for key in buckets.keys.sorted() where key != "codex" {
                 guard let bucket = buckets[key] as? [String: Any] else { continue }
                 let label = string(bucket, keys: ["limitName", "limit_name"])
+                    ?? key.replacingOccurrences(of: "_", with: " ")
                 appendRateLimit(bucket, idPrefix: "codex-\(key)", displayName: label)
             }
         }
@@ -290,14 +296,46 @@ final class UsageStore {
         var usage = ProviderUsage(
             planLabel: planLabel?.replacingOccurrences(of: "_", with: " ").capitalized
         )
-        let named: [(String, String)] = [
+        // Account-level windows.
+        let account: [(String, String)] = [
             ("five_hour", "5-hour"),
             ("seven_day", "Weekly"),
             ("seven_day_oauth_apps", "Weekly (apps)"),
-            ("seven_day_opus", "Weekly (Opus)"),
-            ("seven_day_sonnet", "Weekly (Sonnet)"),
         ]
-        for (key, label) in named {
+        for (key, label) in account {
+            if let window = root[key] as? [String: Any],
+               let parsed = Self.claudeWindow(id: "claude-\(key)", name: label, window)
+            {
+                usage.windows.append(parsed)
+            }
+        }
+
+        // Model-scoped windows (e.g. Fable, Opus, Sonnet). The newer `limits`
+        // array names the model via `scope.model.display_name` and supersedes the
+        // flat `seven_day_<model>` fields, so track which models it covers.
+        var scopedModels = Set<String>()
+        if let limits = root["limits"] as? [[String: Any]] {
+            for (index, entry) in limits.enumerated() {
+                guard bool(entry, keys: ["is_active", "isActive"]) != false,
+                      let model = Self.claudeLimitModel(entry),
+                      let percent = number(entry, keys: ["percent", "utilization"]), percent.isFinite
+                else { continue }
+                scopedModels.insert(model.lowercased())
+                usage.windows.append(UsageWindow(
+                    id: "claude-limit-\(index)",
+                    name: "\(Self.claudeLimitPeriod(entry)) (\(model))",
+                    utilization: min(max(percent / 100.0, 0), 1),
+                    resetsAt: date(value(entry, keys: ["resets_at", "resetsAt"]))
+                ))
+            }
+        }
+
+        // Flat model-scoped fields, only when `limits` didn't already cover them.
+        let flatScoped: [(String, String, String)] = [
+            ("seven_day_opus", "Weekly (Opus)", "opus"),
+            ("seven_day_sonnet", "Weekly (Sonnet)", "sonnet"),
+        ]
+        for (key, label, model) in flatScoped where !scopedModels.contains(model) {
             if let window = root[key] as? [String: Any],
                let parsed = Self.claudeWindow(id: "claude-\(key)", name: label, window)
             {
@@ -341,6 +379,32 @@ final class UsageStore {
             utilization: min(max(raw / 100.0, 0), 1),
             resetsAt: date(value(dict, keys: ["resets_at", "resetsAt"]))
         )
+    }
+
+    /// The model a scoped `limits[]` entry applies to (e.g. "Fable"), if any.
+    nonisolated private static func claudeLimitModel(_ entry: [String: Any]) -> String? {
+        if let scope = entry["scope"] as? [String: Any] {
+            if let model = scope["model"] as? [String: Any],
+               let name = string(model, keys: ["display_name", "displayName", "name", "id"])
+            {
+                return name
+            }
+            if let name = string(scope, keys: ["display_name", "displayName", "name", "model"]) {
+                return name
+            }
+        }
+        return string(entry, keys: ["display_name", "displayName", "name"])
+    }
+
+    /// The window period for a scoped `limits[]` entry, inferred from its
+    /// `group`/`kind` hint (scoped limits are weekly by default).
+    nonisolated private static func claudeLimitPeriod(_ entry: [String: Any]) -> String {
+        let hint = (string(entry, keys: ["group", "kind", "window", "period"]) ?? "").lowercased()
+        if hint.contains("week") || hint.contains("7d") || hint.contains("seven") { return "Weekly" }
+        if hint.contains("hour") || hint.contains("5h") || hint.contains("five") { return "5-hour" }
+        if hint.contains("month") { return "Monthly" }
+        if hint.contains("day") { return "Daily" }
+        return "Weekly"
     }
 
     // MARK: - Grok (xAI)
