@@ -1,14 +1,16 @@
 import SwiftUI
 
 /// Settings section for AI usage. There are **no keys to enter** — usage is read
-/// from the `claude` and `codex` CLI sessions already on this Mac. This page
-/// shows whether each is signed in and how to sign in if not.
+/// from the `claude`, `codex`, and `grok` CLI sessions already on this Mac. This
+/// page shows whether each is signed in and how to sign in if not.
 struct UsageSettingsView: View {
     @State private var claudeSignedIn: Bool?
     @State private var codexSignedIn: Bool?
+    @State private var grokSignedIn: Bool?
 
     private static let claudeDocsURL = URL(string: "https://code.claude.com/docs/en/overview")!
     private static let codexDocsURL = URL(string: "https://developers.openai.com/codex/cli")!
+    private static let grokDocsURL = URL(string: "https://docs.x.ai/build/overview")!
 
     var body: some View {
         Form {
@@ -32,6 +34,20 @@ struct UsageSettingsView: View {
                 Text("Codex")
             } footer: {
                 Text("Run `codex` in a terminal to sign in. Usage is read from ~/.codex/auth.json.")
+            }
+
+            Section {
+                statusRow(signedIn: grokSignedIn)
+                Link(destination: Self.grokDocsURL) {
+                    Label("Install & sign in to Grok", systemImage: "arrow.up.forward.app")
+                }
+            } header: {
+                Text("Grok")
+            } footer: {
+                Text(
+                    "Run `grok login` in a terminal to sign in. Usage is read from "
+                        + "$GROK_HOME/auth.json (or ~/.grok/auth.json by default)."
+                )
             }
 
             Section {
@@ -64,7 +80,9 @@ struct UsageSettingsView: View {
     private func detect() async {
         let claude = await Task.detached { UsageSessions.ClaudeSession.load() != nil }.value
         let codex = await Task.detached { UsageSessions.CodexSession.load() != nil }.value
+        let grok = await Task.detached { UsageSessions.GrokSession.load() != nil }.value
         claudeSignedIn = claude
         codexSignedIn = codex
+        grokSignedIn = grok
     }
 }

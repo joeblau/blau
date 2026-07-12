@@ -1,8 +1,9 @@
 import Foundation
 
-/// Reads the OAuth sessions that the `codex` and `claude` CLIs already store on
-/// this Mac, so we can query each provider's plan-usage endpoint **without asking
-/// the user to log in again** (the approach popularized by CodexBar).
+/// Reads the OAuth sessions that the `codex`, `claude`, and `grok` CLIs already
+/// store on this Mac, so we can query each provider's plan-usage endpoint
+/// **without asking the user to log in again** (the approach popularized by
+/// CodexBar).
 ///
 /// Everything here is strictly **read-only** — we never write back to the CLI's
 /// credential store or refresh its tokens (the CLIs own that lifecycle). If a
@@ -10,7 +11,8 @@ import Foundation
 /// anyone else's state.
 ///
 /// ⚠️ These endpoints (`chatgpt.com/backend-api/wham/usage`,
-/// `api.anthropic.com/api/oauth/usage`) are the internal endpoints the CLIs call.
+/// `api.anthropic.com/api/oauth/usage`, and Grok's CLI billing endpoint) are the
+/// internal endpoints the CLIs call.
 /// They are undocumented and can change without notice.
 enum UsageSessions {
 
@@ -36,6 +38,116 @@ enum UsageSessions {
                   let access = tokens["access_token"] as? String,
                   !access.isEmpty else { return nil }
             return CodexSession(accessToken: access, accountId: tokens["account_id"] as? String)
+        }
+    }
+
+    // MARK: - Grok (xAI)
+
+    /// The Grok CLI's OAuth session, read from `~/.grok/auth.json`.
+    ///
+    /// Unlike Codex and Claude, Grok stores a map keyed by OAuth scope. A
+    /// current OIDC entry is preferred, but an older grok.com sign-in entry is
+    /// still accepted so existing CLI sessions continue to work.
+    struct GrokSession: Sendable {
+        let accessToken: String
+        let scope: String
+        let authMode: String?
+        let email: String?
+        let teamId: String?
+        let expiresAt: Date?
+
+        var isExpired: Bool {
+            guard let expiresAt else { return false }
+            return expiresAt <= Date()
+        }
+
+        /// Load from `$GROK_HOME/auth.json` (default `~/.grok/auth.json`).
+        static func load() -> GrokSession? {
+            guard let data = try? Data(contentsOf: homeURL().appendingPathComponent("auth.json")) else {
+                return nil
+            }
+            return parse(data: data)
+        }
+
+        /// Version sent by the installed CLI to its billing endpoint.
+        static func installedVersion() -> String? {
+            let url = homeURL().appendingPathComponent("version.json")
+            guard let data = try? Data(contentsOf: url),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            return nonemptyString(root["version"])
+        }
+
+        /// Parse Grok's scope-keyed auth file. Internal so fixture-based tests
+        /// can cover scope preference without reading a developer's credentials.
+        static func parse(data: Data, now: Date = Date()) -> GrokSession? {
+            guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return nil
+            }
+
+            let entries: [(scope: String, value: [String: Any])] = root.compactMap { scope, value in
+                guard let value = value as? [String: Any], nonemptyString(value["key"]) != nil else {
+                    return nil
+                }
+                return (scope, value)
+            }.sorted { $0.scope < $1.scope }
+
+            let activeEntries = entries.filter { entry in
+                guard let expiresAt = parseDate(entry.value["expires_at"]) else { return true }
+                return expiresAt > now
+            }
+            func newest(_ candidates: [(scope: String, value: [String: Any])])
+                -> (scope: String, value: [String: Any])?
+            {
+                candidates.max { lhs, rhs in
+                    let lhsExpiry = parseDate(lhs.value["expires_at"]) ?? .distantPast
+                    let rhsExpiry = parseDate(rhs.value["expires_at"]) ?? .distantPast
+                    if lhsExpiry == rhsExpiry { return lhs.scope > rhs.scope }
+                    return lhsExpiry < rhsExpiry
+                }
+            }
+            let selected = newest(activeEntries.filter {
+                $0.scope.hasPrefix("https://auth.x.ai::")
+            }) ?? newest(activeEntries.filter {
+                $0.scope == "https://accounts.x.ai/sign-in" || $0.scope.contains("/sign-in")
+            })
+            guard let selected, let accessToken = nonemptyString(selected.value["key"]) else {
+                return nil
+            }
+
+            return GrokSession(
+                accessToken: accessToken,
+                scope: selected.scope,
+                authMode: nonemptyString(selected.value["auth_mode"]),
+                email: nonemptyString(selected.value["email"]),
+                teamId: nonemptyString(selected.value["team_id"]),
+                expiresAt: parseDate(selected.value["expires_at"])
+            )
+        }
+
+        private static func nonemptyString(_ value: Any?) -> String? {
+            guard let value = value as? String else { return nil }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+
+        private static func homeURL() -> URL {
+            if let grokHome = ProcessInfo.processInfo.environment["GROK_HOME"], !grokHome.isEmpty {
+                return URL(fileURLWithPath: (grokHome as NSString).expandingTildeInPath)
+            }
+            return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok")
+        }
+
+        private static func parseDate(_ value: Any?) -> Date? {
+            if let number = value as? NSNumber {
+                return Date(timeIntervalSince1970: number.doubleValue)
+            }
+            guard let string = nonemptyString(value) else { return nil }
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let parsed = formatter.date(from: string) { return parsed }
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter.date(from: string)
         }
     }
 

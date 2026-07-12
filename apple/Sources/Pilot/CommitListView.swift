@@ -1,72 +1,19 @@
 import AppKit
 import SwiftUI
 
-struct RoundedSegmentedPicker: NSViewRepresentable {
-    @Binding var selection: InspectorTab
-
-    func makeNSView(context: Context) -> NSSegmentedControl {
-        let segmentedControl = NSSegmentedControl(
-            labels: InspectorTab.allCases.map(\.rawValue),
-            trackingMode: .selectOne,
-            target: context.coordinator,
-            action: #selector(Coordinator.selectionChanged(_:))
-        )
-        segmentedControl.segmentStyle = .rounded
-        segmentedControl.selectedSegment = InspectorTab.allCases.firstIndex(of: selection) ?? 0
-        return segmentedControl
-    }
-
-    func updateNSView(_ nsView: NSSegmentedControl, context: Context) {
-        nsView.selectedSegment = InspectorTab.allCases.firstIndex(of: selection) ?? 0
-    }
-
-    /// Report the control's natural (all-labels) width regardless of the
-    /// proposed size, so `ViewThatFits` can tell when the inspector is too narrow
-    /// to show every segment and fall back to the dropdown.
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
-        nsView.intrinsicContentSize
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(selection: $selection)
-    }
-
-    class Coordinator: NSObject {
-        var selection: Binding<InspectorTab>
-
-        init(selection: Binding<InspectorTab>) {
-            self.selection = selection
-        }
-
-        @MainActor @objc func selectionChanged(_ sender: NSSegmentedControl) {
-            let index = sender.selectedSegment
-            if index >= 0, index < InspectorTab.allCases.count {
-                selection.wrappedValue = InspectorTab.allCases[index]
-            }
-        }
-    }
-}
-
-/// The inspector's tab selector. Prefers the rounded segmented control, but when
-/// the inspector is too narrow to show all four labels it collapses to a compact
-/// dropdown so the selector never clips. `ViewThatFits` picks the first child
-/// whose ideal width fits the space the inspector offers.
+/// The inspector's tab selector — SwiftUI's rounded segmented control. It fills
+/// the inspector width and compresses labels as the column narrows.
 struct InspectorTabSelector: View {
     @Binding var selection: InspectorTab
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            RoundedSegmentedPicker(selection: $selection)
-
-            Picker("View", selection: $selection) {
-                ForEach(InspectorTab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
-                }
+        Picker("View", selection: $selection) {
+            ForEach(InspectorTab.allCases, id: \.self) { tab in
+                Text(tab.rawValue).tag(tab)
             }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .fixedSize()
         }
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 }
 
