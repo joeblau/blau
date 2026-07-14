@@ -351,10 +351,18 @@ struct PilotApp: App {
                 .environment(secureIdentity)
                 .onReceive(NotificationCenter.default.publisher(for: .pilotSendIssuePrompt)) { note in
                     // Issues inspector / Browser Annotate → paste a prompt into
-                    // the selected workspace's active terminal and submit it so
-                    // the agent starts working on the task.
-                    guard let prompt = note.userInfo?["prompt"] as? String else { return }
-                    guard let terminal = activeTerminalView else {
+                    // the intended terminal and submit it so the agent starts
+                    // working on the task. Browser Annotate captures a concrete
+                    // pane before its async snapshot; legacy issue notifications
+                    // without routing metadata retain active-terminal behavior.
+                    guard let prompt = note.userInfo?[BrowserAnnotate.promptUserInfoKey] as? String else { return }
+                    let terminal: GhosttyMetalView?
+                    if BrowserAnnotate.hasCapturedTarget(in: note.userInfo) {
+                        terminal = terminalView(for: BrowserAnnotate.targetPaneID(in: note.userInfo))
+                    } else {
+                        terminal = activeTerminalView
+                    }
+                    guard let terminal else {
                         // No terminal to receive it — beep rather than silently
                         // swallowing the request the user just dispatched.
                         NSSound.beep()

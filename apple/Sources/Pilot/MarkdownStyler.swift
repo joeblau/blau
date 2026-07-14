@@ -1,5 +1,13 @@
 import AppKit
 
+/// Shared geometry between Markdown styling (which reserves the space) and the
+/// text-view overlays (which draw the decoded image inside that space).
+enum MarkdownImagePresentation {
+    static let previewHeight: CGFloat = 220
+    static let gap: CGFloat = 8
+    static let stride = previewHeight + gap
+}
+
 /// Live GitHub-Flavored-Markdown styling for an `NSTextView`. The raw
 /// markdown stays in the text storage (and is what we persist) — this only
 /// layers visual attributes on top, in place, so `# Hello` renders at H1
@@ -66,6 +74,32 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
             dim(storage, NSRange(location: match.range.location, length: 1))
             dim(storage, NSRange(location: NSMaxRange(match.range) - 1, length: 1))
             protectedRanges.append(match.range)
+        }
+
+        // --- Images ----------------------------------------------------------
+        // Keep the raw `![alt](url)` source editable, but reserve an inline
+        // preview area below its line. MultiCursorTextView renders the image in
+        // that space and supplies the gutter copy affordance.
+        var imagesByLine: [Int: (range: NSRange, count: Int)] = [:]
+        for image in MarkdownImage.matches(in: string) {
+            guard !isProtected(image.range) else { continue }
+            storage.addAttribute(.foregroundColor, value: NSColor.tertiaryLabelColor, range: image.range)
+            protectedRanges.append(image.range)
+
+            let lineRange = ns.lineRange(for: NSRange(location: image.range.location, length: 0))
+            if var entry = imagesByLine[lineRange.location] {
+                entry.count += 1
+                imagesByLine[lineRange.location] = entry
+            } else {
+                imagesByLine[lineRange.location] = (lineRange, 1)
+            }
+        }
+        for entry in imagesByLine.values {
+            addParagraphSpacing(
+                CGFloat(entry.count) * MarkdownImagePresentation.stride,
+                to: entry.range,
+                in: storage
+            )
         }
 
         // --- Env-style secrets (KEY="value") ---------------------------------
@@ -183,9 +217,7 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         // so its swatch isn't cramped against the next line.
         for match in ColorChip.matches(in: string) {
             let lineRange = ns.lineRange(for: NSRange(location: match.range.location, length: 0))
-            let spaced = NSMutableParagraphStyle()
-            spaced.paragraphSpacing = baseSize
-            storage.addAttribute(.paragraphStyle, value: spaced, range: lineRange)
+            addParagraphSpacing(baseSize, to: lineRange, in: storage)
         }
     }
 
@@ -234,6 +266,15 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         dim(storage, NSRange(location: NSMaxRange(span) - markerLength, length: markerLength))
     }
 
+    private func addParagraphSpacing(_ amount: CGFloat, to lineRange: NSRange, in storage: NSTextStorage) {
+        guard lineRange.length > 0 else { return }
+        let existing = storage.attribute(.paragraphStyle, at: lineRange.location, effectiveRange: nil)
+            as? NSParagraphStyle
+        let style = (existing?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+        style.paragraphSpacing += amount
+        storage.addAttribute(.paragraphStyle, value: style, range: lineRange)
+    }
+
     private static let codeBackground = NSColor.systemGray.withAlphaComponent(0.28)
     private static let secretBackground = NSColor.systemGray.withAlphaComponent(0.22)
 
@@ -255,6 +296,6 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
     private static let italicStar = regex(#"(?<![*\w])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![*\w])"#)
     private static let italicUnderscore = regex(#"(?<![_\w])_(?!\s)([^_\n]+?)(?<!\s)_(?![_\w])"#)
     private static let strikethrough = regex(#"~~([^\n]+?)~~"#)
-    private static let link = regex(#"\[([^\]\n]+)\]\(([^)\n]+)\)"#)
+    private static let link = regex(#"(?<!!)\[([^\]\n]+)\]\(([^)\n]+)\)"#)
     private static let bareURL = regex(#"(?<![\w@./])((?:https?://|www\.)[^\s<>"')\]]+)"#)
 }

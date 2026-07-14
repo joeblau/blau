@@ -16,6 +16,7 @@ struct SimulatorPaneView: View {
     var body: some View {
         let session = SimulatorRegistry.shared.session(for: paneID)
         ZStack {
+            PreviewCanvasBackground()
             switch session.status {
             case .streaming:
                 SimulatorCaptureContainerView(session: session)
@@ -40,7 +41,6 @@ struct SimulatorPaneView: View {
                     .zIndex(20)
             }
         }
-        .background(Color.black)
         .onChange(of: session.clipboardCopyCount) { _, _ in
             flashCopiedToast()
         }
@@ -175,7 +175,7 @@ private struct SimulatorToolingMissingView: View {
         }
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.9))
+        .background(PreviewCanvasBackground())
     }
 }
 
@@ -206,7 +206,7 @@ private struct SimulatorStatusOverlay: View {
         }
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.9))
+        .background(PreviewCanvasBackground())
     }
 }
 
@@ -243,7 +243,7 @@ final class SimulatorCaptureHostView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         let host = CALayer()
-        host.backgroundColor = NSColor.black.cgColor
+        host.backgroundColor = NSColor.clear.cgColor
         layer = host
         let display = session.displayLayer
         display.removeFromSuperlayer()

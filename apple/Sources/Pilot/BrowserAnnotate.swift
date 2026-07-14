@@ -13,6 +13,38 @@ enum BrowserAnnotate {
     /// WKScriptMessageHandler name + the JS toggle entry point.
     static let messageName = "pilotAnnotate"
 
+    /// A send captures its terminal before the asynchronous WebKit snapshot
+    /// starts. Keeping that target in this value prevents a later pane/workspace
+    /// click from silently rerouting the prompt when the snapshot completes.
+    struct DispatchContext {
+        let targetPaneID: UUID?
+
+        func notificationUserInfo(prompt: String) -> [AnyHashable: Any] {
+            [
+                BrowserAnnotate.promptUserInfoKey: prompt,
+                // Preserve the distinction between an explicitly captured
+                // "no terminal" and a legacy notification with no routing
+                // metadata. The former must beep, not fall through to whichever
+                // terminal happens to become active a moment later.
+                BrowserAnnotate.targetPaneIDUserInfoKey: targetPaneID?.uuidString ?? NSNull(),
+            ]
+        }
+    }
+
+    static let promptUserInfoKey = "prompt"
+    static let targetPaneIDUserInfoKey = "targetPaneID"
+
+    static func hasCapturedTarget(in userInfo: [AnyHashable: Any]?) -> Bool {
+        userInfo?[targetPaneIDUserInfoKey] != nil
+    }
+
+    static func targetPaneID(in userInfo: [AnyHashable: Any]?) -> UUID? {
+        guard let value = userInfo?[targetPaneIDUserInfoKey] else { return nil }
+        if let id = value as? UUID { return id }
+        if let raw = value as? String { return UUID(uuidString: raw) }
+        return nil
+    }
+
     /// Injected at document end on every frame. Guarded so re-injection (SPA
     /// navigations, reloads) is harmless; `window.__pilotAnnotate.setEnabled`
     /// toggles it from Swift.
@@ -23,7 +55,8 @@ enum BrowserAnnotate {
       var enabled = false;
       var highlight = null, cursorStyle = null, box = null;
       var hovered = null, selected = null, sending = false;
-      var selectionID = 0, sendingID = null;
+      var selectionID = null, sendingID = null;
+      var fallbackSelectionSequence = 0;
 
       function ensureCursorStyle() {
         if (cursorStyle) return;
@@ -54,6 +87,17 @@ enum BrowserAnnotate {
         }
         var fallback = document.elementFromPoint(e.clientX, e.clientY);
         return isPilotUI(fallback) ? null : fallback;
+      }
+
+      function makeSelectionID() {
+        // IDs must remain unique across navigations. A snapshot from the prior
+        // document can finish after the new page has already made a selection;
+        // a document-local counter would let that stale completion clear it.
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+          return window.crypto.randomUUID();
+        }
+        fallbackSelectionSequence += 1;
+        return Date.now().toString(36) + '-' + fallbackSelectionSequence.toString(36) + '-' + Math.random().toString(36).slice(2);
       }
 
       function cssPath(el) {
@@ -116,20 +160,24 @@ enum BrowserAnnotate {
         }
       }
 
-      function blockPagePointer(e) {
-        if (!enabled || (box && box.contains(e.target))) return;
+      function blockPageEvent(e) {
         e.preventDefault();
         e.stopImmediatePropagation();
       }
 
-      function onClick(e) {
-        if (!enabled) return;
-        if (box && box.contains(e.target)) return;
-        if (sending) { blockPagePointer(e); return; }
+      function onPointerDown(e) {
+        if (!enabled || (box && box.contains(e.target))) return;
         var target = eventElement(e);
-        e.preventDefault();
-        e.stopImmediatePropagation();
+        blockPageEvent(e);
+        if (sending) return;
         if (target) showBox(target);
+      }
+
+      // The pointerdown owns selection. Suppress the compatibility click so
+      // the page cannot activate a link/button after the lasso has selected it.
+      function onClick(e) {
+        if (!enabled || (box && box.contains(e.target))) return;
+        blockPageEvent(e);
       }
 
       function removeBox() { if (box) { box.remove(); box = null; } }
@@ -139,13 +187,14 @@ enum BrowserAnnotate {
         hovered = null;
         selected = null;
         sending = false;
+        selectionID = null;
         sendingID = null;
         hideHighlight();
       }
 
       function showBox(el) {
         removeBox();
-        selectionID += 1;
+        selectionID = makeSelectionID();
         selected = el;
         hovered = el;
         positionHighlight(el);
@@ -222,12 +271,13 @@ enum BrowserAnnotate {
         hovered = null;
         selected = null;
         sending = false;
+        selectionID = null;
         sendingID = null;
         hideHighlight();
       }
 
       document.addEventListener('mousemove', onMove, true);
-      document.addEventListener('pointerdown', blockPagePointer, true);
+      document.addEventListener('pointerdown', onPointerDown, true);
       document.addEventListener('click', onClick, true);
       document.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll, true);
@@ -245,8 +295,10 @@ enum BrowserAnnotate {
     }
 
     /// Clears the locked selection only after WebKit has captured its outline.
-    static func finishSendScript(selectionID: Int) -> String {
-        "window.__pilotAnnotate && window.__pilotAnnotate.finishSend(\(selectionID))"
+    static func finishSendScript(selectionID: String) -> String {
+        let data = try? JSONEncoder().encode(selectionID)
+        let literal = data.flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
+        return "window.__pilotAnnotate && window.__pilotAnnotate.finishSend(\(literal))"
     }
 
     /// Collapse control chars (newlines, tabs, ESC sequences) + whitespace runs

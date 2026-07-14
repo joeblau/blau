@@ -14,6 +14,8 @@
 		13C9132C3576A1EDE88F94AE /* SecureChannelResponder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1276A49AF5B79B2DF90F9A4F /* SecureChannelResponder.swift */; };
 		143F8DEE34275E18A7BE0A2C /* UsageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B32004970F580A704569F743 /* UsageStore.swift */; };
 		18FED2F1C7DFB765BE7F8A53 /* DevicePaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7B90338AE3A8F5EE0CA12C6 /* DevicePaneView.swift */; };
+		19A7E4D28B6C301F5E92AA10 /* MarkdownImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19A7E4D28B6C301F5E92AA11 /* MarkdownImage.swift */; };
+		19A7E4D28B6C301F5E92AA12 /* MarkdownImageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19A7E4D28B6C301F5E92AA13 /* MarkdownImageTests.swift */; };
 		1A278D4E89A91729E34FC9BE /* PlotterActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFE92003FF31404674DF96FD /* PlotterActivityController.swift */; };
 		1A974E3908CCE01E060E0EAB /* MirrorModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA9E73F04BF651090F9D625 /* MirrorModel.swift */; };
 		1C0AED863F4441C1880AD91D /* ReliableMessenger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271D385A8DA926A540CE6710 /* ReliableMessenger.swift */; };
@@ -126,6 +128,7 @@
 		C9B227630199C8E1705AE8DC /* CopilotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EEA72B1DEC139C1BC84002C /* CopilotApp.swift */; };
 		CAD4FA3FEF71B408F5A1C332 /* PaneCyclingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C68475BF8E1475FC00ABFE0 /* PaneCyclingTests.swift */; };
 		CB797869A7D03477CAC989A2 /* CommitListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B028DA279E32AB30A1A75942 /* CommitListView.swift */; };
+		CBED99A2EDE15149D42F67F4 /* PreviewCanvasBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A39D3EBF0263AB3CE673E2 /* PreviewCanvasBackground.swift */; };
 		CD1F0F4FF15F92BBFB35AC33 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8EF4863BC5170A0F737E82 /* ContentView.swift */; };
 		CF0427ED034B7A71489D82F9 /* PeerSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */; };
 		CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F684D74A8F12B03954CC49B3 /* PilotApp.swift */; };
@@ -240,6 +243,8 @@
 		132CB022A0BDFF0DE96316EF /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		146BC5C13A2019B42354E198 /* FrameLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameLink.swift; sourceTree = "<group>"; };
 		158C2018D7407AF1E5F146CB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		19A7E4D28B6C301F5E92AA11 /* MarkdownImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownImage.swift; sourceTree = "<group>"; };
+		19A7E4D28B6C301F5E92AA13 /* MarkdownImageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownImageTests.swift; sourceTree = "<group>"; };
 		1A34F794F92162E19581AA82 /* UsageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSettingsView.swift; sourceTree = "<group>"; };
 		1B3448A85CDA9475511475C2 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		1C98BD914066A308C6C6C1C9 /* Pilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -275,6 +280,7 @@
 		5AD2F4B3EA572C1217200CD4 /* EditorPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorPaneView.swift; sourceTree = "<group>"; };
 		5B068834105F375479ADF423 /* InspectorHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorHelper.swift; sourceTree = "<group>"; };
 		60165C6B80F2A33B623EE8A2 /* EditorState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorState.swift; sourceTree = "<group>"; };
+		61A39D3EBF0263AB3CE673E2 /* PreviewCanvasBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewCanvasBackground.swift; sourceTree = "<group>"; };
 		62A8F342389E5A70FB03AB4F /* FileFinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileFinder.swift; sourceTree = "<group>"; };
 		63115D2BD54B02BCBFBC5774 /* SecureMessagingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureMessagingView.swift; sourceTree = "<group>"; };
 		63CD5071FA5C9733D90B190B /* PlotterLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotterLiveActivity.swift; sourceTree = "<group>"; };
@@ -413,6 +419,7 @@
 				4AD843F2429472CDAB91130E /* FileFinderTests.swift */,
 				6D1A7B90C5940A776273E13D /* GhosttyInputRegressionTests.swift */,
 				B56BD17012C0D3186C1E4792 /* LocalServerScannerTests.swift */,
+				19A7E4D28B6C301F5E92AA13 /* MarkdownImageTests.swift */,
 				03BA691E7D942BC353371889 /* MarkdownTableFormatterTests.swift */,
 				3C68475BF8E1475FC00ABFE0 /* PaneCyclingTests.swift */,
 				7297FC9076A3EEE92FA359FD /* PaneInitRegressionTests.swift */,
@@ -599,6 +606,7 @@
 				0146AB6C59B6957CE9B7E874 /* Info.plist */,
 				21D88EA79C48861054839A54 /* InkOverlay.swift */,
 				5B068834105F375479ADF423 /* InspectorHelper.swift */,
+				19A7E4D28B6C301F5E92AA11 /* MarkdownImage.swift */,
 				3773008E360B991866932E4A /* MarkdownStyler.swift */,
 				66D7FE5081E65EA4C78E83A5 /* MarkdownTableFormatter.swift */,
 				3BA97D476477BE66A97A9D77 /* MouseBridge.swift */,
@@ -607,6 +615,7 @@
 				8B4486B0848D4DDEE5E23D18 /* Pilot.entitlements */,
 				F684D74A8F12B03954CC49B3 /* PilotApp.swift */,
 				DA57761D349040DD147F613C /* PilotEditorTheme.swift */,
+				61A39D3EBF0263AB3CE673E2 /* PreviewCanvasBackground.swift */,
 				ACE63F355D22361D8CCB5F06 /* RemoteDesktopConnection.swift */,
 				B43EBD7F0CDA66C9C699E451 /* RemoteDesktopView.swift */,
 				0914A44923ED7CBD1EC18FAD /* RemoteDesktopViewer.swift */,
@@ -1040,6 +1049,7 @@
 				6215B9C6DFBF73DB93072BD2 /* InspectorHelper.swift in Sources */,
 				255E48A2365C7AA480C081DC /* LocalServerProbe.swift in Sources */,
 				2D467D25E5DB354DC43D8451 /* LocalServerScanner.swift in Sources */,
+				19A7E4D28B6C301F5E92AA10 /* MarkdownImage.swift in Sources */,
 				EA6044046223AE65A20D870B /* MarkdownStyler.swift in Sources */,
 				F69A855D82946B5F16665A92 /* MarkdownTableFormatter.swift in Sources */,
 				1CA7F3A0C7FE6D35905BADD4 /* MouseBridge.swift in Sources */,
@@ -1050,6 +1060,7 @@
 				CF0427ED034B7A71489D82F9 /* PeerSyncService.swift in Sources */,
 				CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */,
 				54AFE92923051BB3B541B102 /* PilotEditorTheme.swift in Sources */,
+				CBED99A2EDE15149D42F67F4 /* PreviewCanvasBackground.swift in Sources */,
 				64F5BBAD2D8C4BF5CDAAC40A /* ReliableMessenger.swift in Sources */,
 				34E418884A5993C311694465 /* RemoteDesktopConnection.swift in Sources */,
 				D844E2D4F11B2A24F1D4F230 /* RemoteDesktopView.swift in Sources */,
@@ -1129,6 +1140,7 @@
 				067087C5C181973550B9AC7E /* FileFinderTests.swift in Sources */,
 				4014326878763DCFCDEFD4A9 /* GhosttyInputRegressionTests.swift in Sources */,
 				63EDC53E371076E66ACF92C6 /* LocalServerScannerTests.swift in Sources */,
+				19A7E4D28B6C301F5E92AA12 /* MarkdownImageTests.swift in Sources */,
 				282117FA34ABEFD120352576 /* MarkdownTableFormatterTests.swift in Sources */,
 				CAD4FA3FEF71B408F5A1C332 /* PaneCyclingTests.swift in Sources */,
 				97CCEC7CB74BCC87DC23E339 /* PaneInitRegressionTests.swift in Sources */,
