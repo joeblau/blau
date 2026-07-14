@@ -115,7 +115,7 @@ private struct FileSystemOutlineView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
 
-        let outlineView = NSOutlineView()
+        let outlineView = ClickableFileSystemOutlineView()
         outlineView.headerView = nil
         outlineView.style = .sourceList
         outlineView.focusRingType = .none
@@ -253,6 +253,34 @@ private struct FileSystemOutlineView: NSViewRepresentable {
             let entries = GitCommitStore.listFilesystemEntries(at: directoryURL, rootURL: rootURL)
             node.children = entries.map(FileSystemNode.init(entry:))
             node.hasLoadedChildren = true
+        }
+    }
+}
+
+/// `NSOutlineView` only expands a row when its small disclosure control is
+/// clicked. The filesystem deliberately disables selection, so make the rest
+/// of a folder row behave like that disclosure control as well.
+private final class ClickableFileSystemOutlineView: NSOutlineView {
+    override func mouseDown(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        let clickedRow = row(at: location)
+        let clickedDisclosure = clickedRow >= 0
+            && frameOfOutlineCell(atRow: clickedRow).contains(location)
+
+        // Preserve AppKit's native disclosure-button behavior and normal
+        // handling for files, blank space, and multi-click gestures.
+        super.mouseDown(with: event)
+
+        guard event.clickCount == 1,
+              clickedRow >= 0,
+              !clickedDisclosure,
+              let node = item(atRow: clickedRow) as? FileSystemNode,
+              node.entry.isDirectory else { return }
+
+        if isItemExpanded(node) {
+            collapseItem(node)
+        } else {
+            expandItem(node)
         }
     }
 }

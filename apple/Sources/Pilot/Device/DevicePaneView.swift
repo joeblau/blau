@@ -13,6 +13,7 @@ struct DevicePaneView: View {
     var body: some View {
         let session = DeviceCaptureRegistry.shared.session(for: paneID)
         ZStack {
+            PreviewCanvasBackground()
             DeviceCaptureContainerView(session: session)
             DeviceStatusOverlay(session: session)
                 .opacity(session.status == .streaming ? 0 : 1)
@@ -26,7 +27,6 @@ struct DevicePaneView: View {
                     .zIndex(20)
             }
         }
-        .background(Color.black)
         .onChange(of: session.clipboardCopyCount) { _, _ in
             flash(DeviceToast(text: "Screenshot Copied", systemImage: "checkmark.circle.fill"))
         }
@@ -137,7 +137,7 @@ private struct DeviceStatusOverlay: View {
         }
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.85))
+        .background(PreviewCanvasBackground())
     }
 }
 
@@ -160,12 +160,12 @@ final class DeviceCaptureHostView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         let host = CALayer()
-        host.backgroundColor = NSColor.black.cgColor
+        host.backgroundColor = NSColor.clear.cgColor
         layer = host
 
         previewLayer.session = captureSession.session
         previewLayer.videoGravity = .resizeAspect
-        previewLayer.backgroundColor = NSColor.black.cgColor
+        previewLayer.backgroundColor = NSColor.clear.cgColor
         host.addSublayer(previewLayer)
     }
 

@@ -54,7 +54,7 @@ final class SimulatorSession {
 
     init() {
         displayLayer.videoGravity = .resizeAspect
-        displayLayer.backgroundColor = NSColor.black.cgColor
+        displayLayer.backgroundColor = NSColor.clear.cgColor
     }
 
     // MARK: - Device list

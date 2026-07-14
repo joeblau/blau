@@ -107,11 +107,34 @@ struct BrowserLassoTests {
 
     @Test
     func finishScriptUsesTheInjectedControllerLifecycleHook() {
-        let script = BrowserAnnotate.finishSendScript(selectionID: 42)
+        let script = BrowserAnnotate.finishSendScript(selectionID: "selection-42")
 
         #expect(script.contains("__pilotAnnotate"))
-        #expect(script.contains("finishSend(42)"))
+        #expect(script.contains("finishSend(\"selection-42\")"))
+        #expect(BrowserAnnotate.userScript.contains("crypto.randomUUID"))
         #expect(BrowserAnnotate.userScript.contains("completedSelectionID !== sendingID"))
+    }
+
+    @Test
+    func dispatchKeepsTheTerminalCapturedBeforeAnAsyncSnapshot() {
+        let intendedTerminal = UUID()
+        var currentlyActiveTerminal = intendedTerminal
+        let dispatch = BrowserAnnotate.DispatchContext(targetPaneID: currentlyActiveTerminal)
+
+        // Models a click into another terminal while takeSnapshot is in flight.
+        currentlyActiveTerminal = UUID()
+        let userInfo = dispatch.notificationUserInfo(prompt: "Fix this element")
+
+        #expect(BrowserAnnotate.hasCapturedTarget(in: userInfo))
+        #expect(BrowserAnnotate.targetPaneID(in: userInfo) == intendedTerminal)
+        #expect(BrowserAnnotate.targetPaneID(in: userInfo) != currentlyActiveTerminal)
+        #expect(userInfo[BrowserAnnotate.promptUserInfoKey] as? String == "Fix this element")
+
+        let noTerminal = BrowserAnnotate.DispatchContext(targetPaneID: nil)
+            .notificationUserInfo(prompt: "No target")
+        #expect(BrowserAnnotate.hasCapturedTarget(in: noTerminal))
+        #expect(BrowserAnnotate.targetPaneID(in: noTerminal) == nil)
+        #expect(!BrowserAnnotate.hasCapturedTarget(in: [BrowserAnnotate.promptUserInfoKey: "Legacy issue"]))
     }
 
     @Test
@@ -134,6 +157,8 @@ struct BrowserLassoTests {
     @MainActor
     func injectedLassoLocksAndClearsTheSelectedElement() async throws {
         let configuration = WKWebViewConfiguration()
+        let messageSink = BrowserLassoMessageSink()
+        configuration.userContentController.add(messageSink, name: BrowserAnnotate.messageName)
         configuration.userContentController.addUserScript(WKUserScript(
             source: BrowserAnnotate.userScript,
             injectionTime: .atDocumentEnd,
@@ -165,14 +190,20 @@ struct BrowserLassoTests {
         document.querySelector('[data-pilot-annotate-highlight]').style.left;
         """)
         let selectedA = try await evaluateString(in: webView, script: """
+        window.pageClicks = 0;
+        a.addEventListener('click', function () { window.pageClicks += 1; });
         a.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, composed:true, clientX:20, clientY:30}));
         a.dispatchEvent(new MouseEvent('click', {bubbles:true, composed:true, clientX:20, clientY:30}));
-        JSON.stringify({left:document.querySelector('[data-pilot-annotate-highlight]').style.left, box:!!document.querySelector('[data-pilot-annotate-box]')});
+        JSON.stringify({left:document.querySelector('[data-pilot-annotate-highlight]').style.left, box:!!document.querySelector('[data-pilot-annotate-box]'), clicks:window.pageClicks});
         """)
         let lockedAfterMovingToB = try await evaluateString(in: webView, script: """
         var b = document.getElementById('b');
         b.dispatchEvent(new MouseEvent('mousemove', {bubbles:true, composed:true, clientX:220, clientY:30}));
         document.querySelector('[data-pilot-annotate-highlight]').style.left;
+        """)
+        let replacedWithB = try await evaluateString(in: webView, script: """
+        b.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, composed:true, clientX:220, clientY:30}));
+        JSON.stringify({left:document.querySelector('[data-pilot-annotate-highlight]').style.left, box:!!document.querySelector('[data-pilot-annotate-box]')});
         """)
 
         _ = try await webView.evaluateJavaScript(BrowserAnnotate.setEnabledScript(false))
@@ -188,26 +219,72 @@ struct BrowserLassoTests {
         b.dispatchEvent(new MouseEvent('click', {bubbles:true, composed:true, clientX:220, clientY:30}));
         JSON.stringify({left:document.querySelector('[data-pilot-annotate-highlight]').style.left, box:!!document.querySelector('[data-pilot-annotate-box]')});
         """)
-        _ = try await webView.evaluateJavaScript(BrowserAnnotate.finishSendScript(selectionID: 1))
+        _ = try await webView.evaluateJavaScript(BrowserAnnotate.finishSendScript(selectionID: "stale-selection"))
         let afterStaleFinish = try await evaluateString(in: webView, script: """
         JSON.stringify({left:document.querySelector('[data-pilot-annotate-highlight]').style.left, box:!!document.querySelector('[data-pilot-annotate-box]')});
         """)
+        let sendingB = try await evaluateString(in: webView, script: """
+        var selectedBox = document.querySelector('[data-pilot-annotate-box]');
+        selectedBox.querySelector('textarea').value = 'Fix B';
+        selectedBox.querySelectorAll('button')[1].click();
+        JSON.stringify({display:document.querySelector('[data-pilot-annotate-highlight]').style.display, box:!!document.querySelector('[data-pilot-annotate-box]')});
+        """)
+        let sentBSelectionID = try #require(messageSink.selectionIDs.last)
+        _ = try await webView.evaluateJavaScript(BrowserAnnotate.finishSendScript(selectionID: sentBSelectionID))
+        let afterSendFinished = try await evaluateString(in: webView, script: """
+        JSON.stringify({display:document.querySelector('[data-pilot-annotate-highlight]').style.display, box:!!document.querySelector('[data-pilot-annotate-box]')});
+        """)
+        let selectedAAgain = try await evaluateString(in: webView, script: """
+        a.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, composed:true, clientX:20, clientY:30}));
+        a.dispatchEvent(new MouseEvent('click', {bubbles:true, composed:true, clientX:20, clientY:30}));
+        JSON.stringify({left:document.querySelector('[data-pilot-annotate-highlight]').style.left, box:!!document.querySelector('[data-pilot-annotate-box]')});
+        """)
+        _ = try await evaluateString(in: webView, script: """
+        var secondBox = document.querySelector('[data-pilot-annotate-box]');
+        secondBox.querySelector('textarea').value = 'Fix A next';
+        secondBox.querySelectorAll('button')[1].click();
+        'sent';
+        """)
+        let sentASelectionID = try #require(messageSink.selectionIDs.last)
 
         #expect(hoverA == "10px")
         #expect(selectedA.contains("\"left\":\"10px\""))
         #expect(selectedA.contains("\"box\":true"))
+        #expect(selectedA.contains("\"clicks\":0"))
         #expect(lockedAfterMovingToB == "10px")
+        #expect(replacedWithB.contains("\"left\":\"200px\""))
+        #expect(replacedWithB.contains("\"box\":true"))
         #expect(disabled.contains("\"display\":\"none\""))
         #expect(disabled.contains("\"box\":false"))
         #expect(selectedB.contains("\"left\":\"200px\""))
         #expect(selectedB.contains("\"box\":true"))
         #expect(afterStaleFinish.contains("\"left\":\"200px\""))
         #expect(afterStaleFinish.contains("\"box\":true"))
+        #expect(sendingB.contains("\"display\":\"block\""))
+        #expect(sendingB.contains("\"box\":false"))
+        #expect(afterSendFinished.contains("\"display\":\"none\""))
+        #expect(afterSendFinished.contains("\"box\":false"))
+        #expect(selectedAAgain.contains("\"left\":\"10px\""))
+        #expect(selectedAAgain.contains("\"box\":true"))
+        #expect(messageSink.selectionIDs.count == 2)
+        #expect(sentBSelectionID != sentASelectionID)
+        #expect(messageSink.selectionIDs.allSatisfy { !$0.isEmpty })
     }
 
     @MainActor
     private func evaluateString(in webView: WKWebView, script: String) async throws -> String {
         try await webView.evaluateJavaScript(script) as? String ?? ""
+    }
+}
+
+@MainActor
+private final class BrowserLassoMessageSink: NSObject, WKScriptMessageHandler {
+    private(set) var selectionIDs: [String] = []
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any],
+              let selectionID = body["selectionID"] as? String else { return }
+        selectionIDs.append(selectionID)
     }
 }
 

@@ -628,7 +628,8 @@ struct PaneView: View {
                     rootPath: pane.workspace?.effectiveRootPath,
                     isActive: isWorkspaceActive,
                     isSelected: isSelected,
-                    onSelect: { pane.workspace?.selectedPaneID = pane.id }
+                    onSelect: { pane.workspace?.selectedPaneID = pane.id },
+                    targetTerminalPaneID: { pane.workspace?.frontmostTerminalPane?.id }
                 )
             }
         case .device:
@@ -667,6 +668,7 @@ struct BrowserPaneView: View {
     let isActive: Bool
     let isSelected: Bool
     let onSelect: () -> Void
+    let targetTerminalPaneID: @MainActor () -> UUID?
 
     @State private var hasLoadedAnyURL: Bool = false
     @State private var openedWithBlankURL: Bool?
@@ -691,7 +693,8 @@ struct BrowserPaneView: View {
                 appearanceMode: state.appearanceMode,
                 isActive: isActive,
                 isSelected: isSelected,
-                onSelect: onSelect
+                onSelect: onSelect,
+                targetTerminalPaneID: targetTerminalPaneID
             )
             .onAppear {
                 captureInitialURLState()
@@ -743,6 +746,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     let isActive: Bool
     let isSelected: Bool
     let onSelect: () -> Void
+    let targetTerminalPaneID: @MainActor () -> UUID?
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -838,7 +842,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(state: state)
+        Coordinator(state: state, targetTerminalPaneID: targetTerminalPaneID)
     }
 
     private var initialURL: URL? {
@@ -859,13 +863,15 @@ struct WebViewRepresentable: NSViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKDownloadDelegate, WKScriptMessageHandler {
         let state: BrowserState
+        let targetTerminalPaneID: @MainActor () -> UUID?
         /// Last annotate-toggle id pushed into the page, to dedupe updateNSView runs.
         var lastAnnotateToggleID = -1
         private var urlObservation: NSKeyValueObservation?
         private var pendingDestinations: [ObjectIdentifier: URL] = [:]
 
-        init(state: BrowserState) {
+        init(state: BrowserState, targetTerminalPaneID: @escaping @MainActor () -> UUID?) {
             self.state = state
+            self.targetTerminalPaneID = targetTerminalPaneID
         }
 
         deinit {
@@ -885,7 +891,8 @@ struct WebViewRepresentable: NSViewRepresentable {
             let url = body["url"] as? String ?? ""
             let selector = body["selector"] as? String ?? ""
             let outerHTML = body["outerHTML"] as? String ?? ""
-            let selectionID = (body["selectionID"] as? NSNumber)?.intValue ?? -1
+            guard let selectionID = body["selectionID"] as? String,
+                  !selectionID.isEmpty else { return }
             let rect = body["rect"] as? [String: Any] ?? [:]
             func intValue(_ key: String) -> Int { Int((rect[key] as? NSNumber)?.doubleValue ?? 0) }
             let rx = intValue("x"), ry = intValue("y"), rw = intValue("w"), rh = intValue("h")
@@ -895,6 +902,13 @@ struct WebViewRepresentable: NSViewRepresentable {
                 // can postMessage to this handler, so don't let an untrusted site
                 // inject a prompt into the user's terminal on its own.
                 guard state.annotateMode, let webView = message.webView else { return }
+                // Resolve the terminal synchronously while the user's last
+                // terminal click is still authoritative. `takeSnapshot` is
+                // asynchronous; looking it up in its completion can send to a
+                // different LLM if the user changes panes/workspaces meanwhile.
+                let dispatch = BrowserAnnotate.DispatchContext(
+                    targetPaneID: targetTerminalPaneID()
+                )
                 webView.takeSnapshot(with: WKSnapshotConfiguration()) { image, _ in
                     // The page intentionally keeps the selected element outlined
                     // until this completion so the screenshot marks exactly what
@@ -906,7 +920,9 @@ struct WebViewRepresentable: NSViewRepresentable {
                         rectX: rx, rectY: ry, rectW: rw, rectH: rh, screenshotPath: path
                     )
                     NotificationCenter.default.post(
-                        name: .pilotSendIssuePrompt, object: nil, userInfo: ["prompt": prompt]
+                        name: .pilotSendIssuePrompt,
+                        object: nil,
+                        userInfo: dispatch.notificationUserInfo(prompt: prompt)
                     )
                 }
             }
