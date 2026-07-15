@@ -148,7 +148,7 @@ ul, ol { list-style: none; }
 .glow--soft::before { background: radial-gradient(720px 480px at 50% -80px, var(--blau-glow-soft), transparent 70%); }
 .glow > * { position: relative; z-index: 1; }
 
-/* ============ scroll reveal (driven by GSAP ScrollTrigger; gated on .js so
+/* ============ scroll reveal (driven by IntersectionObserver; gated on .js so
    nothing is invisible without JavaScript) ============ */
 .reveal,
 .reveal-stagger > * {
@@ -156,6 +156,12 @@ ul, ol { list-style: none; }
 }
 .js .reveal { opacity: 0; transform: translateY(12px); }
 .js .reveal.is-visible { opacity: 1; transform: none; }
+.delay-90 { --delay: 90ms; }
+.delay-120 { --delay: 120ms; }
+.delay-180 { --delay: 180ms; }
+.delay-270 { --delay: 270ms; }
+.delay-360 { --delay: 360ms; }
+.delay-450 { --delay: 450ms; }
 .js .reveal-stagger > * { opacity: 0; transform: translateY(10px); }
 .js .reveal-stagger.is-visible > * { opacity: 1; transform: none; }
 .js .reveal-stagger.is-visible > *:nth-child(2) { transition-delay: 90ms; }

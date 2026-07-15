@@ -10,15 +10,17 @@ import CryptoKit
 /// decrypted message log, and send paths for reliable text and a best-effort
 /// test blob. Reached from the shared Identity & Keys section in `SettingsView`.
 struct SecureMessagingView: View {
-    @AppStorage("p2p.peerPublicKey") private var peerKeyInput = ""
-    @AppStorage("p2p.token") private var tokenInput = ""
     @AppStorage("p2p.rendezvousURL") private var rendezvousURL = "https://rendezvous.blau.app"
+    @AppStorage("p2p.allowInsecureLocalhost") private var allowInsecureLocalhost = false
 
+    @State private var peerKeyInput = ""
+    @State private var tokenInput = ""
     @State private var transport: SecureChannelTransport?
     @State private var outgoing = ""
     @State private var errorMessage: String?
 
     private var myPublicKey: String { DeviceIdentity.publicKeyBase64() ?? "—" }
+    private let pairingStore = SecurePairingStore()
 
     var body: some View {
         Form {
@@ -34,6 +36,8 @@ struct SecureMessagingView: View {
         }
         .navigationTitle("Secure Messaging")
         .navigationBarTitleDisplayMode(.inline)
+        .task { loadPairingSecrets() }
+        .onDisappear { savePairingSecrets() }
         .alert("Connection error", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -87,10 +91,12 @@ struct SecureMessagingView: View {
             TextField("Pairing token", text: $tokenInput)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+            Button("Generate secure pairing token") { generateToken() }
             TextField("Rendezvous URL", text: $rendezvousURL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
+            Toggle("Allow HTTP for localhost development", isOn: $allowInsecureLocalhost)
 
             if let transport, !transport.state.isFailed {
                 Button(transport.state == .signaling ? "Cancel connection" : "Disconnect", role: .destructive) {
@@ -142,7 +148,9 @@ struct SecureMessagingView: View {
 
     private var canConnect: Bool {
         DeviceIdentity.parsePeerPublicKey(peerKeyInput) != nil
-            && !tokenInput.trimmingCharacters(in: .whitespaces).isEmpty
+            && SecurePairingStore.isValidIdentifier(
+                tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
     }
 
     private func connect() {
@@ -151,13 +159,18 @@ struct SecureMessagingView: View {
             return
         }
         let token = tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else {
-            errorMessage = "Enter a pairing token."
+        guard SecurePairingStore.isValidIdentifier(token) else {
+            errorMessage = "Use a randomly generated pairing token."
             return
         }
         do {
+            try pairingStore.setPeerPublicKey(peerKeyInput)
+            try pairingStore.setToken(token)
             let identity = try DeviceIdentity.loadOrCreate()
-            let client = SignalingClient(baseURLString: rendezvousURL)
+            let client = try SignalingClient(
+                baseURLString: rendezvousURL,
+                allowInsecureLocalhost: allowInsecureLocalhost
+            )
             let t = SecureChannelTransport(
                 signaling: client,
                 token: token,
@@ -167,7 +180,35 @@ struct SecureMessagingView: View {
             replaceActiveConnection(&transport, with: t) { $0.disconnect() }
             t.connect()
         } catch {
-            errorMessage = "Could not load device identity: \(error.localizedDescription)"
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func loadPairingSecrets() {
+        do {
+            let secrets = try pairingStore.loadMigratingLegacy()
+            peerKeyInput = secrets.peerPublicKey
+            tokenInput = secrets.token
+        } catch {
+            errorMessage = "Could not load secure pairing settings."
+        }
+    }
+
+    private func savePairingSecrets() {
+        do {
+            try pairingStore.setPeerPublicKey(peerKeyInput)
+            try pairingStore.setToken(tokenInput)
+        } catch {
+            errorMessage = "Could not save secure pairing settings."
+        }
+    }
+
+    private func generateToken() {
+        do {
+            tokenInput = try SecurePairingStore.generateToken()
+            try pairingStore.setToken(tokenInput)
+        } catch {
+            errorMessage = "Could not generate a secure pairing token."
         }
     }
 

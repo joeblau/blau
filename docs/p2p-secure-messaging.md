@@ -328,10 +328,10 @@ deployment:
   the devices can learn each other's UDP endpoint and hole-punch.
   - `POST /register` `{ token, publicKey, port }` → records the peer (IP is
     taken from `CF-Connecting-IP`, never trusted from the body) and returns the
-    *other* peer if present, else the caller's own record (the client filters
-    that out). `409` if the token already has two other distinct keys.
-  - `GET /get-peer?token=&publicKey=` → the *other* peer's endpoint, or `204` if
-    it hasn't registered yet.
+    *other* peer if present, else `204`. `409` if the token already has two
+    other distinct keys.
+  - `POST /get-peer` `{ token, publicKey }` → the *other* peer's endpoint, or
+    `204` if it hasn't registered yet. Pairing material never appears in a URL.
   - Registrations carry a 5-minute TTL and are swept by a Durable Object alarm.
   - `GET /healthz` → `ok`.
 
@@ -341,30 +341,28 @@ block of `wrangler.jsonc`) so the Worker runs on the Workers free plan.
 ### Steps (uses [wrangler](https://developers.cloudflare.com/workers/wrangler/))
 
 ```bash
-cd workers/rendezvous
-
-# 1. Install dependencies (bun.lock is checked in; npm also works).
-bun install          # or: npm install
+# 1. Install the frozen root workspace (from the repository root).
+bun install --frozen-lockfile
 
 # 2. Authenticate wrangler with your Cloudflare account (one-time).
-npx wrangler login
+bun run --cwd workers/rendezvous wrangler login
 
 # 3. Sanity-check the build + bindings without uploading.
-npx wrangler deploy --dry-run
+bun run --cwd workers/rendezvous deploy --dry-run
 
 # 4. (Optional) Run locally against Miniflare.
-npx wrangler dev      # or: bun run dev
+bun run --cwd workers/rendezvous dev
 
 # 5. Deploy to production.
-npx wrangler deploy   # or: bun run deploy
+bun run --cwd workers/rendezvous deploy
 ```
 
 `wrangler.jsonc` pins the production route to the custom domain
 `rendezvous.blau.app`, which is the default `baseURL` the apps' `SignalingClient`
-uses. To point the apps at a different deployment (e.g. the `*.workers.dev`
-preview URL), enter that URL in the secure-messaging screen — `SignalingClient`
-falls back to the production URL only when the entered string is empty or
-unparseable.
+uses. Production disables `workers.dev` and preview URLs. A custom endpoint
+must be HTTPS; plain HTTP is accepted only for `localhost`/loopback after the
+explicit development toggle is enabled. An invalid value never silently falls
+back to production.
 
 > The Worker is deployed via wrangler, **not** the repo's GitHub Pages workflow
 > (which only publishes the `web/` Astro landing page).
@@ -377,10 +375,10 @@ The handshake authenticates against a **manually pinned** static key, so pairing
 is a one-time, out-of-band exchange of two things:
 
 1. **Each device's long-term public key** — base64 of a 32-byte X25519 key.
-2. **A shared pairing token** — any agreed-upon string (≤256 chars) that routes
-   both devices to the same `SIGNALS` Durable Object instance. It is *routing
-   only*; it is never mixed into the handshake and grants no cryptographic
-   authority.
+2. **A shared pairing token** — at least 192 random bits, encoded as base64url,
+   that routes both devices to the same `SIGNALS` Durable Object instance. It
+   is *routing only*; it is never mixed into the handshake and grants no
+   cryptographic authority.
 
 ### Where the keys come from
 
@@ -400,8 +398,9 @@ surfaced in **Settings → Identity & Keys** (`SettingsView.swift`):
    already control (AirDrop, a Signal message, reading it aloud, a QR code —
    anything where you can be sure it wasn't substituted). This out-of-band step
    is what makes the whole channel trustworthy: it pins identity.
-3. **Agree on a pairing token** (e.g. `joe-laptop-2026`) and enter the same
-   token on both devices.
+3. **Generate a secure pairing token** in either app and transfer the same
+   token to the other device through the trusted channel. Human-chosen and
+   low-entropy tokens are rejected.
 4. Enter the peer's pasted public key into the secure-messaging screen
    (`SecureMessagingView`). It is parsed by
    `DeviceIdentity.parsePeerPublicKey` — base64, exactly 32 bytes, valid X25519,
@@ -417,6 +416,11 @@ untrusted: even a malicious or compromised Worker can only mis-route or deny —
 it can never impersonate a peer or read traffic, since it never holds a private
 key or the session keys.
 
+The pairing token and peer public key are stored in the Keychain with
+`AfterFirstUnlockThisDeviceOnly` accessibility. On first load, the app migrates
+the old `p2p.token` and `p2p.peerPublicKey` UserDefaults values and deletes the
+plaintext copies.
+
 ---
 
 ## 8. Tests
@@ -426,4 +430,6 @@ The value layer is exercised by `apple/Tests/SharedTests/SecureChannelTests.swif
 keys; a wrong responder static key or mismatched static key fails; tampered
 header / ciphertext fail to open; nonce XOR uniqueness; replay window accept /
 reject; reliable messenger ack / backoff / abandonment; ack-tracker dedup; and
-the connection state machine's legal/illegal transitions. All pass.
+the connection state machine's legal/illegal transitions. The suite also checks
+Keychain migration behavior, token generation/validation, HTTPS enforcement,
+and POST-only signaling request construction.

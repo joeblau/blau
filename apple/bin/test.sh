@@ -5,14 +5,17 @@ APPLE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT="$APPLE_ROOT/blau.xcodeproj"
 SUITE="${1:-all}"
 DERIVED_ROOT="${BLAU_DERIVED_DATA:-${TMPDIR:-/tmp}/blau-tests}"
+PACKAGES="${BLAU_SOURCE_PACKAGES:-${TMPDIR:-/tmp}/blau-source-packages}"
 
 pilot() {
-  DISABLE_SWIFTLINT=1 xcodebuild test \
+  DISABLE_SWIFTLINT=1 xcodebuild test -quiet \
     -project "$PROJECT" \
     -scheme PilotTests \
     -destination "platform=macOS,arch=$(uname -m)" \
     -derivedDataPath "$DERIVED_ROOT/pilot" \
+    -clonedSourcePackagesDirPath "$PACKAGES" \
     -onlyUsePackageVersionsFromResolvedFile \
+    -skipPackagePluginValidation \
     CODE_SIGNING_ALLOWED=NO
 }
 
@@ -27,12 +30,14 @@ shared() {
     ')"
   fi
   [[ -n "$udid" ]] || { echo "No available iPhone simulator; set IOS_SIMULATOR_UDID." >&2; exit 1; }
-  DISABLE_SWIFTLINT=1 xcodebuild test \
+  DISABLE_SWIFTLINT=1 xcodebuild test -quiet \
     -project "$PROJECT" \
     -scheme SharedTests \
     -destination "platform=iOS Simulator,id=$udid" \
     -derivedDataPath "$DERIVED_ROOT/shared" \
+    -clonedSourcePackagesDirPath "$PACKAGES" \
     -onlyUsePackageVersionsFromResolvedFile \
+    -skipPackagePluginValidation \
     CODE_SIGNING_ALLOWED=NO
 }
 

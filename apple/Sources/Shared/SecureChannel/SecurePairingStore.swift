@@ -1,0 +1,169 @@
+import Foundation
+import Security
+
+struct PairingSecrets: Equatable {
+    var token: String
+    var peerPublicKey: String
+}
+
+protocol PairingSecretStoring {
+    func read(account: String) throws -> Data?
+    func write(_ data: Data, account: String) throws
+    func delete(account: String) throws
+}
+
+struct KeychainPairingSecretStorage: PairingSecretStoring {
+    private let service = "app.blau.securechannel"
+
+    func read(account: String) throws -> Data? {
+        var query = baseQuery(account: account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        switch status {
+        case errSecSuccess:
+            return item as? Data
+        case errSecItemNotFound:
+            return nil
+        default:
+            throw SecurePairingStore.StoreError.keychain(status)
+        }
+    }
+
+    func write(_ data: Data, account: String) throws {
+        let accessibility = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let updates: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: accessibility,
+        ]
+        let updateStatus = SecItemUpdate(
+            baseQuery(account: account) as CFDictionary,
+            updates as CFDictionary
+        )
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw SecurePairingStore.StoreError.keychain(updateStatus)
+        }
+
+        var attributes = baseQuery(account: account)
+        attributes.merge(updates) { _, new in new }
+        let addStatus = SecItemAdd(attributes as CFDictionary, nil)
+        guard addStatus == errSecSuccess else {
+            throw SecurePairingStore.StoreError.keychain(addStatus)
+        }
+    }
+
+    func delete(account: String) throws {
+        let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw SecurePairingStore.StoreError.keychain(status)
+        }
+    }
+
+    private func baseQuery(account: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+    }
+}
+
+/// Stores pairing material in the Keychain and removes the legacy plaintext
+/// UserDefaults values after a successful migration.
+struct SecurePairingStore {
+    static let tokenAccount = "app.blau.securechannel.pairing-token"
+    static let peerAccount = "app.blau.securechannel.peer"
+    static let legacyTokenKey = "p2p.token"
+    static let legacyPeerKey = "p2p.peerPublicKey"
+
+    enum StoreError: Error {
+        case invalidEncoding
+        case keychain(OSStatus)
+        case randomGeneration(OSStatus)
+    }
+
+    private let storage: any PairingSecretStoring
+    private let defaults: UserDefaults
+
+    init(
+        storage: any PairingSecretStoring = KeychainPairingSecretStorage(),
+        defaults: UserDefaults = .standard
+    ) {
+        self.storage = storage
+        self.defaults = defaults
+    }
+
+    func loadMigratingLegacy() throws -> PairingSecrets {
+        var token = try string(account: Self.tokenAccount) ?? ""
+        var peer = try string(account: Self.peerAccount) ?? ""
+
+        if let legacyToken = defaults.string(forKey: Self.legacyTokenKey) {
+            if token.isEmpty {
+                token = legacyToken.trimmingCharacters(in: .whitespacesAndNewlines)
+                try setToken(token)
+            }
+            defaults.removeObject(forKey: Self.legacyTokenKey)
+        }
+        if let legacyPeer = defaults.string(forKey: Self.legacyPeerKey) {
+            if peer.isEmpty {
+                peer = legacyPeer.trimmingCharacters(in: .whitespacesAndNewlines)
+                try setPeerPublicKey(peer)
+            }
+            defaults.removeObject(forKey: Self.legacyPeerKey)
+        }
+
+        return PairingSecrets(token: token, peerPublicKey: peer)
+    }
+
+    func setToken(_ value: String) throws {
+        try set(value, account: Self.tokenAccount)
+    }
+
+    func setPeerPublicKey(_ value: String) throws {
+        try set(value, account: Self.peerAccount)
+    }
+
+    static func isValidIdentifier(_ value: String) -> Bool {
+        guard (32...128).contains(value.utf8.count),
+              value.utf8.allSatisfy({ byte in
+                  (48...57).contains(byte)
+                      || (65...90).contains(byte)
+                      || (97...122).contains(byte)
+                      || byte == 45
+                      || byte == 95
+              }),
+              Set(value).count >= 8
+        else { return false }
+        return true
+    }
+
+    static func generateToken() throws -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        guard status == errSecSuccess else { throw StoreError.randomGeneration(status) }
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    private func string(account: String) throws -> String? {
+        guard let data = try storage.read(account: account) else { return nil }
+        guard let value = String(data: data, encoding: .utf8) else {
+            throw StoreError.invalidEncoding
+        }
+        return value
+    }
+
+    private func set(_ rawValue: String, account: String) throws {
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else {
+            try storage.delete(account: account)
+            return
+        }
+        guard let data = value.data(using: .utf8) else { throw StoreError.invalidEncoding }
+        try storage.write(data, account: account)
+    }
+}

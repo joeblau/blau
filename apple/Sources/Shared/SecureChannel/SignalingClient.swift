@@ -1,19 +1,8 @@
 import Foundation
 
-/// HTTP client for the rendezvous signaling worker (issue #51).
-///
-/// The worker introduces two devices that share a pairing `token`: each device
-/// POSTs `/register` with its public key + the local UDP port it is listening
-/// on, and the edge records the *observed* public IP. Either device then polls
-/// `GET /get-peer` until the other has registered, at which point both learn
-/// each other's `{ ip, port }` and can start UDP hole punching.
-///
-/// The worker never sees plaintext or session keys — only the routing metadata
-/// (public key, IP, port). Authentication of the peer happens entirely in the
-/// Noise IK handshake against the manually-pinned static key.
+/// HTTPS client for the rendezvous worker. Pairing material is always sent in
+/// bounded JSON POST bodies, never in URLs or error descriptions.
 struct SignalingClient {
-
-    /// A peer endpoint returned by the worker.
     struct PeerEndpoint: Equatable, Sendable {
         let publicKey: String
         let ip: String
@@ -28,7 +17,7 @@ struct SignalingClient {
 
         var errorDescription: String? {
             switch self {
-            case .badURL: return "Invalid rendezvous URL."
+            case .badURL: return "Use an HTTPS rendezvous URL."
             case .http(let code): return "Rendezvous server returned HTTP \(code)."
             case .decode: return "Could not parse the rendezvous response."
             case .pairFull: return "This pairing token already has two devices."
@@ -36,80 +25,63 @@ struct SignalingClient {
         }
     }
 
-    /// Base URL of the rendezvous worker. Defaults to production.
+    private struct SignalBody: Encodable {
+        let token: String
+        let publicKey: String
+        let port: UInt16?
+    }
+
+    private static let productionURL = URL(string: "https://rendezvous.blau.app")!
+
     let baseURL: URL
     private let session: URLSession
 
-    init(baseURL: URL = URL(string: "https://rendezvous.blau.app")!,
-         session: URLSession = .shared) {
+    init(
+        baseURL: URL = productionURL,
+        session: URLSession = .shared,
+        allowInsecureLocalhost: Bool = false
+    ) throws {
+        guard Self.isAllowed(baseURL, allowInsecureLocalhost: allowInsecureLocalhost) else {
+            throw SignalingError.badURL
+        }
         self.baseURL = baseURL
         self.session = session
     }
 
-    /// Convenience initializer from a user-entered string; falls back to the
-    /// default when the string is empty or unparseable.
-    init(baseURLString: String?, session: URLSession = .shared) {
+    init(
+        baseURLString: String?,
+        session: URLSession = .shared,
+        allowInsecureLocalhost: Bool = false
+    ) throws {
         let trimmed = baseURLString?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let url = trimmed.isEmpty ? nil : URL(string: trimmed)
-        self.init(baseURL: url ?? URL(string: "https://rendezvous.blau.app")!,
-                  session: session)
-    }
-
-    // MARK: - Register
-
-    /// POST `/register`. Records this device under `token` and returns the peer
-    /// endpoint if the other device has already registered, otherwise `nil`.
-    func register(token: String, publicKeyBase64: String, port: UInt16) async throws -> PeerEndpoint? {
-        let url = baseURL.appendingPathComponent("register")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let payload: [String: Any] = [
-            "token": token,
-            "publicKey": publicKeyBase64,
-            "port": Int(port),
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw SignalingError.decode }
-        if http.statusCode == 409 { throw SignalingError.pairFull }
-        guard (200..<300).contains(http.statusCode) else { throw SignalingError.http(http.statusCode) }
-
-        // The register response echoes the *other* peer if present. When this
-        // device is first to register, the worker returns this device's own
-        // record; we filter that out by comparing public keys.
-        guard let peer = Self.parsePeer(data) else { return nil }
-        if peer.publicKey == publicKeyBase64 { return nil }
-        return peer
-    }
-
-    // MARK: - Get peer
-
-    /// GET `/get-peer`. Returns the other peer's endpoint or `nil` (HTTP 204)
-    /// if it has not registered yet.
-    func getPeer(token: String, publicKeyBase64: String) async throws -> PeerEndpoint? {
-        var components = URLComponents(
-            url: baseURL.appendingPathComponent("get-peer"),
-            resolvingAgainstBaseURL: false
+        guard trimmed.isEmpty || URL(string: trimmed) != nil else { throw SignalingError.badURL }
+        try self.init(
+            baseURL: trimmed.isEmpty ? Self.productionURL : URL(string: trimmed)!,
+            session: session,
+            allowInsecureLocalhost: allowInsecureLocalhost
         )
-        components?.queryItems = [
-            URLQueryItem(name: "token", value: token),
-            URLQueryItem(name: "publicKey", value: publicKeyBase64),
-        ]
-        guard let url = components?.url else { throw SignalingError.badURL }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw SignalingError.decode }
-        if http.statusCode == 204 { return nil }
-        guard (200..<300).contains(http.statusCode) else { throw SignalingError.http(http.statusCode) }
-        return Self.parsePeer(data)
     }
 
-    /// Poll `/get-peer` until the peer registers or the deadline elapses.
+    func register(
+        token: String,
+        publicKeyBase64: String,
+        port: UInt16
+    ) async throws -> PeerEndpoint? {
+        let request = try makeRequest(
+            path: "register",
+            body: SignalBody(token: token, publicKey: publicKeyBase64, port: port)
+        )
+        return try await perform(request, pairCanBeFull: true)
+    }
+
+    func getPeer(token: String, publicKeyBase64: String) async throws -> PeerEndpoint? {
+        let request = try makeRequest(
+            path: "get-peer",
+            body: SignalBody(token: token, publicKey: publicKeyBase64, port: nil)
+        )
+        return try await perform(request, pairCanBeFull: false)
+    }
+
     func waitForPeer(
         token: String,
         publicKeyBase64: String,
@@ -126,19 +98,58 @@ struct SignalingClient {
         throw SignalingError.http(408)
     }
 
-    // MARK: - Parsing
+    private func makeRequest(path: String, body: SignalBody) throws -> URLRequest {
+        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+        request.httpBody = try JSONEncoder().encode(body)
+        return request
+    }
+
+    private func perform(_ request: URLRequest, pairCanBeFull: Bool) async throws -> PeerEndpoint? {
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw SignalingError.decode }
+        if http.statusCode == 204 { return nil }
+        if pairCanBeFull && http.statusCode == 409 { throw SignalingError.pairFull }
+        guard (200..<300).contains(http.statusCode) else {
+            throw SignalingError.http(http.statusCode)
+        }
+        guard let peer = Self.parsePeer(data) else { throw SignalingError.decode }
+        return peer
+    }
+
+    private static func isAllowed(_ url: URL, allowInsecureLocalhost: Bool) -> Bool {
+        guard url.user == nil,
+              url.password == nil,
+              url.query == nil,
+              url.fragment == nil,
+              url.path.isEmpty || url.path == "/",
+              let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased()
+        else { return false }
+        if scheme == "https" { return true }
+        let localHosts = ["localhost", "127.0.0.1", "::1"]
+        return allowInsecureLocalhost && scheme == "http" && localHosts.contains(host)
+    }
 
     private static func parsePeer(_ data: Data) -> PeerEndpoint? {
         guard !data.isEmpty,
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let publicKey = obj["publicKey"] as? String,
-              let ip = obj["ip"] as? String
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let publicKey = object["publicKey"] as? String,
+              DeviceIdentity.parsePeerPublicKey(publicKey) != nil,
+              let ip = object["ip"] as? String,
+              !ip.isEmpty
         else { return nil }
         let portValue: UInt16?
-        if let p = obj["port"] as? Int { portValue = UInt16(exactly: p) }
-        else if let p = obj["port"] as? Double { portValue = UInt16(exactly: p) }
-        else { portValue = nil }
-        guard let port = portValue, !publicKey.isEmpty, !ip.isEmpty else { return nil }
+        if let port = object["port"] as? Int {
+            portValue = UInt16(exactly: port)
+        } else if let port = object["port"] as? Double {
+            portValue = UInt16(exactly: port)
+        } else {
+            portValue = nil
+        }
+        guard let port = portValue else { return nil }
         return PeerEndpoint(publicKey: publicKey, ip: ip, port: port)
     }
 }

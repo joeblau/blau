@@ -42,11 +42,11 @@ const ogImage = new URL('/og.png', Astro.site ?? 'https://blau.app').href;
     <title>{title}</title>
 
     <!-- Reveal styles are gated on .js so nothing is hidden without JavaScript -->
-    <script is:inline>document.documentElement.classList.add('js');</script>
+    <script is:inline src="/scripts/head.js"></script>
   </head>
   <body>
     <slot />
-    <script src="../scripts/main.ts"></script>
+    <script is:inline src="/scripts/main.js"></script>
   </body>
 </html>
 

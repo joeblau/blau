@@ -48,9 +48,12 @@ root with caching:
 bun install        # resolves every workers/* workspace
 bun run dev        # turbo run dev   — Astro dev server (+ rendezvous)
 bun run build      # turbo run build — cached static build
+bun run ci         # lint, type/metadata checks, tests, builds, and audit
 ```
 
 Or run a single workspace directly, e.g. `cd workers/web && bun run dev`.
+Production deployment, rollback, security-header, and least-privilege token
+details are in [`docs/operations.md`](docs/operations.md).
 
 ## Notes security boundary
 

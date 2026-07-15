@@ -7,7 +7,7 @@
     </header>
 
     <div class="cockpit__grid">
-      <div class="cockpit__stage reveal" style="--delay:90ms">
+      <div class="cockpit__stage reveal delay-90">
         <div class="cockpit__sticky">
           <div class="frame cockpit__mock" aria-hidden="true">
             <div class="cockpit__mockbar mono">Pilot — ~/src/blau</div>
@@ -77,29 +77,4 @@
       </ul>
     </div>
   </div>
-
-  <script>
-    // Scroll-spy: highlight the mock pane matching the row in view.
-    // Desktop only — below 1024px the mock unsticks and scrolls away.
-    const cockpitSection = document.getElementById('cockpit');
-    if (
-      cockpitSection &&
-      'IntersectionObserver' in window &&
-      window.matchMedia('(min-width: 1025px)').matches
-    ) {
-      const cockpitPanes = cockpitSection.querySelectorAll<HTMLElement>('.cockpit__pane[data-pane-target]');
-      const setActivePane = (name: string) => {
-        cockpitPanes.forEach((p) => p.classList.toggle('is-active', p.dataset.paneTarget === name));
-      };
-      const cockpitIO = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) setActivePane((entry.target as HTMLElement).dataset.pane || 'none');
-          });
-        },
-        { rootMargin: '-42% 0px -42% 0px', threshold: 0 }
-      );
-      cockpitSection.querySelectorAll('.cockpit__row[data-pane]').forEach((row) => cockpitIO.observe(row));
-    }
-  </script>
 </section>
