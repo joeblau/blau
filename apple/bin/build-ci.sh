@@ -6,6 +6,8 @@ PROJECT="$APPLE_ROOT/blau.xcodeproj"
 DERIVED_ROOT="${BLAU_DERIVED_DATA:-${TMPDIR:-/tmp}/blau-builds}"
 PACKAGES="${BLAU_SOURCE_PACKAGES:-${TMPDIR:-/tmp}/blau-source-packages}"
 
+"$APPLE_ROOT/bin/app-icon-tool.swift" validate
+
 build() {
   local scheme="$1"
   local destination="$2"

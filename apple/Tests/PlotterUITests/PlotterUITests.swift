@@ -27,6 +27,10 @@ final class PlotterUITests: XCTestCase {
         app.launchArguments += ["-demoMode", "YES"]
         app.launch()
 
+        let canvas = app.descendants(matching: .any)["AnnotationCanvas"]
+        XCTAssertTrue(canvas.waitForExistence(timeout: 2))
+        let expectedDrawingState = "2 annotation strokes"
+
         for orientation in [
             UIDeviceOrientation.portrait,
             .landscapeLeft,
@@ -35,6 +39,17 @@ final class PlotterUITests: XCTestCase {
         ] {
             XCUIDevice.shared.orientation = orientation
             XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 2))
+            let expectedPortraitLayout = orientation == .portrait || orientation == .portraitUpsideDown
+            let layoutPredicate = NSPredicate { evaluatedObject, _ in
+                guard let element = evaluatedObject as? XCUIElement else { return false }
+                let frame = element.frame
+                let hasExpectedLayout = expectedPortraitLayout
+                    ? frame.height > frame.width
+                    : frame.width > frame.height
+                return hasExpectedLayout && element.value as? String == expectedDrawingState
+            }
+            expectation(for: layoutPredicate, evaluatedWith: canvas)
+            waitForExpectations(timeout: 3)
         }
     }
 }

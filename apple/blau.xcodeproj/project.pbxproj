@@ -23,7 +23,7 @@
 		1B2FABFA4D9EDFD953FB0AF0 /* UsageConsentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2202956A27B1E6B78F6F5D3D /* UsageConsentTests.swift */; };
 		1B602219DEBC76B38ACFEE47 /* MarkdownImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C45B6165F2F6CAEACDFF4FB /* MarkdownImage.swift */; };
 		1C0AED863F4441C1880AD91D /* ReliableMessenger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271D385A8DA926A540CE6710 /* ReliableMessenger.swift */; };
-		1C339E4DD14A67E782134F62 /* RoyalVNCKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6E9BD40D67F1BCD6E626A7DC /* RoyalVNCKit */; };
+		1C339E4DD14A67E782134F62 /* CodeEditLanguages in Frameworks */ = {isa = PBXBuildFile; productRef = 17A204F6C41268C5D43D828E /* CodeEditLanguages */; };
 		1CA7F3A0C7FE6D35905BADD4 /* MouseBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA97D476477BE66A97A9D77 /* MouseBridge.swift */; };
 		1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 132CB022A0BDFF0DE96316EF /* ContentView.swift */; };
 		1E52F4B58A701BDEFF78E2D0 /* Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC9BB0F198A6D5E8298B3E1 /* Note.swift */; };
@@ -36,6 +36,7 @@
 		25476346FC517A4BD788D76B /* SignalingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E59DAB0A4EFD8A5F838D0A8 /* SignalingClient.swift */; };
 		25525746FC699DBA275B6681 /* WingmanCommandTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AB3DB6D05A10CA69E15605E /* WingmanCommandTests.swift */; };
 		255E48A2365C7AA480C081DC /* LocalServerProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB128E7236AC4C65E97A2041 /* LocalServerProbe.swift */; };
+		257301D7346DC77D7337C64B /* RoyalVNCKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6E9BD40D67F1BCD6E626A7DC /* RoyalVNCKit */; };
 		261D89B3A20F7A65612CE7F2 /* ProcessRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 628D381C1EEC9BD11FE6EB4E /* ProcessRunnerTests.swift */; };
 		26EB7CD32F750C05EC0509AC /* WorkspaceActionWatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92E2CDF8F11C49CE7F927643 /* WorkspaceActionWatcherTests.swift */; };
 		282117FA34ABEFD120352576 /* MarkdownTableFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03BA691E7D942BC353371889 /* MarkdownTableFormatterTests.swift */; };
@@ -51,12 +52,14 @@
 		37EADAE9D95AC0783A100A10 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 5C1264368FD7B88CE2870492 /* WhisperKit */; };
 		382D7CFC1ED52E75E155F9C7 /* WingmanDeliveryState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C5A897F3BEC63D33F4496F /* WingmanDeliveryState.swift */; };
 		38D1B80004FFC5165F685077 /* RemoteDesktopViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0914A44923ED7CBD1EC18FAD /* RemoteDesktopViewer.swift */; };
+		3A25C722D05FAAAA6B3F8F20 /* PlotterGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE322B74FFF30F531624CC4E /* PlotterGeometry.swift */; };
 		3DA4B44B89281F76759EE2CE /* InkOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D88EA79C48861054839A54 /* InkOverlay.swift */; };
 		3F53B158E0DF1B99E6E6E53B /* FrameProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51953FE31BA534927A942C96 /* FrameProtocol.swift */; };
 		4014326878763DCFCDEFD4A9 /* GhosttyInputRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A7B90C5940A776273E13D /* GhosttyInputRegressionTests.swift */; };
 		409BF267099B0CC2035B8471 /* SignalingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E59DAB0A4EFD8A5F838D0A8 /* SignalingClient.swift */; };
 		42AD1C88122F979531C2C527 /* RepositoryPollingSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2E7DF37EA94BAC2FDEAB71B /* RepositoryPollingSchedulerTests.swift */; };
 		43359E06161C1CFB9610398F /* SecureChannelDeadline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68DD092D8ED9F34EC42D8241 /* SecureChannelDeadline.swift */; };
+		4526E461A2B2FDF05C746045 /* PlotterGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE322B74FFF30F531624CC4E /* PlotterGeometry.swift */; };
 		462DAF21F8E2358AA293B0ED /* PeerSyncAuthenticationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C367CD809AB561EB25F80458 /* PeerSyncAuthenticationTests.swift */; };
 		479E8C915A0648AF2533D59F /* ReplayWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D806B2F6BB75F102EA196B1F /* ReplayWindow.swift */; };
 		48B57B6199067D9FB4CB7D93 /* SyncMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67FAA18AA33DB039B0026206 /* SyncMessages.swift */; };
@@ -99,6 +102,7 @@
 		77B72900D09DBEF8FB2ED47E /* Wingman Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		77E0A9658F4C1F734114431E /* TrackpadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDB98CD0F5BCD145C5B14904 /* TrackpadView.swift */; };
 		7870D5E6E8A740AE7DAA76CB /* SignalingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E59DAB0A4EFD8A5F838D0A8 /* SignalingClient.swift */; };
+		7A37AD00419D5E56CE9F1116 /* PlotterGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE322B74FFF30F531624CC4E /* PlotterGeometry.swift */; };
 		7AB890387351E6DFD8F96F64 /* PlotterLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63CD5071FA5C9733D90B190B /* PlotterLiveActivity.swift */; };
 		7AD38453BD76B30C4F82DE43 /* PlotterWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 54378CCC8B919AFA650CF9E1 /* PlotterWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7C8C2A101382F27189DA38D6 /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */; };
@@ -110,7 +114,6 @@
 		84FC1A823C720C809A576D45 /* DeviceCaptureSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC9833035A28E24597A8997 /* DeviceCaptureSession.swift */; };
 		85D6C7BFF0B31DC7338EA4EA /* SimctlBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DA0D477900A0B6CF1D78425 /* SimctlBridge.swift */; };
 		86557E84E7B1FC2703488521 /* SecureChannelTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 860F562B6ECC3F208F44D970 /* SecureChannelTransport.swift */; };
-		870295EC4EDA044F54CE9E6D /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0057932203C8B246C76D50DC /* GhosttyKit.xcframework */; };
 		873845340784690BC3748654 /* ScreenMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB7A71E179389DD6C888CCD /* ScreenMirror.swift */; };
 		89BEE9E3B7E25F751C3E5D42 /* SimulatorHID.swift in Sources */ = {isa = PBXBuildFile; fileRef = D663ACF8E2F0BC4AFD374515 /* SimulatorHID.swift */; };
 		89F1AA2347092C088C969903 /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47FBC3890175E320C78E68E1 /* DeviceIdentity.swift */; };
@@ -172,6 +175,7 @@
 		D412F03D2446976AA7E56B9F /* TranscriptionLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F61599BA0EAFD351421F570 /* TranscriptionLifecycleTests.swift */; };
 		D844E2D4F11B2A24F1D4F230 /* RemoteDesktopView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B43EBD7F0CDA66C9C699E451 /* RemoteDesktopView.swift */; };
 		D859465E4C5823C14179442F /* RemoteScreenDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2FB7766C24786389E2F582 /* RemoteScreenDiscovery.swift */; };
+		D88F27A1E82FF7D27AEC57D3 /* PlotterGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4A5AA4AA26EDE5A74A49C8 /* PlotterGeometryTests.swift */; };
 		D8C5507B8AD7FAE2078411E0 /* UsageInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71F65C37693EE6436E31B773 /* UsageInspectorView.swift */; };
 		DA86DAE82E6503F4950D487A /* SnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64D18628BFB58D751B964957 /* SnapshotHelper.swift */; };
 		DD04349E77784B2752D8407F /* WingmanDeliveryState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C5A897F3BEC63D33F4496F /* WingmanDeliveryState.swift */; };
@@ -183,9 +187,9 @@
 		EA50E58FBC3913F75B5535FD /* PrivacyManifestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6705AED63D291136F8D0EB87 /* PrivacyManifestTests.swift */; };
 		EA6044046223AE65A20D870B /* MarkdownStyler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3773008E360B991866932E4A /* MarkdownStyler.swift */; };
 		EBB73BC8A608563AC9359478 /* SecureChannelDeadline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68DD092D8ED9F34EC42D8241 /* SecureChannelDeadline.swift */; };
-		EECD02F2C6B395905ECDC4CD /* CodeEditLanguages in Frameworks */ = {isa = PBXBuildFile; productRef = 17A204F6C41268C5D43D828E /* CodeEditLanguages */; };
+		EECD02F2C6B395905ECDC4CD /* CodeEditSourceEditor in Frameworks */ = {isa = PBXBuildFile; productRef = B25F722F3EAE02E14DD52E64 /* CodeEditSourceEditor */; };
 		EF6268702B8DB6CF936E2180 /* WorkspaceActionWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E831A131F5C50AD8808B7E /* WorkspaceActionWatcher.swift */; };
-		F2F8EB46FFF76269E37F2F2D /* CodeEditSourceEditor in Frameworks */ = {isa = PBXBuildFile; productRef = B25F722F3EAE02E14DD52E64 /* CodeEditSourceEditor */; };
+		F2F8EB46FFF76269E37F2F2D /* GhosttyKit in Frameworks */ = {isa = PBXBuildFile; productRef = 51142BF5392A7E09E03E323B /* GhosttyKit */; };
 		F69A855D82946B5F16665A92 /* MarkdownTableFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66D7FE5081E65EA4C78E83A5 /* MarkdownTableFormatter.swift */; };
 		F75FC2F068710EC5DA74BE40 /* ReplayWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D806B2F6BB75F102EA196B1F /* ReplayWindow.swift */; };
 		F797C21E5A72C28BD91D6073 /* GitCommitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */; };
@@ -272,7 +276,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		0057932203C8B246C76D50DC /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GhosttyKit.xcframework; path = Frameworks/GhosttyKit.xcframework; sourceTree = "<group>"; };
 		0146AB6C59B6957CE9B7E874 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		022BB865558A1BCDA0866A50 /* SimulatorRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorRegistry.swift; sourceTree = "<group>"; };
 		03BA691E7D942BC353371889 /* MarkdownTableFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTableFormatterTests.swift; sourceTree = "<group>"; };
@@ -325,6 +328,7 @@
 		4AD843F2429472CDAB91130E /* FileFinderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileFinderTests.swift; sourceTree = "<group>"; };
 		4D5EBBD224098EACB274641C /* BrowserAnnotate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAnnotate.swift; sourceTree = "<group>"; };
 		4F06639323C2B403D53DEBC7 /* CopilotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotUITests.swift; sourceTree = "<group>"; };
+		4F4A5AA4AA26EDE5A74A49C8 /* PlotterGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotterGeometryTests.swift; sourceTree = "<group>"; };
 		51953FE31BA534927A942C96 /* FrameProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameProtocol.swift; sourceTree = "<group>"; };
 		52A71DC4B75C15342693E47C /* SyncMessagesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMessagesTests.swift; sourceTree = "<group>"; };
 		52D5914A6EBA1115A33AE425 /* PilotTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PilotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -390,6 +394,7 @@
 		AFEA082D543FE38BE6F626A3 /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
 		B028DA279E32AB30A1A75942 /* CommitListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitListView.swift; sourceTree = "<group>"; };
 		B32004970F580A704569F743 /* UsageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageStore.swift; sourceTree = "<group>"; };
+		B399FC6C5A8441DC139BF55C /* GhosttyKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = GhosttyKit; path = Packages/GhosttyKit; sourceTree = SOURCE_ROOT; };
 		B43EBD7F0CDA66C9C699E451 /* RemoteDesktopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDesktopView.swift; sourceTree = "<group>"; };
 		B56BD17012C0D3186C1E4792 /* LocalServerScannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalServerScannerTests.swift; sourceTree = "<group>"; };
 		B944283C684052D8E37CEA34 /* ConnectionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionState.swift; sourceTree = "<group>"; };
@@ -410,6 +415,7 @@
 		DC0508AE36331AD5FF847915 /* SecureIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureIdentity.swift; sourceTree = "<group>"; };
 		DC8EF4863BC5170A0F737E82 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		DCB7A71E179389DD6C888CCD /* ScreenMirror.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenMirror.swift; sourceTree = "<group>"; };
+		DE322B74FFF30F531624CC4E /* PlotterGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotterGeometry.swift; sourceTree = "<group>"; };
 		DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitCommitStore.swift; sourceTree = "<group>"; };
 		DFC9BB0F198A6D5E8298B3E1 /* Note.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Note.swift; sourceTree = "<group>"; };
 		DFE92003FF31404674DF96FD /* PlotterActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotterActivityController.swift; sourceTree = "<group>"; };
@@ -434,10 +440,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				870295EC4EDA044F54CE9E6D /* GhosttyKit.xcframework in Frameworks */,
-				F2F8EB46FFF76269E37F2F2D /* CodeEditSourceEditor in Frameworks */,
-				EECD02F2C6B395905ECDC4CD /* CodeEditLanguages in Frameworks */,
-				1C339E4DD14A67E782134F62 /* RoyalVNCKit in Frameworks */,
+				F2F8EB46FFF76269E37F2F2D /* GhosttyKit in Frameworks */,
+				EECD02F2C6B395905ECDC4CD /* CodeEditSourceEditor in Frameworks */,
+				1C339E4DD14A67E782134F62 /* CodeEditLanguages in Frameworks */,
+				257301D7346DC77D7337C64B /* RoyalVNCKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -465,14 +471,6 @@
 			path = Sources/PlotterWidgets;
 			sourceTree = "<group>";
 		};
-		41CFAF10066345B5C90B9AAC /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				0057932203C8B246C76D50DC /* GhosttyKit.xcframework */,
-			);
-			name = Frameworks;
-			sourceTree = "<group>";
-		};
 		488AE8285CB6D6627B1BCABE /* Wingman Watch App */ = {
 			isa = PBXGroup;
 			children = (
@@ -482,6 +480,14 @@
 			);
 			name = "Wingman Watch App";
 			path = "Sources/Wingman/Wingman Watch App";
+			sourceTree = "<group>";
+		};
+		4E73B25C25AB35D7DA13D49F /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				B399FC6C5A8441DC139BF55C /* GhosttyKit */,
+			);
+			path = Packages;
 			sourceTree = "<group>";
 		};
 		552E741828639BF19E6BC0CA /* PilotTests */ = {
@@ -538,6 +544,7 @@
 				21ED1F910DA10BF333AC3844 /* FrameLinkSecurityTests.swift */,
 				9CFEC5B017F014E9A487D037 /* FrameProtocolTests.swift */,
 				C367CD809AB561EB25F80458 /* PeerSyncAuthenticationTests.swift */,
+				4F4A5AA4AA26EDE5A74A49C8 /* PlotterGeometryTests.swift */,
 				0D11744ADF836F5AE0046ECE /* SecureChannelTests.swift */,
 				04CAD689C9A4EF568EB5EF7B /* SecurePairingStoreTests.swift */,
 				341905DD9245C885926FDD10 /* SignalingClientTests.swift */,
@@ -569,6 +576,7 @@
 			isa = PBXGroup;
 			children = (
 				20A51A5B0884AD1E95B51D5E /* PlotterActivityAttributes.swift */,
+				DE322B74FFF30F531624CC4E /* PlotterGeometry.swift */,
 				682AB09642BE2C3FA96FD284 /* PlotterSnapshotStore.swift */,
 			);
 			name = PlotterShared;
@@ -743,6 +751,7 @@
 			children = (
 				68A6AFD0CF88B5D0D03A00E1 /* Copilot */,
 				72E7E272A076DD32552CFE89 /* CopilotUITests */,
+				4E73B25C25AB35D7DA13D49F /* Packages */,
 				DE30D289D5BAF3D3994A8791 /* Pilot */,
 				552E741828639BF19E6BC0CA /* PilotTests */,
 				CC28789075F43F1B67EE26A6 /* Plotter */,
@@ -752,7 +761,6 @@
 				86DDEDCE771126217BE93BF1 /* Shared */,
 				63DF1FFF0A3F9443839E1557 /* SharedTests */,
 				488AE8285CB6D6627B1BCABE /* Wingman Watch App */,
-				41CFAF10066345B5C90B9AAC /* Frameworks */,
 				F8B4DA7DF1CF626E57F97CC4 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -841,6 +849,7 @@
 			);
 			name = Pilot;
 			packageProductDependencies = (
+				51142BF5392A7E09E03E323B /* GhosttyKit */,
 				B25F722F3EAE02E14DD52E64 /* CodeEditSourceEditor */,
 				17A204F6C41268C5D43D828E /* CodeEditLanguages */,
 				6E9BD40D67F1BCD6E626A7DC /* RoyalVNCKit */,
@@ -1012,6 +1021,7 @@
 				A897E60FF62D36C0B29E3DAB /* XCRemoteSwiftPackageReference "CodeEditSourceEditor" */,
 				42CBA16A25AD5D46E7F1A183 /* XCRemoteSwiftPackageReference "royalvnc" */,
 				9EF4A371110F9A516524F6B6 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
+				320E1904178479F15DCEAB9D /* XCLocalSwiftPackageReference "Packages/GhosttyKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F8B4DA7DF1CF626E57F97CC4 /* Products */;
@@ -1075,6 +1085,8 @@
 				BB294564A5F70A7098DD001D /* FrameLinkSecurityTests.swift in Sources */,
 				4AACBD292BDABB8FD5AF98EE /* FrameProtocolTests.swift in Sources */,
 				462DAF21F8E2358AA293B0ED /* PeerSyncAuthenticationTests.swift in Sources */,
+				4526E461A2B2FDF05C746045 /* PlotterGeometry.swift in Sources */,
+				D88F27A1E82FF7D27AEC57D3 /* PlotterGeometryTests.swift in Sources */,
 				293188CEE10FB1DD38C66CFB /* SecureChannelTests.swift in Sources */,
 				B4C47AAC60ABF70D353374B9 /* SecurePairingStoreTests.swift in Sources */,
 				20F4C5D96E0C6D3BFAC934A2 /* SignalingClientTests.swift in Sources */,
@@ -1126,6 +1138,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5CE443D65778BB0585311E3A /* PlotterActivityAttributes.swift in Sources */,
+				7A37AD00419D5E56CE9F1116 /* PlotterGeometry.swift in Sources */,
 				7AB890387351E6DFD8F96F64 /* PlotterLiveActivity.swift in Sources */,
 				4C9E895130BECBE40AB68F22 /* PlotterSnapshotStore.swift in Sources */,
 				6827D1977814F3808D1FBACF /* PlotterSnapshotWidget.swift in Sources */,
@@ -1258,6 +1271,7 @@
 				C6C8CE7D36C5337515F76BA2 /* PlotterActivityAttributes.swift in Sources */,
 				1A278D4E89A91729E34FC9BE /* PlotterActivityController.swift in Sources */,
 				1229285BE969EB6EE4F9791C /* PlotterApp.swift in Sources */,
+				3A25C722D05FAAAA6B3F8F20 /* PlotterGeometry.swift in Sources */,
 				8E7E4A3268249CACC57B046D /* PlotterSnapshotStore.swift in Sources */,
 				61B433541ADB12AA681DD9F3 /* ReliableMessenger.swift in Sources */,
 				3369A804F0446E79A2209662 /* ReplayWindow.swift in Sources */,
@@ -1354,10 +1368,6 @@
 				CODE_SIGN_ENTITLEMENTS = Sources/Pilot/Pilot.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"\"Frameworks\"",
-				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/Pilot/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1743,10 +1753,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"\"Frameworks\"",
-				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/Pilot/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1989,6 +1995,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		320E1904178479F15DCEAB9D /* XCLocalSwiftPackageReference "Packages/GhosttyKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/GhosttyKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		42CBA16A25AD5D46E7F1A183 /* XCRemoteSwiftPackageReference "royalvnc" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -2029,6 +2042,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 71EDA6A5C3688FCD868ADCCC /* XCRemoteSwiftPackageReference "CodeEditLanguages" */;
 			productName = CodeEditLanguages;
+		};
+		51142BF5392A7E09E03E323B /* GhosttyKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = GhosttyKit;
 		};
 		5C1264368FD7B88CE2870492 /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;

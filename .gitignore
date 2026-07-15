@@ -66,6 +66,7 @@ workers/web/.astro/
 .dev.vars
 
 ### Build artifacts ###
+**/.build/
 build/
 *.profraw
 
@@ -75,3 +76,4 @@ apple/fastlane/swift/
 apple/fastlane/report.xml
 apple/fastlane/test_output/
 apple/fastlane/Preview.html
+release-artifacts/
