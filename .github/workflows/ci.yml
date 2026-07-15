@@ -71,6 +71,8 @@ jobs:
       BLAU_SOURCE_PACKAGES: ${{ github.workspace }}/apple/.ci-source-packages
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          lfs: true
       - name: Verify supported toolchain
         run: |
           xcodebuild -version
