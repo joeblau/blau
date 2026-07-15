@@ -1,0 +1,8 @@
+{
+  "model": "openai_whisper-base",
+  "cases": [
+    { "audioPath": "/absolute/path/open-dashboard.aiff", "expected": "open the dashboard" },
+    { "audioPath": "/absolute/path/run-tests.aiff", "expected": "run the tests" },
+    { "audioPath": "/absolute/path/show-status.aiff", "expected": "show git status" }
+  ]
+}

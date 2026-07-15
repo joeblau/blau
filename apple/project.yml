@@ -21,8 +21,8 @@ settings:
 
 packages:
   WhisperKit:
-    url: https://github.com/argmaxinc/WhisperKit.git
-    from: "0.18.0"
+    url: https://github.com/argmaxinc/argmax-oss-swift.git
+    from: "1.0.0"
   CodeEditSourceEditor:
     url: https://github.com/CodeEditApp/CodeEditSourceEditor.git
     exactVersion: "0.15.2"
@@ -192,6 +192,7 @@ targets:
     platform: watchOS
     sources:
       - Sources/Wingman/Wingman Watch App
+      - Sources/Shared/WingmanDeliveryState.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.copilot.watchkitapp

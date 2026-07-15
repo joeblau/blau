@@ -9,7 +9,7 @@ private let copilotConnectivityLogger = Logger(
     category: "WatchConnectivity"
 )
 
-private enum WingmanGesturePayload {
+enum WingmanGesturePayload {
     static let gestureKey = "gesture"
     static let doublePinch = "doublePinch"
     static let commandIDKey = "commandID"
@@ -31,6 +31,43 @@ private enum WingmanGesturePayload {
     }
 }
 
+enum WingmanCommandDecision: Equatable {
+    case acceptAndExecute
+    case acknowledgeDuplicate
+    case rejectStale
+    case rejectUnavailable
+}
+
+/// A tiny, deterministic idempotency boundary for time-sensitive Watch
+/// commands. Duplicate live deliveries are acknowledged (so a lost reply can
+/// be retried safely) but are never executed twice.
+struct WingmanCommandLedger {
+    private(set) var accepted: [UUID: Date] = [:]
+
+    mutating func decide(
+        _ command: WingmanGesturePayload.Command,
+        now: Date,
+        isPilotConnected: Bool
+    ) -> WingmanCommandDecision {
+        accepted = accepted.filter {
+            now.timeIntervalSince($0.value) <= WingmanGesturePayload.maximumAge
+        }
+
+        let age = now.timeIntervalSince(command.sentAt)
+        guard age >= -1, age <= WingmanGesturePayload.maximumAge else {
+            return .rejectStale
+        }
+        if accepted[command.id] != nil {
+            return .acknowledgeDuplicate
+        }
+        guard isPilotConnected else {
+            return .rejectUnavailable
+        }
+        accepted[command.id] = now
+        return .acceptAndExecute
+    }
+}
+
 /// WatchConnectivity imports its Objective-C reply block without Sendable
 /// conformance. The framework owns and serializes this callback; wrapping it
 /// makes that contract explicit at the Swift concurrency boundary.
@@ -42,7 +79,7 @@ private struct WingmanReplyHandler: @unchecked Sendable {
 final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificationCenterDelegate, @unchecked Sendable {
     var isWatchReachable = false
     var syncService: PeerSyncService?
-    private var acceptedWingmanCommands: [UUID: Date] = [:]
+    private var wingmanLedger = WingmanCommandLedger()
 
     func session(_ session: WCSession,
                  activationDidCompleteWith activationState: WCSessionActivationState,
@@ -94,11 +131,13 @@ final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificatio
     }
 
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
-        handleWingmanPayload(userInfo, transport: "transferUserInfo")
+        // Terminal controls are intentionally live-only. Ignore queued payloads
+        // from older Wingman builds instead of pressing Enter after reconnect.
+        copilotConnectivityLogger.notice("Ignored queued Wingman transferUserInfo payload.")
     }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        handleWingmanPayload(applicationContext, transport: "applicationContext")
+        copilotConnectivityLogger.notice("Ignored queued Wingman applicationContext payload.")
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
@@ -127,27 +166,26 @@ final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificatio
     @discardableResult
     private func acceptWingmanCommand(_ command: WingmanGesturePayload.Command, transport: String) -> Bool {
         let now = Date()
-        acceptedWingmanCommands = acceptedWingmanCommands.filter {
-            now.timeIntervalSince($0.value) <= WingmanGesturePayload.maximumAge
-        }
-        let age = now.timeIntervalSince(command.sentAt)
-        guard age >= -1, age <= WingmanGesturePayload.maximumAge else {
+        switch wingmanLedger.decide(
+            command,
+            now: now,
+            isPilotConnected: syncService?.isConnected == true
+        ) {
+        case .rejectStale:
             copilotConnectivityLogger.notice("Rejected stale Wingman command over \(transport, privacy: .public).")
             return false
-        }
-        guard acceptedWingmanCommands[command.id] == nil else {
-            copilotConnectivityLogger.notice("Rejected duplicate Wingman command over \(transport, privacy: .public).")
-            return false
-        }
-        guard syncService?.isConnected == true else {
+        case .rejectUnavailable:
             copilotConnectivityLogger.notice("Rejected Wingman command because Pilot is disconnected.")
             return false
+        case .acknowledgeDuplicate:
+            copilotConnectivityLogger.info("Acknowledged already-executed Wingman command over \(transport, privacy: .public).")
+            return true
+        case .acceptAndExecute:
+            copilotConnectivityLogger.info("Accepted fresh double pinch over \(transport, privacy: .public). Forwarding as Enter to Pilot.")
+            PhoneSessionDelegate.playDoublePinchHaptic()
+            syncService?.send(.terminalInput(.enter))
+            return true
         }
-        acceptedWingmanCommands[command.id] = now
-        copilotConnectivityLogger.info("Accepted fresh double pinch over \(transport, privacy: .public). Forwarding as Enter to Pilot.")
-        PhoneSessionDelegate.playDoublePinchHaptic()
-        syncService?.send(.terminalInput(.enter))
-        return true
     }
 
     @MainActor
