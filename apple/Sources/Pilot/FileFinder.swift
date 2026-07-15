@@ -391,31 +391,20 @@ final class FileFinder {
     /// the caller can fall back to a filesystem walk.
     private nonisolated static func gitListFiles(root: String) -> [FileItem]? {
         if currentTaskIsCancelled() { return [] }
-        let process = Process()
-        let stdout = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [
-            "git", "-C", root,
-            "ls-files", "--cached", "--others", "--exclude-standard", "-z",
-        ]
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-        // Inherit a sane PATH so `git` resolves under both Homebrew and system installs.
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (env["PATH"] ?? "")
-        process.environment = env
-
-        do {
-            try process.run()
-        } catch {
-            return nil   // git not found / not launchable — fall back to walking.
+        let invocation = ProcessInvocation.developerTool(
+            "git",
+            arguments: [
+                "-C", root,
+                "ls-files", "--cached", "--others", "--exclude-standard", "-z",
+            ],
+            timeout: .seconds(30),
+            standardOutputLimit: 32 * 1_024 * 1_024
+        )
+        guard let result = try? ProcessRunner.runBlocking(invocation) else {
+            return nil   // git not found / not a repository — fall back to walking.
         }
-
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
         if currentTaskIsCancelled() { return [] }
-        // Non-zero exit means "not a git repository" (or similar): bail to the walk.
-        guard process.terminationStatus == 0 else { return nil }
+        let data = result.standardOutput
 
         let prefix = root.hasSuffix("/") ? root : root + "/"
         var items: [FileItem] = []

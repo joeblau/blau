@@ -51,14 +51,14 @@ final class GitHubTasksStore {
         }
         // Spinner only when we have nothing to show; background polls update
         // silently so the list doesn't flash.
-        fetch(showSpinner: tasks.isEmpty)
+        fetch(showSpinner: tasks.isEmpty, policy: .automatic)
     }
 
     private func startPolling() {
         pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: Self.pollInterval, repeats: true) { _ in
             Task { @MainActor in
-                self.fetch(showSpinner: false)
+                self.fetch(showSpinner: false, policy: .automatic)
             }
         }
     }
@@ -70,12 +70,16 @@ final class GitHubTasksStore {
         loadTask = nil
     }
 
-    private func fetch(showSpinner: Bool) {
+    func refresh() {
+        fetch(showSpinner: tasks.isEmpty, policy: .manual)
+    }
+
+    private func fetch(showSpinner: Bool, policy: RepositoryRefreshPolicy) {
         guard let directory else { return }
         loadTask?.cancel()
         if showSpinner { isLoading = true }
         loadTask = Task {
-            let (issues, error) = await Self.fetch(in: directory)
+            let (issues, error) = await Self.fetch(in: directory, policy: policy)
             if Task.isCancelled { return }
             isLoading = false
             errorMessage = error
@@ -88,49 +92,32 @@ final class GitHubTasksStore {
         }
     }
 
-    nonisolated private static func ghPath() -> String? {
-        ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
-            .first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
-
-    nonisolated private static func fetch(in directory: String) async -> ([GitHubTask], String?) {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                guard let gh = ghPath() else {
-                    continuation.resume(returning: ([], "GitHub CLI (gh) not found."))
-                    return
-                }
-                let process = Process()
-                let out = Pipe()
-                let err = Pipe()
-                process.executableURL = URL(fileURLWithPath: gh)
-                process.arguments = ["issue", "list", "--state", "open", "--limit", "100",
-                                     "--json", "number,title,url,state"]
-                process.currentDirectoryURL = URL(fileURLWithPath: directory)
-                process.standardOutput = out
-                process.standardError = err
-                process.environment = ProcessInfo.processInfo.environment
-                do {
-                    try process.run()
-                    let data = out.fileHandleForReading.readDataToEndOfFile()
-                    let errData = err.fileHandleForReading.readDataToEndOfFile()
-                    process.waitUntilExit()
-                    guard process.terminationStatus == 0 else {
-                        let message = String(data: errData, encoding: .utf8)?
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        continuation.resume(returning: (
-                            [], (message?.isEmpty == false) ? message! : "Couldn’t load GitHub issues."))
-                        return
-                    }
-                    if let issues = try? JSONDecoder().decode([GitHubTask].self, from: data) {
-                        continuation.resume(returning: (issues, nil))
-                    } else {
-                        continuation.resume(returning: ([], "Couldn’t parse gh output."))
-                    }
-                } catch {
-                    continuation.resume(returning: ([], "Couldn’t run gh."))
-                }
+    nonisolated private static func fetch(
+        in directory: String,
+        policy: RepositoryRefreshPolicy
+    ) async -> ([GitHubTask], String?) {
+        guard let repository = await RepositoryPollingScheduler.shared.repository(for: directory) else {
+            return ([], "This folder is not a Git repository.")
+        }
+        do {
+            let data = try await RepositoryPollingScheduler.shared.data(
+                for: .issues,
+                repository: repository,
+                policy: policy
+            )
+            guard let issues = try? JSONDecoder().decode([GitHubTask].self, from: data) else {
+                return ([], "Couldn’t parse gh output.")
             }
+            return (issues, nil)
+        } catch let error as RepositoryPollingError {
+            return ([], error.localizedDescription)
+        } catch let error as ProcessRunnerError {
+            let detail = error.result?.standardErrorString
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let detail, !detail.isEmpty { return ([], detail) }
+            return ([], "Couldn’t load GitHub issues.")
+        } catch {
+            return ([], "Couldn’t load GitHub issues.")
         }
     }
 }
@@ -163,6 +150,14 @@ struct GitHubTasksView: View {
                     .controlSize(.mini)
             }
             Spacer()
+            Button {
+                store.refresh()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.plain)
+            .disabled(store.isLoading)
+            .help("Refresh GitHub issues")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)

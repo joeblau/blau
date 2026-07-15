@@ -25,8 +25,24 @@ struct InspectorPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            InspectorTabSelector(selection: $selectedTab)
-                .frame(maxWidth: .infinity)
+            HStack(spacing: 8) {
+                InspectorTabSelector(selection: $selectedTab)
+                    .frame(maxWidth: .infinity)
+                if selectedTab == .actions || selectedTab == .commits {
+                    Button {
+                        if selectedTab == .actions {
+                            gitStore.fetchWorkflowRuns(policy: .manual)
+                        } else {
+                            gitStore.fetchCommits(policy: .manual)
+                        }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(gitStore.repoPath.isEmpty)
+                    .help("Refresh repository data")
+                }
+            }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
 

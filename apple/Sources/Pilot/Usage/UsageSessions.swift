@@ -195,17 +195,16 @@ enum UsageSessions {
         /// item's ACL; the `security` CLI is the item's trusted reader and, on
         /// first access, macOS prompts the user to Allow. Read-only.
         private static func readKeychainViaSecurityCLI(service: String) -> Data? {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-            process.arguments = ["find-generic-password", "-s", service, "-w"]
-            let out = Pipe()
-            process.standardOutput = out
-            process.standardError = Pipe()
-            guard (try? process.run()) != nil else { return nil }
-            let data = out.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0,
-                  let value = String(data: data, encoding: .utf8)?
+            let invocation = ProcessInvocation(
+                executableURL: URL(fileURLWithPath: "/usr/bin/security"),
+                arguments: ["find-generic-password", "-s", service, "-w"],
+                timeout: .seconds(30),
+                standardOutputLimit: 1 * 1_024 * 1_024,
+                standardErrorLimit: 64 * 1_024,
+                redactedArgumentIndexes: [2]
+            )
+            guard let result = try? ProcessRunner.runBlocking(invocation),
+                  let value = String(data: result.standardOutput, encoding: .utf8)?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
                   !value.isEmpty else { return nil }
             return value.data(using: .utf8)

@@ -12,15 +12,15 @@ enum SimPrivateFrameworks {
     /// `xcode-select -p`, e.g. `/Applications/Xcode.app/Contents/Developer`.
     static func developerDir() -> String {
         let fallback = "/Applications/Xcode.app/Contents/Developer"
-        let pipe = Pipe()
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
-        process.arguments = ["-p"]
-        process.standardOutput = pipe
-        do { try process.run() } catch { return fallback }
-        process.waitUntilExit()
-        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? fallback
+        let invocation = ProcessInvocation(
+            executableURL: URL(fileURLWithPath: "/usr/bin/xcode-select"),
+            arguments: ["-p"],
+            timeout: .seconds(5),
+            standardOutputLimit: 16 * 1_024
+        )
+        guard let result = try? ProcessRunner.runBlocking(invocation) else { return fallback }
+        let directory = result.standardOutputString.trimmingCharacters(in: .whitespacesAndNewlines)
+        return directory.isEmpty ? fallback : directory
     }
 
     private static let loadOnce: Void = {
