@@ -41,38 +41,17 @@ enum SimctlBridge {
     /// Run `/usr/bin/xcrun <args>`, draining stdout/stderr concurrently so a
     /// large JSON payload can't deadlock against a full pipe buffer.
     static func runXcrun(_ args: [String]) throws -> Data {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = args
-
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-
+        let invocation = ProcessInvocation(
+            executableURL: URL(fileURLWithPath: "/usr/bin/xcrun"),
+            arguments: args,
+            timeout: args.contains("bootstatus") ? .seconds(120) : .seconds(30),
+            standardOutputLimit: 16 * 1_024 * 1_024,
+            standardErrorLimit: 1 * 1_024 * 1_024
+        )
         do {
-            try process.run()
-        } catch {
-            // /usr/bin/xcrun missing entirely is effectively "no tooling".
-            throw SimctlError.toolingMissing
-        }
-
-        // Drain stdout on a background thread; stderr (small) on this one.
-        final class Box: @unchecked Sendable { var data = Data() }
-        let outBox = Box()
-        let outHandle = outPipe.fileHandleForReading
-        let group = DispatchGroup()
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            outBox.data = outHandle.readDataToEndOfFile()
-            group.leave()
-        }
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        group.wait()
-
-        if process.terminationStatus != 0 {
-            let message = String(data: errData, encoding: .utf8) ?? "simctl exited \(process.terminationStatus)"
+            return try ProcessRunner.runBlocking(invocation).standardOutput
+        } catch let error as ProcessRunnerError {
+            let message = error.result?.standardErrorString ?? error.localizedDescription
             if message.contains("unable to find utility")
                 || message.contains("requires Xcode")
                 || message.contains("only the Command Line Tools") {
@@ -80,7 +59,6 @@ enum SimctlBridge {
             }
             throw SimctlError.commandFailed(message.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        return outBox.data
     }
 
     // MARK: - Listing

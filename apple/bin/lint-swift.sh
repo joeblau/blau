@@ -53,7 +53,7 @@ git rev-parse --verify "$BASE" >/dev/null 2>&1 || {
 files=()
 while IFS= read -r file; do files+=("$file"); done < <(
   git diff --name-only --diff-filter=ACMR "${BASE}...HEAD" -- apple/Sources apple/Tests \
-    | rg '\.swift$' || true
+    | grep -E '\.swift$' || true
 )
 if [[ ${#files[@]} -eq 0 ]]; then
   echo "No changed Swift files to lint."

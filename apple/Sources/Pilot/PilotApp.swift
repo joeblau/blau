@@ -302,6 +302,7 @@ struct PilotApp: App {
                     GhosttyRuntime.shared.userZoomFactor = uiZoom
                     // Skip services that prompt for permissions when XCTest is host-running us.
                     guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+                    RepositoryPollingEnvironmentMonitor.shared.start()
                     _ = MouseBridge.shared.ensurePermissions()
                     headphoneDetector.start()
                     setupSync()

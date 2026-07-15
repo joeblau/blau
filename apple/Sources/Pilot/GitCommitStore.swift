@@ -56,7 +56,7 @@ final class GitCommitStore {
 
     func startWatching(directory: String) {
         if repoPath == directory {
-            fetchAll()
+            fetchAll(policy: .automatic)
             if filesystem.isEmpty && !isLoadingFilesystem {
                 fetchFilesystem()
             }
@@ -68,7 +68,7 @@ final class GitCommitStore {
         actions = []
         runs = []
         filesystem = []
-        fetchAll()
+        fetchAll(policy: .automatic)
         fetchFilesystem()
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
@@ -90,18 +90,18 @@ final class GitCommitStore {
         isLoadingFilesystem = false
     }
 
-    func fetchAll() {
-        fetchCommits()
-        fetchWorkflowRuns()
+    func fetchAll(policy: RepositoryRefreshPolicy = .automatic) {
+        fetchCommits(policy: policy)
+        fetchWorkflowRuns(policy: policy)
     }
 
-    func fetchCommits() {
+    func fetchCommits(policy: RepositoryRefreshPolicy = .automatic) {
         guard !repoPath.isEmpty else { return }
         isLoading = true
         let dir = repoPath
 
         Task {
-            let result = await Self.fetchGitData(directory: dir)
+            let result = await Self.fetchGitData(directory: dir, policy: policy)
             // Drop stale results: the user may have switched workspaces while
             // the shell command ran, and these would clobber the new repo's data.
             guard self.repoPath == dir else { return }
@@ -112,12 +112,12 @@ final class GitCommitStore {
 
     /// Actions and runs both come from `gh run list`; one invocation (one
     /// GitHub API round-trip) feeds both instead of two per refresh tick.
-    func fetchWorkflowRuns() {
+    func fetchWorkflowRuns(policy: RepositoryRefreshPolicy = .automatic) {
         guard !repoPath.isEmpty else { return }
         let dir = repoPath
 
         Task {
-            let (actions, runs) = await Self.fetchWorkflowData(directory: dir)
+            let (actions, runs) = await Self.fetchWorkflowData(directory: dir, policy: policy)
             guard self.repoPath == dir else { return }
             self.actions = actions
             self.runs = runs
@@ -137,84 +137,89 @@ final class GitCommitStore {
         }
     }
 
-    private nonisolated static func fetchGitData(directory: String) async -> [GitCommit] {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let logResult = shellRun("git", args: ["log", "--oneline", "--format=%H||%h||%s||%an||%aI", "-10"], in: directory)
-                let parsed = logResult.components(separatedBy: "\n").compactMap { line -> GitCommit? in
-                    let parts = line.components(separatedBy: "||")
-                    guard parts.count >= 5 else { return nil }
-                    return GitCommit(
-                        id: parts[1],
-                        fullSHA: parts[0],
-                        message: parts[2],
-                        author: parts[3],
-                        date: Self.relativeTime(from: parts[4])
-                    )
-                }
-                continuation.resume(returning: parsed)
-            }
+    private nonisolated static func fetchGitData(
+        directory: String,
+        policy: RepositoryRefreshPolicy
+    ) async -> [GitCommit] {
+        guard let repository = await RepositoryPollingScheduler.shared.repository(for: directory),
+              let data = try? await RepositoryPollingScheduler.shared.data(
+                for: .commits,
+                repository: repository,
+                policy: policy
+              ) else { return [] }
+        let logResult = String(decoding: data, as: UTF8.self)
+        return logResult.components(separatedBy: "\n").compactMap { line -> GitCommit? in
+            let parts = line.components(separatedBy: "||")
+            guard parts.count >= 5 else { return nil }
+            return GitCommit(
+                id: parts[1],
+                fullSHA: parts[0],
+                message: parts[2],
+                author: parts[3],
+                date: Self.relativeTime(from: parts[4])
+            )
         }
     }
 
-    private nonisolated static func fetchWorkflowData(directory: String) async -> ([GitAction], [GitRun]) {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = shellRun("gh", args: [
-                    "run", "list", "--limit", "10",
-                    "--json", "databaseId,status,conclusion,displayTitle,headBranch,headSha,name,createdAt,updatedAt,url"
-                ], in: directory)
-
-                var actions: [GitAction] = []
-                var runs: [GitRun] = []
-                if let data = result.data(using: .utf8),
-                   let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                    for item in items {
-                        let name = item["name"] as? String ?? ""
-                        let title = item["displayTitle"] as? String ?? ""
-                        let branch = item["headBranch"] as? String ?? ""
-                        let conclusionStr = item["conclusion"] as? String ?? ""
-                        let statusStr = item["status"] as? String ?? ""
-                        let createdAt = item["createdAt"] as? String ?? ""
-
-                        actions.append(GitAction(
-                            name: name,
-                            displayTitle: title,
-                            headBranch: branch,
-                            headSha: item["headSha"] as? String ?? "",
-                            status: statusStr,
-                            conclusion: conclusionStr,
-                            elapsed: createdAt.isEmpty ? "" : Self.relativeTime(from: createdAt),
-                            url: item["url"] as? String ?? ""
-                        ))
-
-                        let status: GitRun.Status
-                        if conclusionStr == "success" {
-                            status = .success
-                        } else if conclusionStr == "failure" {
-                            status = .failure
-                        } else if statusStr == "in_progress" {
-                            status = .inProgress
-                        } else if statusStr == "queued" {
-                            status = .queued
-                        } else {
-                            status = .unknown
-                        }
-
-                        let updatedAt = item["updatedAt"] as? String ?? ""
-                        runs.append(GitRun(
-                            id: item["databaseId"] as? Int ?? 0,
-                            name: name,
-                            title: title,
-                            branch: branch,
-                            elapsed: Self.relativeTime(from: updatedAt),
-                            status: status
-                        ))
-                    }
-                }
-                continuation.resume(returning: (actions, runs))
-            }
+    private nonisolated static func fetchWorkflowData(
+        directory: String,
+        policy: RepositoryRefreshPolicy
+    ) async -> ([GitAction], [GitRun]) {
+        guard let repository = await RepositoryPollingScheduler.shared.repository(for: directory),
+              let data = try? await RepositoryPollingScheduler.shared.data(
+                for: .workflowRuns,
+                repository: repository,
+                policy: policy
+              ),
+              let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return ([], [])
         }
+
+        var actions: [GitAction] = []
+        var runs: [GitRun] = []
+        for item in items.prefix(10) {
+            let name = item["name"] as? String ?? ""
+            let title = item["displayTitle"] as? String ?? ""
+            let branch = item["headBranch"] as? String ?? ""
+            let conclusionStr = item["conclusion"] as? String ?? ""
+            let statusStr = item["status"] as? String ?? ""
+            let createdAt = item["createdAt"] as? String ?? ""
+
+            actions.append(GitAction(
+                name: name,
+                displayTitle: title,
+                headBranch: branch,
+                headSha: item["headSha"] as? String ?? "",
+                status: statusStr,
+                conclusion: conclusionStr,
+                elapsed: createdAt.isEmpty ? "" : Self.relativeTime(from: createdAt),
+                url: item["url"] as? String ?? ""
+            ))
+
+            let status: GitRun.Status
+            if conclusionStr == "success" {
+                status = .success
+            } else if conclusionStr == "failure" {
+                status = .failure
+            } else if statusStr == "in_progress" {
+                status = .inProgress
+            } else if statusStr == "queued" {
+                status = .queued
+            } else {
+                status = .unknown
+            }
+
+            let updatedAt = item["updatedAt"] as? String ?? ""
+            runs.append(GitRun(
+                id: item["databaseId"] as? Int ?? 0,
+                name: name,
+                title: title,
+                branch: branch,
+                elapsed: Self.relativeTime(from: updatedAt),
+                status: status
+            ))
+        }
+        return (actions, runs)
     }
 
     private nonisolated static func fetchFilesystemData(directory: String) async -> [FileSystemEntry] {
@@ -259,8 +264,16 @@ final class GitCommitStore {
     }
 
     nonisolated static func findGitRoot(from directory: String) -> String? {
-        let result = shellRun("git", args: ["rev-parse", "--show-toplevel"], in: directory)
-        return result.isEmpty ? nil : result
+        let invocation = ProcessInvocation.developerTool(
+            "git",
+            arguments: ["rev-parse", "--show-toplevel"],
+            currentDirectoryURL: URL(fileURLWithPath: directory, isDirectory: true),
+            timeout: .seconds(10),
+            standardOutputLimit: 64 * 1_024
+        )
+        guard let result = try? ProcessRunner.runBlocking(invocation) else { return nil }
+        let root = result.standardOutputString.trimmingCharacters(in: .whitespacesAndNewlines)
+        return root.isEmpty ? nil : root
     }
 
     nonisolated static func listFilesystemEntries(at directoryURL: URL, rootURL: URL) -> [FileSystemEntry] {
@@ -317,25 +330,4 @@ final class GitCommitStore {
         return String(filePath.dropFirst(prefix.count))
     }
 
-    private nonisolated static func shellRun(_ command: String, args: [String], in directory: String) -> String {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [command] + args
-        process.currentDirectoryURL = URL(fileURLWithPath: directory)
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        var env = ProcessInfo.processInfo.environment
-        let extraPaths = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-        env["PATH"] = extraPaths + ":" + (env["PATH"] ?? "")
-        process.environment = env
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return ""
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    }
 }

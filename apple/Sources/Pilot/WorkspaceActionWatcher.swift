@@ -66,8 +66,8 @@ final class WorkspaceActionWatcher {
             fetchTasks[wsID]?.cancel()
             let generation = (fetchGenerations[wsID] ?? 0) + 1
             fetchGenerations[wsID] = generation
-            fetchTasks[wsID] = Task.detached(priority: .utility) { [weak self] in
-                let result = Self.completedRunIDs(in: dir)
+            fetchTasks[wsID] = Task { [weak self] in
+                let result = await Self.completedRunIDs(in: dir)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     guard let self, self.fetchGenerations[wsID] == generation else { return }
@@ -91,14 +91,31 @@ final class WorkspaceActionWatcher {
 
     /// IDs of runs currently in the `completed` status for the repo at `dir`.
     /// Any newly-completed run (vs. the last sweep) is what we badge on.
-    private nonisolated static func completedRunIDs(in dir: String) -> Result<Set<Int>, ActionRunFetchError> {
-        let output: String
-        switch shell("gh", ["run", "list", "--limit", "30", "--json", "databaseId,status"], in: dir) {
-        case .success(let value): output = value
-        case .failure(let error): return .failure(error)
+    private nonisolated static func completedRunIDs(
+        in dir: String
+    ) async -> Result<Set<Int>, ActionRunFetchError> {
+        guard let repository = await RepositoryPollingScheduler.shared.repository(for: dir) else {
+            return .failure(.launchFailed("Not a Git repository"))
         }
-        guard let data = output.data(using: .utf8),
-              let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+        let data: Data
+        do {
+            data = try await RepositoryPollingScheduler.shared.data(
+                for: .workflowRuns,
+                repository: repository,
+                policy: .automatic
+            )
+        } catch let error as ProcessRunnerError {
+            if case .launch(_, let message) = error { return .failure(.launchFailed(message)) }
+            let status: Int32
+            switch error.result?.termination {
+            case .exit(let code), .signal(let code): status = code
+            case nil: status = -1
+            }
+            return .failure(.commandFailed(status))
+        } catch {
+            return .failure(.launchFailed(error.localizedDescription))
+        }
+        guard let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             return .failure(.invalidJSON)
         }
         var ids: Set<Int> = []
@@ -108,34 +125,4 @@ final class WorkspaceActionWatcher {
         return .success(ids)
     }
 
-    private nonisolated static func shell(
-        _ command: String,
-        _ args: [String],
-        in dir: String
-    ) -> Result<String, ActionRunFetchError> {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [command] + args
-        process.currentDirectoryURL = URL(fileURLWithPath: dir)
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (env["PATH"] ?? "")
-        process.environment = env
-        do {
-            try process.run()
-        } catch {
-            return .failure(.launchFailed(error.localizedDescription))
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            return .failure(.commandFailed(process.terminationStatus))
-        }
-        guard let output = String(data: data, encoding: .utf8) else {
-            return .failure(.invalidJSON)
-        }
-        return .success(output.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
 }
