@@ -5,6 +5,8 @@ import AppKit
 /// copied on click. Keys are required to be uppercase (the env convention) so
 /// ordinary prose like `a = b` isn't mistaken for a secret.
 enum EnvSecret {
+    static let mask = "••••••••"
+
     private static let line = try! NSRegularExpression(
         pattern: #"^[ \t]*(?:export[ \t]+)?([A-Z_][A-Z0-9_]*)[ \t]*=[ \t]*(\S.*?)[ \t]*$"#,
         options: .anchorsMatchLines
@@ -47,6 +49,17 @@ enum EnvSecret {
         }
         return result
     }
+
+    /// Returns a presentation-safe copy of a note. Notes deliberately remain
+    /// plaintext in SwiftData; this helper prevents that plaintext from leaking
+    /// into secondary UI such as tab titles and accessibility values.
+    static func redacted(_ string: String, revealing revealedKeys: Set<String> = []) -> String {
+        let mutable = NSMutableString(string: string)
+        for match in matches(in: string).reversed() where !revealedKeys.contains(match.key) {
+            mutable.replaceCharacters(in: match.valueRange, with: mask)
+        }
+        return mutable as String
+    }
 }
 
 /// Masks `.env` secret values in an `NSTextView` by substituting bullet glyphs
@@ -54,7 +67,8 @@ enum EnvSecret {
 /// (so the note still persists as plain text), only the rendered glyphs change.
 /// Values stay masked until the user unlocks them with the per-line lock; the
 /// caret never reveals them.
-final class EnvMaskController: NSObject, NSLayoutManagerDelegate {
+@MainActor
+final class EnvMaskController: NSObject, @preconcurrency NSLayoutManagerDelegate {
     weak var textView: MultiCursorTextView?
     private(set) var maskedRanges: [NSRange] = []
     /// All secrets currently in the document (for hover/lock hit-testing).
@@ -63,6 +77,10 @@ final class EnvMaskController: NSObject, NSLayoutManagerDelegate {
     private var revealedKeys: Set<String> = []
 
     func isRevealed(_ key: String) -> Bool { revealedKeys.contains(key) }
+
+    var accessibilityText: String? {
+        textView.map { EnvSecret.redacted($0.string, revealing: revealedKeys) }
+    }
 
     func toggleReveal(_ key: String) {
         if revealedKeys.contains(key) {
@@ -97,6 +115,10 @@ final class EnvMaskController: NSObject, NSLayoutManagerDelegate {
         let newMasked = matches
             .filter { !revealedKeys.contains($0.key) }
             .map(\.valueRange)
+
+        // NSLayoutManager only substitutes displayed glyphs; NSTextView would
+        // otherwise expose its plaintext storage through AppKit accessibility.
+        textView.setAccessibilityValue(EnvSecret.redacted(string, revealing: revealedKeys))
 
         // Affordance rects (lock/tooltip) may move even when the masked set is
         // unchanged, so refresh them before the early-out.

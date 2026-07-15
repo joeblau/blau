@@ -35,11 +35,12 @@ struct PaneInitRegressionTests {
         #expect(pane.kind == .terminal)
     }
 
-    // R5: PaneKind cases remain stable
+    // R5: PaneKind cases remain stable. Adding a new kind requires updating this
+    // list and adding an initialization-invariant test above.
     @Test
     func paneKindCaseCount() {
-        #expect(PaneKind.allCases.count == 3)
-        #expect(Set(PaneKind.allCases) == Set([.terminal, .browser, .device]))
+        #expect(PaneKind.allCases.count == 5)
+        #expect(Set(PaneKind.allCases) == Set([.terminal, .browser, .device, .simulator, .editor]))
     }
 
     // R6: PaneKind raw values are stable (SwiftData persistence compat)
@@ -48,5 +49,7 @@ struct PaneInitRegressionTests {
         #expect(PaneKind.terminal.rawValue == "terminal")
         #expect(PaneKind.browser.rawValue == "browser")
         #expect(PaneKind.device.rawValue == "device")
+        #expect(PaneKind.simulator.rawValue == "simulator")
+        #expect(PaneKind.editor.rawValue == "editor")
     }
 }

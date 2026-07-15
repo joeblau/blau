@@ -2,7 +2,7 @@ import Foundation
 
 /// A single usage window (rolling quota) for a provider — e.g. Codex's 5-hour
 /// and weekly windows, or Claude's five-hour / seven-day windows.
-struct UsageWindow: Equatable, Identifiable {
+struct UsageWindow: Equatable, Identifiable, Sendable {
     let id: String
     let name: String
     /// Fraction used, 0...1.
@@ -12,12 +12,12 @@ struct UsageWindow: Equatable, Identifiable {
 }
 
 /// Credit balance / allowance, when the provider reports one.
-enum CreditUnit: Equatable {
+enum CreditUnit: Equatable, Sendable {
     case credits
     case currency(String)
 }
 
-struct CreditInfo: Equatable {
+struct CreditInfo: Equatable, Sendable {
     var balance: Double? = nil
     var unit: CreditUnit = .credits
     var used: Double? = nil
@@ -32,18 +32,38 @@ struct CreditInfo: Equatable {
 }
 
 /// Plan usage for one provider.
-struct ProviderUsage: Equatable {
+struct ProviderUsage: Equatable, Sendable {
     var planLabel: String?
     var windows: [UsageWindow] = []
     var credits: CreditInfo?
 }
 
 /// Per-provider fetch state for the inspector.
-enum ProviderState: Equatable {
+enum ProviderState: Equatable, Sendable {
+    case disabled
     case loading
     case notSignedIn
     case usage(ProviderUsage)
     case error(String)
+}
+
+enum UsageConsent {
+    static let claudeKey = "usage.consent.claude"
+    static let codexKey = "usage.consent.codex"
+    static let grokKey = "usage.consent.grok"
+    static let changedNotification = Notification.Name("app.blau.pilot.usage-consent-changed")
+
+    static func isClaudeEnabled(defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: claudeKey)
+    }
+
+    static func isCodexEnabled(defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: codexKey)
+    }
+
+    static func isGrokEnabled(defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: grokKey)
+    }
 }
 
 /// Pulls **plan usage, reset windows, and credits** for Claude, Codex, and Grok by
@@ -55,13 +75,27 @@ enum ProviderState: Equatable {
 @Observable
 @MainActor
 final class UsageStore {
-    private(set) var anthropic: ProviderState = .loading
-    private(set) var openAI: ProviderState = .loading
-    private(set) var xAI: ProviderState = .loading
+    struct Fetchers: Sendable {
+        let claude: @Sendable () async -> ProviderFetch
+        let codex: @Sendable () async -> ProviderFetch
+        let grok: @Sendable () async -> ProviderFetch
+
+        static let live = Fetchers(
+            claude: { await UsageStore.fetchClaude() },
+            codex: { await UsageStore.fetchCodex() },
+            grok: { await UsageStore.fetchGrok() }
+        )
+    }
+
+    private(set) var anthropic: ProviderState = .disabled
+    private(set) var openAI: ProviderState = .disabled
+    private(set) var xAI: ProviderState = .disabled
     private(set) var isLoading = false
 
     private var loadTask: Task<Void, Never>?
     private var pollTimer: Timer?
+    private let defaults: UserDefaults
+    private let fetchers: Fetchers
 
     /// These are undocumented, aggressively rate-limited endpoints. Poll rarely —
     /// reset countdowns tick client-side, so the network data only needs to be
@@ -82,6 +116,11 @@ final class UsageStore {
     private var blockedUntil: [Provider: Date] = [:]
     /// Consecutive 429 count per provider (drives the exponential backoff).
     private var rateLimitStrikes: [Provider: Int] = [:]
+
+    init(defaults: UserDefaults = .standard, fetchers: Fetchers = .live) {
+        self.defaults = defaults
+        self.fetchers = fetchers
+    }
 
     /// Begin (or restart) periodic refresh. Safe to call repeatedly.
     func start() {
@@ -111,21 +150,31 @@ final class UsageStore {
     func reload() {
         loadTask?.cancel()
         let now = Date()
-        let doAnthropic = mayFetch(.anthropic, now: now)
-        let doOpenAI = mayFetch(.openAI, now: now)
-        let doGrok = mayFetch(.xAI, now: now)
+        let claudeEnabled = UsageConsent.isClaudeEnabled(defaults: defaults)
+        let codexEnabled = UsageConsent.isCodexEnabled(defaults: defaults)
+        let grokEnabled = UsageConsent.isGrokEnabled(defaults: defaults)
+        if !claudeEnabled { anthropic = .disabled }
+        if !codexEnabled { openAI = .disabled }
+        if !grokEnabled { xAI = .disabled }
+        let doAnthropic = claudeEnabled && mayFetch(.anthropic, now: now)
+        let doOpenAI = codexEnabled && mayFetch(.openAI, now: now)
+        let doGrok = grokEnabled && mayFetch(.xAI, now: now)
         if doAnthropic { lastAttempt[.anthropic] = now }
         if doOpenAI { lastAttempt[.openAI] = now }
         if doGrok { lastAttempt[.xAI] = now }
 
         // Nothing to do this tick — everything is spaced-out or backed-off.
-        guard doAnthropic || doOpenAI || doGrok else { return }
+        guard doAnthropic || doOpenAI || doGrok else {
+            isLoading = false
+            return
+        }
 
         isLoading = true
+        let fetchers = fetchers
         loadTask = Task {
-            async let anthropicResult = Self.fetchClaude(allowed: doAnthropic)
-            async let openAIResult = Self.fetchCodex(allowed: doOpenAI)
-            async let xAIResult = Self.fetchGrok(allowed: doGrok)
+            async let anthropicResult = Self.fetch(when: doAnthropic, using: fetchers.claude)
+            async let openAIResult = Self.fetch(when: doOpenAI, using: fetchers.codex)
+            async let xAIResult = Self.fetch(when: doGrok, using: fetchers.grok)
             let (aRes, oRes, xRes) = await (anthropicResult, openAIResult, xAIResult)
             if Task.isCancelled { return }
             anthropic = resolve(.anthropic, previous: anthropic, result: aRes)
@@ -133,6 +182,18 @@ final class UsageStore {
             xAI = resolve(.xAI, previous: xAI, result: xRes)
             isLoading = false
         }
+    }
+
+    func waitForCurrentLoad() async {
+        await loadTask?.value
+    }
+
+    nonisolated private static func fetch(
+        when allowed: Bool,
+        using operation: @Sendable () async -> ProviderFetch
+    ) async -> ProviderFetch {
+        guard allowed else { return .skipped }
+        return await operation()
     }
 
     /// Fold a fetch result into the provider's state and update its backoff.
@@ -182,8 +243,7 @@ final class UsageStore {
 
     // MARK: - Codex (OpenAI)
 
-    nonisolated private static func fetchCodex(allowed: Bool) async -> ProviderFetch {
-        guard allowed else { return .skipped }
+    nonisolated private static func fetchCodex() async -> ProviderFetch {
         guard let session = UsageSessions.CodexSession.load() else { return .notSignedIn }
 
         var headers = [
@@ -338,8 +398,7 @@ final class UsageStore {
 
     // MARK: - Claude (Claude Code)
 
-    nonisolated private static func fetchClaude(allowed: Bool) async -> ProviderFetch {
-        guard allowed else { return .skipped }
+    nonisolated private static func fetchClaude() async -> ProviderFetch {
         guard let session = UsageSessions.ClaudeSession.load() else { return .notSignedIn }
         guard session.hasProfileScope else {
             return .failure("Claude: this session lacks the user:profile scope — re-run `claude` to sign in.")
@@ -481,8 +540,7 @@ final class UsageStore {
 
     // MARK: - Grok (xAI)
 
-    nonisolated private static func fetchGrok(allowed: Bool) async -> ProviderFetch {
-        guard allowed else { return .skipped }
+    nonisolated private static func fetchGrok() async -> ProviderFetch {
         guard let session = UsageSessions.GrokSession.load() else { return .notSignedIn }
         let clientVersion = UsageSessions.GrokSession.installedVersion() ?? "0.2.93"
         let headers = [
@@ -725,7 +783,7 @@ private enum UsageFetchError: Error {
 }
 
 /// Outcome of one provider fetch.
-private enum ProviderFetch {
+enum ProviderFetch: Sendable {
     case success(ProviderUsage)
     case notSignedIn
     /// The endpoint returned 429; `retryAfter` is the server's hint, if any.

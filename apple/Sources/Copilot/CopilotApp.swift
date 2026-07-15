@@ -12,16 +12,37 @@ private let copilotConnectivityLogger = Logger(
 private enum WingmanGesturePayload {
     static let gestureKey = "gesture"
     static let doublePinch = "doublePinch"
+    static let commandIDKey = "commandID"
+    static let sentAtKey = "sentAt"
+    static let maximumAge: TimeInterval = 3
 
-    static func isDoublePinch(_ payload: [String: Any]) -> Bool {
-        payload[gestureKey] as? String == doublePinch
+    struct Command: Sendable {
+        let id: UUID
+        let sentAt: Date
     }
+
+    static func command(from payload: [String: Any]) -> Command? {
+        guard payload[gestureKey] as? String == doublePinch,
+              let idString = payload[commandIDKey] as? String,
+              let id = UUID(uuidString: idString),
+              let timestamp = payload[sentAtKey] as? Double,
+              timestamp.isFinite else { return nil }
+        return Command(id: id, sentAt: Date(timeIntervalSince1970: timestamp))
+    }
+}
+
+/// WatchConnectivity imports its Objective-C reply block without Sendable
+/// conformance. The framework owns and serializes this callback; wrapping it
+/// makes that contract explicit at the Swift concurrency boundary.
+private struct WingmanReplyHandler: @unchecked Sendable {
+    let call: ([String: Any]) -> Void
 }
 
 @Observable
 final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificationCenterDelegate, @unchecked Sendable {
     var isWatchReachable = false
     var syncService: PeerSyncService?
+    private var acceptedWingmanCommands: [UUID: Date] = [:]
 
     func session(_ session: WCSession,
                  activationDidCompleteWith activationState: WCSessionActivationState,
@@ -58,11 +79,18 @@ final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificatio
     func session(_ session: WCSession,
                  didReceiveMessage message: [String: Any],
                  replyHandler: @escaping ([String: Any]) -> Void) {
-        handleWingmanPayload(message, transport: "sendMessageWithReply")
-        replyHandler([
-            "status": "received",
-            "receivedAt": Date().timeIntervalSince1970
-        ])
+        guard let command = WingmanGesturePayload.command(from: message) else {
+            replyHandler(["status": "invalid"])
+            return
+        }
+        let reply = WingmanReplyHandler(call: replyHandler)
+        Task { @MainActor in
+            let accepted = self.acceptWingmanCommand(command, transport: "sendMessageWithReply")
+            reply.call([
+                "status": accepted ? "accepted" : "rejected",
+                "receivedAt": Date().timeIntervalSince1970
+            ])
+        }
     }
 
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
@@ -89,12 +117,37 @@ final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificatio
     }
 
     private func handleWingmanPayload(_ payload: [String: Any], transport: String) {
-        guard WingmanGesturePayload.isDoublePinch(payload) else { return }
-        copilotConnectivityLogger.info("Received double pinch over \(transport, privacy: .public). Forwarding as Enter to Pilot.")
+        guard let command = WingmanGesturePayload.command(from: payload) else { return }
         Task { @MainActor in
-            PhoneSessionDelegate.playDoublePinchHaptic()
-            syncService?.send(.terminalInput(.enter))
+            _ = self.acceptWingmanCommand(command, transport: transport)
         }
+    }
+
+    @MainActor
+    @discardableResult
+    private func acceptWingmanCommand(_ command: WingmanGesturePayload.Command, transport: String) -> Bool {
+        let now = Date()
+        acceptedWingmanCommands = acceptedWingmanCommands.filter {
+            now.timeIntervalSince($0.value) <= WingmanGesturePayload.maximumAge
+        }
+        let age = now.timeIntervalSince(command.sentAt)
+        guard age >= -1, age <= WingmanGesturePayload.maximumAge else {
+            copilotConnectivityLogger.notice("Rejected stale Wingman command over \(transport, privacy: .public).")
+            return false
+        }
+        guard acceptedWingmanCommands[command.id] == nil else {
+            copilotConnectivityLogger.notice("Rejected duplicate Wingman command over \(transport, privacy: .public).")
+            return false
+        }
+        guard syncService?.isConnected == true else {
+            copilotConnectivityLogger.notice("Rejected Wingman command because Pilot is disconnected.")
+            return false
+        }
+        acceptedWingmanCommands[command.id] = now
+        copilotConnectivityLogger.info("Accepted fresh double pinch over \(transport, privacy: .public). Forwarding as Enter to Pilot.")
+        PhoneSessionDelegate.playDoublePinchHaptic()
+        syncService?.send(.terminalInput(.enter))
+        return true
     }
 
     @MainActor

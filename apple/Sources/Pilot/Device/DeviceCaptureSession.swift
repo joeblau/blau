@@ -146,6 +146,7 @@ final class DeviceCaptureSession: NSObject {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        coordinator.cancelPendingFrames()
     }
 
     func start() {
@@ -169,6 +170,7 @@ final class DeviceCaptureSession: NSObject {
 
     func stop() {
         cancelRecovery()
+        coordinator.cancelPendingFrames()
         if isRecording {
             coordinator.stopRecording()
         }
@@ -271,7 +273,7 @@ final class DeviceCaptureSession: NSObject {
             return
         }
         do {
-            try data.write(to: url)
+            try data.write(to: url, options: .withoutOverwriting)
             lastError = nil
         } catch {
             lastError = "Couldn't save screenshot: \(error.localizedDescription)"
@@ -281,10 +283,12 @@ final class DeviceCaptureSession: NSObject {
 
     private static func timestampedURL(folder: String, name: String, ext: String) -> URL {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss.SSS"
         let stamp = formatter.string(from: Date())
+        let unique = UUID().uuidString.prefix(8).lowercased()
         let home = URL(fileURLWithPath: NSHomeDirectory())
-        return home.appendingPathComponent(folder).appendingPathComponent("\(name) \(stamp).\(ext)")
+        return home.appendingPathComponent(folder).appendingPathComponent("\(name) \(stamp)-\(unique).\(ext)")
     }
 
     // MARK: - CMIO toggle
@@ -716,6 +720,7 @@ final class DeviceCaptureSession: NSObject {
         // every teardown path (unplug, recovery rebuild, an attach() that throws)
         // so no zombie tick survives. attach() restarts it.
         stopWatchdog()
+        coordinator.cancelPendingFrames()
         hasAudioInput = false
         session.beginConfiguration()
         for input in session.inputs { session.removeInput(input) }
@@ -836,7 +841,7 @@ private final class CaptureCoordinator: NSObject,
     @unchecked Sendable {
     private let lock = NSLock()
     private let ciContext = CIContext()
-    private var pending: CheckedContinuation<CGImage?, Never>?
+    private var pending: [UUID: CheckedContinuation<CGImage?, Never>] = [:]
 
     private var writer: AVAssetWriter?
     private var videoInput: AVAssetWriterInput?
@@ -850,13 +855,40 @@ private final class CaptureCoordinator: NSObject,
 
     // MARK: Screenshot
 
-    func nextFrame() async -> CGImage? {
-        await withCheckedContinuation { cont in
-            lock.lock()
-            pending?.resume(returning: nil)
-            pending = cont
-            lock.unlock()
+    func nextFrame(timeout: TimeInterval = 2) async -> CGImage? {
+        let requestID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                pending[requestID] = continuation
+                lock.unlock()
+
+                if Task.isCancelled {
+                    resolveFrameRequest(requestID, with: nil)
+                    return
+                }
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout) { [weak self] in
+                    self?.resolveFrameRequest(requestID, with: nil)
+                }
+            }
+        } onCancel: { [weak self] in
+            self?.resolveFrameRequest(requestID, with: nil)
         }
+    }
+
+    func cancelPendingFrames() {
+        lock.lock()
+        let continuations = Array(pending.values)
+        pending.removeAll()
+        lock.unlock()
+        continuations.forEach { $0.resume(returning: nil) }
+    }
+
+    private func resolveFrameRequest(_ id: UUID, with image: CGImage?) {
+        lock.lock()
+        let continuation = pending.removeValue(forKey: id)
+        lock.unlock()
+        continuation?.resume(returning: image)
     }
 
     // MARK: Recording control
@@ -873,10 +905,17 @@ private final class CaptureCoordinator: NSObject,
     func stopRecording() {
         lock.lock()
         guard let writer, !finishing else {
-            // Armed but no frame ever arrived, or already stopping: just disarm.
+            // An armed/no-frame recording still has to finish the public state
+            // machine; otherwise DeviceCaptureSession stays "recording" forever.
+            let wasArmed = armed
+            let url = recordingURL
+            let callback = onFinish
             armed = false
             recordingURL = nil
             lock.unlock()
+            if wasArmed, let url {
+                callback?(url, "Recording stopped before the first video frame arrived.")
+            }
             return
         }
         finishing = true
@@ -918,17 +957,18 @@ private final class CaptureCoordinator: NSObject,
 
     private func serveScreenshot(_ sampleBuffer: CMSampleBuffer) {
         lock.lock()
-        let cont = pending
-        pending = nil
+        let continuations = Array(pending.values)
+        pending.removeAll()
         lock.unlock()
 
-        guard let cont else { return }
+        guard !continuations.isEmpty else { return }
         guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            cont.resume(returning: nil)
+            continuations.forEach { $0.resume(returning: nil) }
             return
         }
         let ciImage = CIImage(cvImageBuffer: imageBuffer)
-        cont.resume(returning: ciContext.createCGImage(ciImage, from: ciImage.extent))
+        let image = ciContext.createCGImage(ciImage, from: ciImage.extent)
+        continuations.forEach { $0.resume(returning: image) }
     }
 
     private func appendVideo(_ sampleBuffer: CMSampleBuffer) {
@@ -987,7 +1027,15 @@ private final class CaptureCoordinator: NSObject,
             self.videoInput = videoInput
             self.audioInput = audioInput
         } catch {
+            let callback = onFinish
+            let failedURL = recordingURL
             armed = false
+            recordingURL = nil
+            if let failedURL {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    callback?(failedURL, "Could not create recording: \(error.localizedDescription)")
+                }
+            }
         }
     }
 }

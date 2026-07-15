@@ -2,12 +2,14 @@ import SwiftUI
 import WatchConnectivity
 
 private struct WingmanDoublePinchPayload: Sendable {
+    let commandID: UUID
     let source: String
     let sentAt: Double
 
     var dictionary: [String: Any] {
         [
             "gesture": "doublePinch",
+            "commandID": commandID.uuidString,
             "source": source,
             "sentAt": sentAt
         ]
@@ -17,6 +19,7 @@ private struct WingmanDoublePinchPayload: Sendable {
 @Observable
 final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendable {
     var isReachable = false
+    var deliveryStatus = "Ready"
 
     nonisolated func session(_ session: WCSession,
                              activationDidCompleteWith activationState: WCSessionActivationState,
@@ -54,12 +57,14 @@ final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendab
     func sendDoublePinch(source: String) {
         let session = WCSession.default
         let payload = WingmanDoublePinchPayload(
+            commandID: UUID(),
             source: source,
             sentAt: Date().timeIntervalSince1970
         )
         let dictionary = payload.dictionary
 
         guard session.activationState == .activated else {
+            deliveryStatus = "Copilot unavailable"
             return
         }
 
@@ -68,18 +73,25 @@ final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendab
         // "installed" from its perspective.
         #if os(watchOS)
         guard session.isCompanionAppInstalled else {
+            deliveryStatus = "Install Copilot first"
             return
         }
         #endif
 
         if session.isReachable {
-            session.sendMessage(dictionary, replyHandler: { _ in
-            }, errorHandler: { _ in
-                let fallbackSession = WCSession.default
-                fallbackSession.transferUserInfo(dictionary)
+            deliveryStatus = "Sending…"
+            session.sendMessage(dictionary, replyHandler: { [weak self] reply in
+                let accepted = reply["status"] as? String == "accepted"
+                Task { @MainActor in
+                    self?.deliveryStatus = accepted ? "Delivered" : "Rejected"
+                }
+            }, errorHandler: { [weak self] _ in
+                // Terminal commands are deliberately never queued: a delayed
+                // Enter after reconnection could submit unrelated shell input.
+                Task { @MainActor in self?.deliveryStatus = "Not delivered" }
             })
         } else {
-            session.transferUserInfo(dictionary)
+            deliveryStatus = "Copilot unavailable"
         }
     }
 }

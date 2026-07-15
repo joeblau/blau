@@ -15,6 +15,8 @@ struct NotesView: View {
         VStack(spacing: 0) {
             tabBar(notes: notes)
             Divider()
+            secretStorageDisclosure
+            Divider()
             editor
         }
         .overlay(alignment: .bottom) {
@@ -41,6 +43,21 @@ struct NotesView: View {
         } message: { note in
             Text("“\(note.displayTitle)” will be permanently deleted. This can’t be undone.")
         }
+    }
+
+    private var secretStorageDisclosure: some View {
+        Label(
+            "Secret masking is visual only. Notes are stored locally as plaintext—do not use Notes as a secret manager.",
+            systemImage: "eye.slash"
+        )
+        .scaledFont(size: 11)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .accessibilityLabel(
+            "Security notice: secret masking is visual only. Notes are stored locally as plaintext."
+        )
     }
 
     private func flashCopiedToast() {
@@ -125,7 +142,7 @@ private struct NoteEditor: View {
         NoteTextView(text: $note.body, fontSize: 13 * uiZoom, onCopySecret: onCopySecret)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onChange(of: note.body) {
-                try? note.modelContext?.save()
+                _ = note.modelContext?.saveReporting(operation: "Saving note")
             }
     }
 }
@@ -221,7 +238,8 @@ private struct NoteTextView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    @MainActor
+    final class Coordinator: NSObject, @preconcurrency NSTextViewDelegate {
         private let parent: NoteTextView
         let styler: MarkdownStyler
         let maskController = EnvMaskController()

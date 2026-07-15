@@ -6,9 +6,8 @@ import SwiftData
 /// section. Each connects to a machine's built-in VNC / Screen-Sharing server
 /// (macOS advertises this as the Bonjour service `_rfb._tcp`).
 ///
-/// Only non-secret connection metadata is persisted. The password is never
-/// stored in the model — it's entered at connect time and held in memory for
-/// the session only (mirrors how the editor never persists secrets).
+/// Only non-secret connection metadata is persisted in SwiftData. When the user
+/// opts into auto-connect, the password is stored separately in Keychain.
 @Model
 final class RemoteDesktopConnection {
     #Unique([\RemoteDesktopConnection.id])
@@ -42,6 +41,28 @@ final class RemoteDesktopConnection {
         if !trimmedNickname.isEmpty { return trimmedNickname }
         let trimmedHost = host.trimmingCharacters(in: .whitespaces)
         return trimmedHost.isEmpty ? "New Connection" : trimmedHost
+    }
+}
+
+/// Non-secret, per-connection VNC preferences. Clipboard sharing defaults to
+/// off because a remote server can otherwise read or replace the local pasteboard.
+enum VNCPreferences {
+    private static let clipboardPrefix = "vnc.clipboard."
+
+    static func isClipboardRedirectionEnabled(id: UUID, defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: clipboardPrefix + id.uuidString)
+    }
+
+    static func setClipboardRedirectionEnabled(
+        _ enabled: Bool,
+        id: UUID,
+        defaults: UserDefaults = .standard
+    ) {
+        defaults.set(enabled, forKey: clipboardPrefix + id.uuidString)
+    }
+
+    static func remove(id: UUID, defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: clipboardPrefix + id.uuidString)
     }
 }
 

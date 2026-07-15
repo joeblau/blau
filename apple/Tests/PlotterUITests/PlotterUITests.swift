@@ -6,6 +6,7 @@ import XCTest
 /// HEVC mirror / PencilKit capture and renders a representative fixture frame
 /// so the screen isn't stuck on "Searching for Pilot…". See the Foundation
 /// harness / DEMO-MODE convention.
+@MainActor
 final class PlotterUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -19,5 +20,21 @@ final class PlotterUITests: XCTestCase {
 
         // Primary screen: the live mirror with the annotation overlay.
         snapshot("01-Mirror")
+    }
+
+    func testMirrorRemainsUsableAcrossRotation() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-demoMode", "YES"]
+        app.launch()
+
+        for orientation in [
+            UIDeviceOrientation.portrait,
+            .landscapeLeft,
+            .portraitUpsideDown,
+            .landscapeRight,
+        ] {
+            XCUIDevice.shared.orientation = orientation
+            XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 2))
+        }
     }
 }

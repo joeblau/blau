@@ -23,7 +23,7 @@ final class Note {
     /// Tab label derived from the first non-empty line of the note body,
     /// truncated so tabs stay compact. Falls back to "New Note" while empty.
     var displayTitle: String {
-        for line in body.split(whereSeparator: \.isNewline) {
+        for line in EnvSecret.redacted(body).split(whereSeparator: \.isNewline) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if !trimmed.isEmpty {
                 return trimmed.count > 24 ? String(trimmed.prefix(24)) + "…" : trimmed
