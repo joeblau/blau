@@ -72,6 +72,9 @@ final class ScreenMirror {
         sender.onLinkFeedback = { [weak output] feedback in
             output?.applyLinkFeedback(feedback)
         }
+        sender.onTransportMetrics = { [weak output] metrics in
+            output?.applyTransportMetrics(metrics)
+        }
         sender.onCapability = { [weak self, weak output] capability in
             output?.applyCapability(capability)
             Task { @MainActor in
@@ -214,6 +217,51 @@ final class ScreenMirror {
 
 // MARK: - Stream output handler
 
+enum StreamBitratePolicy {
+    static let minimum = 12_000_000
+    static let maximum = 35_000_000
+    static let initial = 12_000_000
+
+    static func next(
+        current: Int,
+        feedback: FrameProtocol.LinkFeedback
+    ) -> Int {
+        let stepped: Int
+        if feedback.lossPct >= 5.0 || feedback.queueDepth >= 8 {
+            stepped = current - 4_000_000
+        } else if feedback.lossPct >= 1.0 || feedback.queueDepth >= 4 {
+            stepped = current - 2_000_000
+        } else if feedback.lossPct < 0.5 && feedback.queueDepth <= 1 {
+            stepped = current + 2_000_000
+        } else {
+            stepped = current
+        }
+        return min(maximum, max(minimum, stepped))
+    }
+}
+
+struct KeyframeRequestLatch {
+    private(set) var isPending = false
+
+    mutating func request() {
+        isPending = true
+    }
+
+    mutating func takeForSubmission() -> Bool {
+        let wasPending = isPending
+        isPending = false
+        return wasPending
+    }
+
+    mutating func restoreAfterRejectedSubmission(_ wasForced: Bool) {
+        if wasForced { isPending = true }
+    }
+
+    mutating func restoreAfterOutputFailure() {
+        isPending = true
+    }
+}
+
 /// Off-main-actor object that receives SCStream frames, encodes them to HEVC,
 /// and forwards them to the ``FrameSender``. Kept separate from
 /// ``ScreenMirror`` because ScreenCaptureKit requires `nonisolated` delegate
@@ -224,6 +272,16 @@ final class ScreenMirror {
 /// the SCStream output callback and the FrameSender control callbacks can poke
 /// it from different threads safely.
 fileprivate final class StreamOutput: NSObject, SCStreamDelegate, SCStreamOutput, @unchecked Sendable {
+    private struct EncodeRequest: @unchecked Sendable {
+        let pixelBuffer: CVPixelBuffer
+        let presentationTimeStamp: CMTime
+    }
+
+    private struct EncodeResult: @unchecked Sendable {
+        let status: OSStatus
+        let sampleBuffer: CMSampleBuffer?
+    }
+
     private let sender: FrameSender
 
     /// Serializes all mutable encoder state.
@@ -236,6 +294,13 @@ fileprivate final class StreamOutput: NSObject, SCStreamDelegate, SCStreamOutput
     private var frameID: UInt32 = 0
     /// presentationTimeStamp fallback counter.
     private var ptsIndex: Int64 = 0
+    /// VideoToolbox accepts work asynchronously. Bound outstanding encodes and
+    /// retain only the newest pending capture when saturated so latency cannot
+    /// grow frame-by-frame behind a slow encoder.
+    private var encodeWork = LatestWorkCoalescer<EncodeRequest>(maximumInFlight: 2)
+    private var targetFrameRate: Double = 60
+    private var lastAdmittedPTS: CMTime = .invalid
+    private var lastTransportDropCount = 0
 
     /// Chroma the receiver is known to support. Defaults to safe 4:2:0; only
     /// becomes `.yuv444` after a capability handshake advertising support.
@@ -247,14 +312,11 @@ fileprivate final class StreamOutput: NSObject, SCStreamDelegate, SCStreamOutput
 
     /// Set when a keyframe must be forced on the next encoded frame (new
     /// client connected, or a keyframe was explicitly requested).
-    private var forceKeyframe = false
+    private var keyframeRequest = KeyframeRequestLatch()
 
     // Adaptive bitrate. Start conservative; ramp up when loss is low. Floor is
     // kept high so terminal/code text stays crisp.
-    private static let minBitrate = 12_000_000
-    private static let maxBitrate = 35_000_000
-    private static let startBitrate = 11_000_000
-    private var currentBitrate = StreamOutput.startBitrate
+    private var currentBitrate = StreamBitratePolicy.initial
     /// Throttles bitrate changes so we don't thrash the encoder on every report.
     private var lastBitrateChange: TimeInterval = 0
 
@@ -285,7 +347,7 @@ fileprivate final class StreamOutput: NSObject, SCStreamDelegate, SCStreamOutput
     /// Request a forced keyframe on the next encoded frame.
     func requestForceKeyframe() {
         stateQueue.async { [weak self] in
-            self?.forceKeyframe = true
+            self?.keyframeRequest.request()
         }
     }
 
@@ -304,6 +366,30 @@ fileprivate final class StreamOutput: NSObject, SCStreamDelegate, SCStreamOutput
     func applyLinkFeedback(_ feedback: FrameProtocol.LinkFeedback) {
         stateQueue.async { [weak self] in
             self?.adjustBitrateLocked(for: feedback)
+        }
+    }
+
+    func applyTransportMetrics(_ metrics: FrameProtocol.TransportMetrics) {
+        stateQueue.async { [weak self] in
+            guard let self else { return }
+            let dropped = metrics.droppedFrames > self.lastTransportDropCount
+            self.lastTransportDropCount = metrics.droppedFrames
+
+            if dropped || metrics.queuedFrames >= 3
+                || metrics.sendLatencyMs >= 80 || metrics.rttMs >= 180 {
+                self.targetFrameRate = 20
+            } else if metrics.queuedFrames > 0
+                || metrics.sendLatencyMs >= 30 || metrics.rttMs >= 90 {
+                self.targetFrameRate = 30
+            } else {
+                self.targetFrameRate = 60
+            }
+
+            self.adjustBitrateLocked(for: FrameProtocol.LinkFeedback(
+                lossPct: dropped ? 8 : 0,
+                rttMs: metrics.rttMs,
+                queueDepth: metrics.queuedFrames
+            ))
         }
     }
 
@@ -331,9 +417,23 @@ fileprivate final class StreamOutput: NSObject, SCStreamDelegate, SCStreamOutput
         }
 
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let request = EncodeRequest(pixelBuffer: pixelBuffer, presentationTimeStamp: pts)
         stateQueue.async { [weak self] in
-            self?.encodeLocked(pixelBuffer, presentationTimeStamp: pts)
-            self?.maybeCaptureSnapshot(pixelBuffer, pts: pts)
+            self?.offerFrameLocked(request)
+        }
+    }
+
+    private func offerFrameLocked(_ request: EncodeRequest) {
+        maybeCaptureSnapshot(request.pixelBuffer, pts: request.presentationTimeStamp)
+
+        if lastAdmittedPTS.isValid, request.presentationTimeStamp.isValid {
+            let elapsed = (request.presentationTimeStamp - lastAdmittedPTS).seconds
+            guard !elapsed.isFinite || elapsed >= 1 / targetFrameRate else { return }
+        }
+        lastAdmittedPTS = request.presentationTimeStamp
+
+        if let admitted = encodeWork.offer(request) {
+            encodeLocked(admitted.pixelBuffer, presentationTimeStamp: admitted.presentationTimeStamp)
         }
     }
 
@@ -375,30 +475,45 @@ fileprivate final class StreamOutput: NSObject, SCStreamDelegate, SCStreamOutput
             resetCompressionSessionLocked(width: width, height: height)
         }
 
-        guard let compressionSession else { return }
+        guard let compressionSession else {
+            finishEncodeLocked()
+            return
+        }
 
         let pts = presentationTimeStamp.isValid
             ? presentationTimeStamp
             : CMTime(value: ptsIndex, timescale: frameRate)
         ptsIndex += 1
 
+        let wasForced = keyframeRequest.takeForSubmission()
         var frameProperties: CFDictionary?
-        if forceKeyframe {
-            forceKeyframe = false
+        if wasForced {
             frameProperties = [
                 kVTEncodeFrameOptionKey_ForceKeyFrame as String: true
             ] as CFDictionary
         }
 
-        VTCompressionSessionEncodeFrame(
+        var infoFlags: VTEncodeInfoFlags = []
+        let status = VTCompressionSessionEncodeFrame(
             compressionSession,
             imageBuffer: pixelBuffer,
             presentationTimeStamp: pts,
             duration: CMTime(value: 1, timescale: frameRate),
             frameProperties: frameProperties,
             sourceFrameRefcon: nil,
-            infoFlagsOut: nil
+            infoFlagsOut: &infoFlags
         )
+        // A synchronous admission failure does not produce an output callback.
+        // Release the slot here so one bad frame cannot stall the coalescer.
+        if status != noErr || infoFlags.contains(.frameDropped) {
+            keyframeRequest.restoreAfterRejectedSubmission(wasForced)
+            finishEncodeLocked()
+        }
+    }
+
+    private func finishEncodeLocked() {
+        guard let next = encodeWork.complete() else { return }
+        encodeLocked(next.pixelBuffer, presentationTimeStamp: next.presentationTimeStamp)
     }
 
     private func resetCompressionSessionLocked(width: Int, height: Int) {
@@ -502,19 +617,9 @@ fileprivate final class StreamOutput: NSObject, SCStreamDelegate, SCStreamOutput
         guard now - lastBitrateChange >= 0.5 else { return }
 
         let previous = currentBitrate
-        var next = currentBitrate
-
         // React to loss / deep queues by backing off; ramp up when the link is
         // clean. Steps are coarse to avoid oscillation.
-        if feedback.lossPct >= 5.0 || feedback.queueDepth >= 8 {
-            next = currentBitrate - 4_000_000
-        } else if feedback.lossPct >= 1.0 || feedback.queueDepth >= 4 {
-            next = currentBitrate - 2_000_000
-        } else if feedback.lossPct < 0.5 && feedback.queueDepth <= 1 {
-            next = currentBitrate + 2_000_000
-        }
-
-        next = min(Self.maxBitrate, max(Self.minBitrate, next))
+        let next = StreamBitratePolicy.next(current: currentBitrate, feedback: feedback)
         guard next != previous else { return }
 
         currentBitrate = next
@@ -531,27 +636,43 @@ fileprivate final class StreamOutput: NSObject, SCStreamDelegate, SCStreamOutput
 
     // MARK: - Encoded output (called on VideoToolbox's callback thread)
 
-    fileprivate func handleEncodedSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
-        guard let data = Self.copySampleData(from: sampleBuffer) else { return }
-        let keyFrame = Self.isKeyFrame(sampleBuffer)
-
-        // Stamp + emit on the state queue so frameID stays monotonic and we
-        // read the chroma that this session was actually created with.
+    fileprivate func compressionDidComplete(status: OSStatus, sampleBuffer: CMSampleBuffer?) {
+        // Stamp + emit on the state queue so frameID stays monotonic and the
+        // encode admission slot is released on success and failure alike.
+        let result = EncodeResult(status: status, sampleBuffer: sampleBuffer)
         stateQueue.async { [weak self] in
             guard let self else { return }
+            var outputRequiresRecoveryKeyframe = true
+            if result.status == noErr,
+               let sampleBuffer = result.sampleBuffer,
+               sampleBuffer.isValid,
+               let data = Self.copySampleData(from: sampleBuffer) {
+                let keyFrame = Self.isKeyFrame(sampleBuffer)
+                var keyFrameHasConfiguration = true
+                if keyFrame {
+                    if let config = Self.videoConfiguration(
+                        from: sampleBuffer,
+                        chroma: self.activeChroma
+                    ) {
+                        self.sender.send(.configuration(config))
+                    } else {
+                        keyFrameHasConfiguration = false
+                    }
+                }
 
-            if keyFrame,
-               let config = Self.videoConfiguration(from: sampleBuffer, chroma: self.activeChroma) {
-                self.sender.send(.configuration(config))
+                let id = self.frameID
+                self.frameID &+= 1
+                self.sender.send(.sample(FrameProtocol.VideoSample(
+                    frameID: id,
+                    isKeyFrame: keyFrame,
+                    data: data
+                )))
+                outputRequiresRecoveryKeyframe = keyFrame && !keyFrameHasConfiguration
             }
-
-            let id = self.frameID
-            self.frameID &+= 1
-            self.sender.send(.sample(FrameProtocol.VideoSample(
-                frameID: id,
-                isKeyFrame: keyFrame,
-                data: data
-            )))
+            if outputRequiresRecoveryKeyframe {
+                self.keyframeRequest.restoreAfterOutputFailure()
+            }
+            self.finishEncodeLocked()
         }
     }
 
@@ -637,13 +758,10 @@ private func screenMirrorCompressionOutputCallback(
     infoFlags: VTEncodeInfoFlags,
     sampleBuffer: CMSampleBuffer?
 ) {
-    guard status == noErr,
-          let outputCallbackRefCon,
-          let sampleBuffer,
-          sampleBuffer.isValid else { return }
+    guard let outputCallbackRefCon else { return }
 
     let output = Unmanaged<StreamOutput>.fromOpaque(outputCallbackRefCon).takeUnretainedValue()
-    output.handleEncodedSampleBuffer(sampleBuffer)
+    output.compressionDidComplete(status: status, sampleBuffer: sampleBuffer)
 }
 
 private extension CGRect {

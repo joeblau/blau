@@ -397,6 +397,8 @@ private final class HEVCMirrorRenderer {
             break
         case .jpeg:
             break
+        case .ping, .pong:
+            break
         }
     }
 
