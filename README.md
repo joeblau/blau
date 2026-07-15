@@ -1,64 +1,146 @@
 # blau
 
-Three-app ecosystem + landing page.
+blau is a native Apple development cockpit: four companion apps, a public web
+site, and an optional rendezvous relay.
 
-## Apple Apps (Pilot macOS, Copilot iOS, Wingman watchOS)
+- **Pilot** (macOS) combines terminals, editing, browser previews, GitHub work,
+  device capture, simulators, and remote screens.
+- **Copilot** (iOS) supplies a trackpad, voice transcription, settings, and
+  secure peer messaging.
+- **Plotter** (iPadOS) mirrors a Pilot window with low-latency HEVC and sends
+  normalized PencilKit annotations. It supports rotation, Split View, and
+  Stage Manager; see [the display policy](docs/plotter-display-policy.md).
+- **Wingman** (watchOS) sends live, short-lived terminal control gestures
+  through its paired Copilot.
+- **Web** is the static Astro site at [blau.app](https://blau.app).
+- **Rendezvous** is a Cloudflare Durable Object WebSocket relay for encrypted
+  peers that cannot discover one another locally. It cannot read peer payloads.
+
+The peer trust, verification-code, encryption, replay, and framing design is
+documented in [device pairing and FrameLink](docs/device-pairing-and-framelink.md)
+and [secure messaging](docs/p2p-secure-messaging.md).
+
+## Prerequisites
+
+- macOS with **Xcode 26.x** selected by `xcode-select` (the version enforced in
+  CI). Xcode 27 previews are not the supported release toolchain.
+- [Homebrew](https://brew.sh/) for the small Apple command-line tool set.
+- Git LFS. Current checkouts download GhosttyKit through SwiftPM, while
+  historical revisions still contain LFS pointers; keeping LFS installed makes
+  bisects and old release checkouts work.
+- [Bun 1.3.14](https://bun.sh/) (pinned by `packageManager`) for all Worker and
+  web dependencies.
+- A Cloudflare account only when running or deploying the Worker services.
+
+XcodeGen is downloaded at a pinned version and checksum by the repository; do
+not rely on an arbitrary global installation.
+
+## Clean-checkout setup
 
 ```bash
-cd apple
-brew bundle
-xcodegen generate
-open blau.xcodeproj
+git clone https://github.com/joeblau/blau.git
+cd blau
+git lfs install
+git lfs pull
+
+bun install --frozen-lockfile
+brew bundle --file apple/Brewfile
+apple/bin/install-xcodegen.sh generate --spec apple/project.yml --project apple
+xcodebuild -resolvePackageDependencies -project apple/blau.xcodeproj
+open apple/blau.xcodeproj
 ```
 
-### Apple verification
+SwiftPM verifies the checksummed GhosttyKit release artifact declared by the
+local package in `apple/Packages/GhosttyKit`. Maintainers can reproduce and
+audit that binary with [the GhosttyKit release procedure](docs/ghosttykit.md).
 
-Run both unit-test schemes with deterministic host destinations from the
-repository root:
+## Build and verify
 
-```bash
-apple/bin/test.sh all       # PilotTests on macOS, then SharedTests on iOS Simulator
-apple/bin/test.sh pilot     # macOS suite only
-apple/bin/test.sh shared    # iOS Simulator suite only
-```
-
-`IOS_SIMULATOR_UDID` can select a specific available iPhone simulator for the
-shared suite. The scripts pin `Package.resolved`, disable code signing, and
-disable the transitive SwiftLint build plugin so package-tool noise cannot hide
-test failures.
-
-Repository-owned Swift lint is pinned separately and uses a checked-in baseline:
+Run these from the repository root:
 
 ```bash
+# Apple project, application builds, tests, lint, and generated assets
+apple/bin/install-xcodegen.sh generate --spec apple/project.yml --project apple
+apple/bin/build-ci.sh
+apple/bin/test.sh all
 apple/bin/lint-swift.sh --all
-apple/bin/lint-swift.sh --changed origin/main
+apple/bin/app-icon-tool.swift validate
+
+# Web + rendezvous dependencies, lint, type/metadata checks, tests, build, audit
+bun install --frozen-lockfile
+bun run lint
+bun run check
+bun run test
+bun run build
+bun run audit
+bun run ci
+
+# Documentation links and repository paths
+bin/check-docs.sh
 ```
 
-Suppress a rule only at the narrowest declaration or line, with a comment that
-explains why. New code must not add entries to the baseline; tighten the
-baseline as existing violations are fixed.
+`apple/bin/test.sh pilot` runs only the macOS suite and
+`apple/bin/test.sh shared` runs only the iOS Simulator suite. Set
+`IOS_SIMULATOR_UDID` to select an installed iPhone simulator. The scripts pin
+`Package.resolved`, disable signing, and isolate derived data.
 
-## Web (blau.app)
+To lint only a branch diff, run
+`apple/bin/lint-swift.sh --changed origin/main`. Suppress a SwiftLint rule only
+at the narrowest declaration and explain why; do not grow the baseline.
 
-The JS workspaces under `workers/` are orchestrated from the repo root with
-[Turborepo](https://turbo.build/repo) + Bun workspaces, so tasks run from the
-root with caching:
+## Local development and screenshots
 
 ```bash
-bun install        # resolves every workers/* workspace
-bun run dev        # turbo run dev   — Astro dev server (+ rendezvous)
-bun run build      # turbo run build — cached static build
-bun run ci         # lint, type/metadata checks, tests, builds, and audit
+# Astro + rendezvous development servers through Turborepo
+bun run dev
+
+# A single service
+bun run --cwd workers/web dev
+bun run --cwd workers/rendezvous dev
+
+# Demo-mode product screenshots
+cd apple
+fastlane snapshotAll
+./bin/capture-pilot.sh
+./bin/capture-wingman.sh
 ```
 
-Or run a single workspace directly, e.g. `cd workers/web && bun run dev`.
-Production deployment, rollback, security-header, and least-privilege token
-details are in [`docs/operations.md`](docs/operations.md).
+The screenshot harness uses deterministic demo state and writes to
+`workers/web/public/screenshots/`. It never requires a live peer.
 
-## Notes security boundary
+## Deployment and secrets
 
-Pilot Notes is a local plaintext scratchpad. Its `.env`-style value masking is
-only a visual shoulder-surfing aid: it does not encrypt the note in SwiftData.
-Locked values are redacted from note-tab titles and accessibility output, and a
-value reaches the pasteboard only after an explicit copy action. Do not use
-Notes as a password or secret manager.
+Production deployment and rollback are owned by the protected GitHub
+`production` environment and the pinned workflows. See
+[production operations](docs/operations.md) for the exact commands, Cloudflare
+token scope, endpoint verification, and rollback procedure.
+
+For an authorized manual deployment using the lockfile-installed Wrangler:
+
+```bash
+bun run --cwd workers/web deploy
+bun run --cwd workers/rendezvous deploy
+```
+
+Never commit credentials, local `.env` files, signing material, pairing keys,
+or Cloudflare tokens. Local Worker values belong in untracked `.dev.vars`
+files. Production values belong in the GitHub `production` environment or
+Cloudflare's encrypted secret store. Xcode signing is configured by the local
+developer account, not checked-in certificates.
+
+## Security
+
+Pilot Notes is a local plaintext scratchpad. Its value masking is only a visual
+shoulder-surfing aid; it is not encryption or a password manager.
+
+Please report vulnerabilities privately using the process in
+[SECURITY.md](SECURITY.md). Do not open a public issue for an unpatched
+security problem.
+
+## Contributing
+
+Generated Xcode project changes must match `apple/project.yml`; CI regenerates
+the project and rejects drift. Use [CLAUDE.md](CLAUDE.md) as portable repository
+guidance for contributors and coding agents. Work is tracked in
+[GitHub Issues](https://github.com/joeblau/blau/issues), not by adding stale
+source line references to [TODOS.md](TODOS.md).

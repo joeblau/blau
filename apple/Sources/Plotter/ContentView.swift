@@ -166,10 +166,12 @@ private struct ZoomableMirrorView: UIViewRepresentable {
         let drawRect = contentRect
         let scaleBase = max(1, min(drawRect.width, drawRect.height))
         let points = stroke.path.compactMap { point -> AnnotationPoint? in
-            guard drawRect.contains(point.location) else { return nil }
+            guard let normalized = PlotterGeometry.normalizedPoint(point.location, in: drawRect) else {
+                return nil
+            }
             return AnnotationPoint(
-                x: min(1, max(0, (point.location.x - drawRect.minX) / drawRect.width)),
-                y: min(1, max(0, (point.location.y - drawRect.minY) / drawRect.height))
+                x: normalized.x,
+                y: normalized.y
             )
         }
         guard points.count > 1 else { return nil }
@@ -302,7 +304,7 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
     /// Draws a couple of representative PencilKit strokes over the demo still so
     /// the annotation feature is visible in screenshots.
     private func seedDemoStrokes() {
-        let rect = Self.aspectFitRect(contentSize: videoSize, in: canvasView.bounds)
+        let rect = PlotterGeometry.aspectFitRect(contentSize: videoSize, in: canvasView.bounds)
         guard rect.width > 0, rect.height > 0 else { return }
 
         func point(_ nx: CGFloat, _ ny: CGFloat) -> CGPoint {
@@ -519,7 +521,7 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
             lastStrokeCount = count
             return
         }
-        let contentRect = Self.aspectFitRect(contentSize: videoSize, in: canvasView.bounds)
+        let contentRect = PlotterGeometry.aspectFitRect(contentSize: videoSize, in: canvasView.bounds)
         if count == lastStrokeCount + 1, let stroke = canvasView.drawing.strokes.last {
             // One new line: send it incrementally so Pilot stacks it for undo.
             onStrokeAdded?(stroke, contentRect)
@@ -560,8 +562,8 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
               newSize.width > 0, newSize.height > 0,
               canvasView.bounds.width > 0, canvasView.bounds.height > 0 else { return }
 
-        let old = Self.aspectFitRect(contentSize: oldSize, in: canvasView.bounds)
-        let new = Self.aspectFitRect(contentSize: newSize, in: canvasView.bounds)
+        let old = PlotterGeometry.aspectFitRect(contentSize: oldSize, in: canvasView.bounds)
+        let new = PlotterGeometry.aspectFitRect(contentSize: newSize, in: canvasView.bounds)
         guard old.width > 0, old.height > 0 else { return }
 
         // Map the old content rect onto the new one.
@@ -581,28 +583,9 @@ private final class ZoomableMirrorUIView: UIView, PKCanvasViewDelegate, UIGestur
     /// non-incremental change). Coordinates are in the canvas's own un-zoomed
     /// space relative to the content rect, so they stay stable for Pilot.
     private func reportResync() {
-        let contentRect = Self.aspectFitRect(contentSize: videoSize, in: canvasView.bounds)
+        let contentRect = PlotterGeometry.aspectFitRect(contentSize: videoSize, in: canvasView.bounds)
         onResync?(canvasView.drawing, contentRect)
         lastStrokeCount = canvasView.drawing.strokes.count
-    }
-
-    private static func aspectFitRect(contentSize: CGSize, in bounds: CGRect) -> CGRect {
-        guard contentSize.width > 0,
-              contentSize.height > 0,
-              bounds.width > 0,
-              bounds.height > 0 else {
-            return bounds
-        }
-
-        let scale = min(bounds.width / contentSize.width, bounds.height / contentSize.height)
-        let width = contentSize.width * scale
-        let height = contentSize.height * scale
-        return CGRect(
-            x: bounds.midX - width / 2,
-            y: bounds.midY - height / 2,
-            width: width,
-            height: height
-        )
     }
 }
 
