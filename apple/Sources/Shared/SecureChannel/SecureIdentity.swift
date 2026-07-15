@@ -46,20 +46,24 @@ final class SecureIdentity {
         send?(.deviceKey(DeviceKeyAnnounce(role: role, publicKey: localPublicKey)))
     }
 
-    /// Handle a peer's key announcement: trust + persist it, and — if this is a
-    /// newly-learned key — reciprocate so the sender also has ours. The
-    /// "changed" guard makes the exchange converge instead of ping-ponging.
+    /// Accept only an announcement that matches the key already approved by
+    /// the Multipeer pairing flow. Network traffic can never create or replace
+    /// a trust pin; a changed key requires a fresh user confirmation there.
     func receive(_ announce: DeviceKeyAnnounce) {
-        guard announce.role != role else { return }
-        let changed = announce.publicKey != peerPublicKey
+        guard announce.role != role,
+              DeviceIdentity.parsePeerPublicKey(announce.publicKey) != nil,
+              announce.publicKey == DeviceIdentity.peerPublicKeyBase64() else { return }
         peerPublicKey = announce.publicKey
-        DeviceIdentity.storePeerPublicKey(announce.publicKey)
-        if changed { self.announce() }
+    }
+
+    /// Reload the pin after an explicit pairing decision stored it.
+    func refreshPeer() {
+        peerPublicKey = DeviceIdentity.peerPublicKeyBase64()
     }
 
     /// Generate a fresh identity key and push it to the peer.
     func regenerate() {
-        try? DeviceIdentity.regenerate()
+        _ = try? DeviceIdentity.regenerate()
         localPublicKey = DeviceIdentity.publicKeyBase64()
         announce()
     }

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import WebKit
 
 /// "Browser Annotate" — point at a web element, describe a change, and dispatch
 /// it (screenshot + element context + instruction) to the agent in a terminal.
@@ -12,6 +13,86 @@ import Foundation
 enum BrowserAnnotate {
     /// WKScriptMessageHandler name + the JS toggle entry point.
     static let messageName = "pilotAnnotate"
+    @MainActor static let contentWorld = WKContentWorld.world(name: "PilotBrowserAnnotate")
+    static let grantLifetime: TimeInterval = 120
+
+    struct MessagePayload: Equatable {
+        let instruction: String
+        let url: String
+        let selector: String
+        let outerHTML: String
+        let selectionID: String
+        let bridgeToken: String
+        let rectX: Int
+        let rectY: Int
+        let rectW: Int
+        let rectH: Int
+
+        static func parse(_ body: Any) -> MessagePayload? {
+            guard let body = body as? [String: Any],
+                  Set(body.keys) == [
+                      "action", "instruction", "url", "selector", "outerHTML",
+                      "selectionID", "bridgeToken", "rect",
+                  ],
+                  body["action"] as? String == "send",
+                  let instruction = boundedString(body["instruction"], max: 2_000, allowEmpty: false),
+                  let url = boundedString(body["url"], max: 2_048, allowEmpty: false),
+                  let selector = boundedString(body["selector"], max: 2_048, allowEmpty: true),
+                  let outerHTML = boundedString(body["outerHTML"], max: 8_192, allowEmpty: true),
+                  let selectionID = boundedString(body["selectionID"], max: 128, allowEmpty: false),
+                  let bridgeToken = boundedString(body["bridgeToken"], max: 128, allowEmpty: false),
+                  let rect = body["rect"] as? [String: Any],
+                  Set(rect.keys) == ["x", "y", "w", "h"],
+                  let x = coordinate(rect["x"], allowsNegative: true),
+                  let y = coordinate(rect["y"], allowsNegative: true),
+                  let width = coordinate(rect["w"], allowsNegative: false),
+                  let height = coordinate(rect["h"], allowsNegative: false) else { return nil }
+            return MessagePayload(
+                instruction: instruction,
+                url: url,
+                selector: selector,
+                outerHTML: outerHTML,
+                selectionID: selectionID,
+                bridgeToken: bridgeToken,
+                rectX: x,
+                rectY: y,
+                rectW: width,
+                rectH: height
+            )
+        }
+
+        private static func boundedString(_ value: Any?, max: Int, allowEmpty: Bool) -> String? {
+            guard let string = value as? String,
+                  string.utf8.count <= max,
+                  allowEmpty || !string.isEmpty else { return nil }
+            return string
+        }
+
+        private static func coordinate(_ value: Any?, allowsNegative: Bool) -> Int? {
+            guard let number = value as? NSNumber else { return nil }
+            let double = number.doubleValue
+            guard double.isFinite, abs(double) <= 1_000_000,
+                  allowsNegative || double >= 0 else { return nil }
+            return Int(double.rounded())
+        }
+    }
+
+    struct BridgeGrant {
+        let token: String
+        let navigationURL: String
+        let expiresAt: Date
+        private(set) var consumed = false
+
+        mutating func consume(_ payload: MessagePayload, currentURL: String, now: Date = Date()) -> Bool {
+            guard !consumed,
+                  now < expiresAt,
+                  payload.bridgeToken == token,
+                  payload.url == navigationURL,
+                  currentURL == navigationURL else { return false }
+            consumed = true
+            return true
+        }
+    }
 
     /// A send captures its terminal before the asynchronous WebKit snapshot
     /// starts. Keeping that target in this value prevents a later pane/workspace
@@ -56,6 +137,7 @@ enum BrowserAnnotate {
       var highlight = null, cursorStyle = null, box = null;
       var hovered = null, selected = null, sending = false;
       var selectionID = null, sendingID = null;
+      var bridgeToken = null, selectionBridgeToken = null;
       var fallbackSelectionSequence = 0;
 
       function ensureCursorStyle() {
@@ -189,12 +271,14 @@ enum BrowserAnnotate {
         sending = false;
         selectionID = null;
         sendingID = null;
+        selectionBridgeToken = null;
         hideHighlight();
       }
 
       function showBox(el) {
         removeBox();
         selectionID = makeSelectionID();
+        selectionBridgeToken = bridgeToken;
         selected = el;
         hovered = el;
         positionHighlight(el);
@@ -238,6 +322,7 @@ enum BrowserAnnotate {
             outerHTML: (el.outerHTML || '').slice(0, 8000),
             rect: { x: live.left, y: live.top, w: live.width, h: live.height },
             selectionID: selectionID,
+            bridgeToken: selectionBridgeToken,
             url: document.location.href
           };
           // Keep the selected outline visible while Swift snapshots the page.
@@ -255,9 +340,10 @@ enum BrowserAnnotate {
         });
       }
 
-      function setEnabled(v) {
+      function setEnabled(v, token) {
         window.__pilotAnnotateDesiredEnabled = !!v;
         enabled = !!v;
+        bridgeToken = enabled && typeof token === 'string' ? token : null;
         ensureCursorStyle();
         document.documentElement.classList.toggle('__pilot-lasso-active', enabled);
         if (!enabled) clearSelection();
@@ -273,6 +359,7 @@ enum BrowserAnnotate {
         sending = false;
         selectionID = null;
         sendingID = null;
+        selectionBridgeToken = null;
         hideHighlight();
       }
 
@@ -282,15 +369,17 @@ enum BrowserAnnotate {
       document.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll, true);
       window.__pilotAnnotate = { setEnabled: setEnabled, finishSend: finishSend };
-      setEnabled(initiallyEnabled);
+      setEnabled(initiallyEnabled, null);
     })();
     """
 
     /// JS to push the current enabled state into the page (after toggle / load).
-    static func setEnabledScript(_ enabled: Bool) -> String {
-        """
+    static func setEnabledScript(_ enabled: Bool, token: String? = nil) -> String {
+        let tokenData = try? JSONEncoder().encode(token)
+        let tokenLiteral = tokenData.flatMap { String(data: $0, encoding: .utf8) } ?? "null"
+        return """
         window.__pilotAnnotateDesiredEnabled = \(enabled);
-        window.__pilotAnnotate && window.__pilotAnnotate.setEnabled(\(enabled));
+        window.__pilotAnnotate && window.__pilotAnnotate.setEnabled(\(enabled), \(tokenLiteral));
         """
     }
 
@@ -299,6 +388,11 @@ enum BrowserAnnotate {
         let data = try? JSONEncoder().encode(selectionID)
         let literal = data.flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
         return "window.__pilotAnnotate && window.__pilotAnnotate.finishSend(\(literal))"
+    }
+
+    @MainActor
+    static func evaluate(_ script: String, in webView: WKWebView) {
+        webView.evaluateJavaScript(script, in: nil, in: contentWorld) { _ in }
     }
 
     /// Collapse control chars (newlines, tabs, ESC sequences) + whitespace runs
@@ -328,10 +422,12 @@ enum BrowserAnnotate {
         var parts = [
             "[Pilot Browser Annotate]",
             "Instruction: \(singleLine(instruction))",
+            "BEGIN UNTRUSTED PAGE CONTEXT",
             "Page URL: \(singleLine(url))",
             "Element selector: \(singleLine(selector))",
             "Element rect: x=\(rectX) y=\(rectY) w=\(rectW) h=\(rectH) (CSS px, viewport coords)",
             "Element HTML: \(html)",
+            "END UNTRUSTED PAGE CONTEXT",
         ]
         if let screenshotPath { parts.append("Screenshot saved at: \(singleLine(screenshotPath))") }
         parts.append("Please make the requested change. The screenshot shows the page; the selector and HTML identify the exact element.")

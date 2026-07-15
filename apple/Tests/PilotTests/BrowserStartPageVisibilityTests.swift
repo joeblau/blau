@@ -78,9 +78,9 @@ struct BrowserLassoTests {
         let disable = BrowserAnnotate.setEnabledScript(false).filter { !$0.isWhitespace }
 
         let enableDesired = enable.range(of: "__pilotAnnotateDesiredEnabled=true")
-        let enableController = enable.range(of: "__pilotAnnotate.setEnabled(true)")
+        let enableController = enable.range(of: "__pilotAnnotate.setEnabled(true,null)")
         let disableDesired = disable.range(of: "__pilotAnnotateDesiredEnabled=false")
-        let disableController = disable.range(of: "__pilotAnnotate.setEnabled(false)")
+        let disableController = disable.range(of: "__pilotAnnotate.setEnabled(false,null)")
 
         #expect(enableDesired != nil)
         #expect(enableController != nil)
@@ -154,15 +154,46 @@ struct BrowserLassoTests {
     }
 
     @Test
+    func bridgeGrantIsStrictNavigationBoundAndSingleUse() throws {
+        let body: [String: Any] = [
+            "action": "send",
+            "instruction": "Fix the button",
+            "url": "https://example.com/page",
+            "selector": "#save",
+            "outerHTML": "<button id=\"save\">Save</button>",
+            "selectionID": "selection-1",
+            "bridgeToken": "grant-1",
+            "rect": ["x": 10, "y": 20, "w": 100, "h": 40],
+        ]
+        let payload = try #require(BrowserAnnotate.MessagePayload.parse(body))
+        var grant = BrowserAnnotate.BridgeGrant(
+            token: "grant-1",
+            navigationURL: "https://example.com/page",
+            expiresAt: Date(timeIntervalSinceNow: 60)
+        )
+
+        let firstConsume = grant.consume(payload, currentURL: "https://example.com/page")
+        let secondConsume = grant.consume(payload, currentURL: "https://example.com/page")
+        #expect(firstConsume)
+        #expect(!secondConsume)
+        #expect(BrowserAnnotate.MessagePayload.parse(body.merging(["extra": true]) { _, new in new }) == nil)
+    }
+
+    @Test
     @MainActor
     func injectedLassoLocksAndClearsTheSelectedElement() async throws {
         let configuration = WKWebViewConfiguration()
         let messageSink = BrowserLassoMessageSink()
-        configuration.userContentController.add(messageSink, name: BrowserAnnotate.messageName)
+        configuration.userContentController.add(
+            messageSink,
+            contentWorld: BrowserAnnotate.contentWorld,
+            name: BrowserAnnotate.messageName
+        )
         configuration.userContentController.addUserScript(WKUserScript(
             source: BrowserAnnotate.userScript,
             injectionTime: .atDocumentEnd,
-            forMainFrameOnly: true
+            forMainFrameOnly: true,
+            in: BrowserAnnotate.contentWorld
         ))
         let webView = WKWebView(
             frame: CGRect(x: 0, y: 0, width: 400, height: 300),
@@ -183,7 +214,19 @@ struct BrowserLassoTests {
         #expect(loaded)
         guard loaded else { return }
 
-        _ = try await webView.evaluateJavaScript(BrowserAnnotate.setEnabledScript(true))
+        let forged = try await evaluateString(in: webView, script: """
+        try {
+          window.webkit.messageHandlers.pilotAnnotate.postMessage({action:'send'});
+          'exposed';
+        } catch (_) { 'blocked'; }
+        """)
+        #expect(forged == "blocked")
+        #expect(messageSink.selectionIDs.isEmpty)
+
+        _ = try await evaluateIsolated(
+            in: webView,
+            script: BrowserAnnotate.setEnabledScript(true, token: "test-grant-1")
+        )
         let hoverA = try await evaluateString(in: webView, script: """
         var a = document.getElementById('a');
         a.dispatchEvent(new MouseEvent('mousemove', {bubbles:true, composed:true, clientX:20, clientY:30}));
@@ -206,20 +249,29 @@ struct BrowserLassoTests {
         JSON.stringify({left:document.querySelector('[data-pilot-annotate-highlight]').style.left, box:!!document.querySelector('[data-pilot-annotate-box]')});
         """)
 
-        _ = try await webView.evaluateJavaScript(BrowserAnnotate.setEnabledScript(false))
+        _ = try await evaluateIsolated(
+            in: webView,
+            script: BrowserAnnotate.setEnabledScript(false)
+        )
         let disabled = try await evaluateString(in: webView, script: """
         JSON.stringify({display:document.querySelector('[data-pilot-annotate-highlight]').style.display, box:!!document.querySelector('[data-pilot-annotate-box]')});
         """)
 
         // Re-enable and click B without a preceding mousemove. A stale hover
         // from before the toggle must never select A again.
-        _ = try await webView.evaluateJavaScript(BrowserAnnotate.setEnabledScript(true))
+        _ = try await evaluateIsolated(
+            in: webView,
+            script: BrowserAnnotate.setEnabledScript(true, token: "test-grant-2")
+        )
         let selectedB = try await evaluateString(in: webView, script: """
         b.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, composed:true, clientX:220, clientY:30}));
         b.dispatchEvent(new MouseEvent('click', {bubbles:true, composed:true, clientX:220, clientY:30}));
         JSON.stringify({left:document.querySelector('[data-pilot-annotate-highlight]').style.left, box:!!document.querySelector('[data-pilot-annotate-box]')});
         """)
-        _ = try await webView.evaluateJavaScript(BrowserAnnotate.finishSendScript(selectionID: "stale-selection"))
+        _ = try await evaluateIsolated(
+            in: webView,
+            script: BrowserAnnotate.finishSendScript(selectionID: "stale-selection")
+        )
         let afterStaleFinish = try await evaluateString(in: webView, script: """
         JSON.stringify({left:document.querySelector('[data-pilot-annotate-highlight]').style.left, box:!!document.querySelector('[data-pilot-annotate-box]')});
         """)
@@ -230,7 +282,10 @@ struct BrowserLassoTests {
         JSON.stringify({display:document.querySelector('[data-pilot-annotate-highlight]').style.display, box:!!document.querySelector('[data-pilot-annotate-box]')});
         """)
         let sentBSelectionID = try #require(messageSink.selectionIDs.last)
-        _ = try await webView.evaluateJavaScript(BrowserAnnotate.finishSendScript(selectionID: sentBSelectionID))
+        _ = try await evaluateIsolated(
+            in: webView,
+            script: BrowserAnnotate.finishSendScript(selectionID: sentBSelectionID)
+        )
         let afterSendFinished = try await evaluateString(in: webView, script: """
         JSON.stringify({display:document.querySelector('[data-pilot-annotate-highlight]').style.display, box:!!document.querySelector('[data-pilot-annotate-box]')});
         """)
@@ -274,6 +329,24 @@ struct BrowserLassoTests {
     @MainActor
     private func evaluateString(in webView: WKWebView, script: String) async throws -> String {
         try await webView.evaluateJavaScript(script) as? String ?? ""
+    }
+
+    @MainActor
+    private func evaluateIsolated(in webView: WKWebView, script: String) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            webView.evaluateJavaScript(
+                script,
+                in: nil,
+                in: BrowserAnnotate.contentWorld
+            ) { result in
+                switch result {
+                case .success:
+                    continuation.resume(returning: ())
+                case let .failure(error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 }
 

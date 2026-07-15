@@ -17,7 +17,7 @@ struct PilotApp: App {
     @State private var frameSender = FrameSender()
     @State private var screenMirror: ScreenMirror
     @State private var plotterClientCount = 0
-    @State private var annotationReceiver = AnnotationReceiver()
+    @State private var plotterPairingRequest: FrameLinkPairingRequest?
     @State private var remoteInkModel = RemoteInkModel()
     @State private var recordingTargetPaneID: UUID?
     /// True while a Copilot peer is currently push-to-talking. Flipped
@@ -321,6 +321,11 @@ struct PilotApp: App {
                             }
                         }
                     }
+                    frameSender.onPairingRequestChanged = { request in
+                        Task { @MainActor in
+                            plotterPairingRequest = request
+                        }
+                    }
                     frameSender.onAnnotationMessage = { seq, message in
                         Task { @MainActor in
                             remoteInkModel.handle(message)
@@ -336,18 +341,12 @@ struct PilotApp: App {
                     remoteInkModel.onLocalEdit = { message in
                         frameSender.sendAnnotation(message)
                     }
-                    annotationReceiver.onMessage = { message in
-                        Task { @MainActor in
-                            remoteInkModel.handle(message)
-                        }
-                    }
                     // Advertise the frame channel immediately so a Plotter can
                     // discover and connect, but DON'T start screen capture yet —
                     // capture begins on the first connected client (see
                     // onClientCountChanged) so the macOS screen-sharing indicator
                     // isn't lit whenever Pilot is merely running.
                     frameSender.start()
-                    annotationReceiver.start()
                 }
                 .onChange(of: headphoneDetector.audioOutput) {
                     sendLocalDeviceStatus()
@@ -355,8 +354,46 @@ struct PilotApp: App {
                 .onChange(of: syncService.isConnected) {
                     guard syncService.isConnected else { return }
                     sendLocalDeviceStatus()
-                    // Auto-exchange device keys with Copilot once connected.
+                    secureIdentity.refreshPeer()
+                    // Confirm the already-approved pin to the authenticated peer.
                     secureIdentity.announce()
+                }
+                .alert(
+                    syncService.pairingRequest?.isKeyChange == true
+                        ? "Trust New Copilot Identity?"
+                        : "Pair with Copilot?",
+                    isPresented: Binding(
+                        get: { syncService.pairingRequest != nil },
+                        set: { if !$0 { syncService.resolvePairingRequest(approved: false) } }
+                    )
+                ) {
+                    Button("Reject", role: .cancel) {
+                        syncService.resolvePairingRequest(approved: false)
+                    }
+                    Button(syncService.pairingRequest?.isKeyChange == true ? "Trust New Key" : "Pair") {
+                        syncService.resolvePairingRequest(approved: true)
+                    }
+                } message: {
+                    let request = syncService.pairingRequest
+                    Text("Verify this fingerprint on \(request?.displayName ?? "the other device") before approving:\n\n\(request?.fingerprint ?? "")")
+                }
+                .alert(
+                    plotterPairingRequest?.isKeyChange == true
+                        ? "Trust New Plotter Identity?"
+                        : "Pair with Plotter?",
+                    isPresented: Binding(
+                        get: { plotterPairingRequest != nil },
+                        set: { if !$0 { frameSender.resolvePairingRequest(approved: false) } }
+                    )
+                ) {
+                    Button("Reject", role: .cancel) {
+                        frameSender.resolvePairingRequest(approved: false)
+                    }
+                    Button(plotterPairingRequest?.isKeyChange == true ? "Trust New Key" : "Pair") {
+                        frameSender.resolvePairingRequest(approved: true)
+                    }
+                } message: {
+                    Text("Verify this fingerprint on Plotter before approving:\n\n\(plotterPairingRequest?.fingerprint ?? "")")
                 }
                 .environment(secureIdentity)
                 .onReceive(NotificationCenter.default.publisher(for: .pilotSendIssuePrompt)) { note in

@@ -44,14 +44,16 @@ schemes:
         SharedTests: [test]
     test:
       targets:
-        - SharedTests
+        - name: SharedTests
+          parallelizable: false
   PilotTests:
     build:
       targets:
         PilotTests: [test]
     test:
       targets:
-        - PilotTests
+        - name: PilotTests
+          parallelizable: false
   Pilot:
     build:
       targets:
@@ -64,7 +66,8 @@ schemes:
         CopilotUITests: [test]
     test:
       targets:
-        - CopilotUITests
+        - name: CopilotUITests
+          parallelizable: false
   Plotter:
     build:
       targets:
@@ -72,7 +75,8 @@ schemes:
         PlotterUITests: [test]
     test:
       targets:
-        - PlotterUITests
+        - name: PlotterUITests
+          parallelizable: false
 
 targets:
   Pilot:

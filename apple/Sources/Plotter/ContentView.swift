@@ -32,6 +32,24 @@ struct ContentView: View {
             }
             .padding()
         }
+        .alert(
+            mirror.pairingRequest?.isKeyChange == true
+                ? "Trust New Pilot Identity?"
+                : "Pair with Pilot?",
+            isPresented: Binding(
+                get: { mirror.pairingRequest != nil },
+                set: { if !$0 { mirror.resolvePairingRequest(approved: false) } }
+            )
+        ) {
+            Button("Reject", role: .cancel) {
+                mirror.resolvePairingRequest(approved: false)
+            }
+            Button(mirror.pairingRequest?.isKeyChange == true ? "Trust New Key" : "Pair") {
+                mirror.resolvePairingRequest(approved: true)
+            }
+        } message: {
+            Text("Verify this fingerprint on Pilot before approving:\n\n\(mirror.pairingRequest?.fingerprint ?? "")")
+        }
     }
 }
 
@@ -51,6 +69,11 @@ private struct ConnectionStatusBadge: View {
             .background(.black.opacity(0.42), in: Capsule())
             .help(connected ? "Connected to Pilot" : "Searching for Pilot")
             .accessibilityLabel(connected ? "Connected to Pilot" : "Not connected to Pilot")
+            .contextMenu {
+                Button("Forget Paired Pilot", role: .destructive) {
+                    mirror.forgetPilot()
+                }
+            }
     }
 }
 

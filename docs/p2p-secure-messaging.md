@@ -21,8 +21,8 @@ This document describes what is actually implemented, file by file:
 | Reliability (ack/retransmit) | `apple/Sources/Shared/SecureChannel/ReliableMessenger.swift` |
 | Connection lifecycle | `apple/Sources/Shared/SecureChannel/ConnectionState.swift` |
 | Rendezvous HTTP client | `apple/Sources/Shared/SecureChannel/SignalingClient.swift` |
-| Initiator transport (Copilot) | `apple/Sources/Copilot/SecureMessaging/SecureChannelTransport.swift` |
-| Responder transport (Pilot) | `apple/Sources/Shared/SecureChannel/SecureChannelResponder.swift` |
+| Shared role-parameterized transport | `apple/Sources/Shared/SecureChannel/SecureChannelCore.swift` |
+| Deadlines + duplicate-msg1 recovery | `apple/Sources/Shared/SecureChannel/SecureChannelDeadline.swift` |
 | Pairing / key-sharing UI | `apple/Sources/Shared/SettingsView.swift`, `Sources/{Copilot,Pilot}/SecureMessaging/SecureMessagingView.swift` |
 | Rendezvous Worker | `workers/rendezvous/src/{index.ts,signaling.ts}`, `wrangler.jsonc` |
 
@@ -151,18 +151,19 @@ separated. Both static public keys **and** the full transcript are bound into
   matches.
 - **But raw IK cannot tell the responder *which* initiator it is talking to.**
   Raw IK proves "some party holding *a* static key" — an unknown-key-share /
-  spoofed-initiator gap. So `Responder.receive` takes an `authorize` closure and
-  the production responder (`SecureChannelResponder`) pins it:
+  spoofed-initiator gap. So `Responder.receive` requires the expected initiator
+  public key and the production responder (`SecureChannelResponder`) passes its
+  persisted pin:
 
   ```swift
-  authorize: { initiatorStatic in
-      initiatorStatic.rawRepresentation == peerStatic.rawRepresentation
-  }
+  expectedInitiator: peerStatic
   ```
 
   If the recovered `s_I` is not the pinned peer key, it throws
   `HandshakeError.unauthorizedPeer` **before** any transport key is released.
-  (The default closure accepts any key and is for tests only.)
+  There is no accept-all production overload, so a missing trusted-peer
+  configuration is a compile-time error rather than a silent authentication
+  bypass.
 
 ### Hardening notes
 
@@ -277,8 +278,9 @@ blobs where a dropped packet is cheaper than a stall.
 ## 4. Replay protection
 
 `ReplayWindow` is a per-direction sliding window over the monotonic packet
-counter, modelled on the RFC 6479 / IPsec-ESP scheme. Default window size is
-**1024** counters.
+counter, modelled on RFC 1982 serial arithmetic and the RFC 6479 / IPsec-ESP
+scheme. Default window size is **1024** counters and remains correct across a
+`UInt64.max → 0` wrap.
 
 It tracks the highest counter accepted and the set of accepted counters inside
 `[highest − size + 1, highest]`. `accept(counter)` returns:
@@ -308,11 +310,18 @@ signaling ─▶ holePunching ─▶ handshake ─▶ connected
 
 `transition(to:)` rejects illegal edges (e.g. signaling → connected without a
 handshake) and `failed` is absorbing — the first failure reason is preserved.
-The two transports (`SecureChannelTransport`, `SecureChannelResponder`) drive
-this as signaling, hole-punching, and the handshake complete. The responder is
-passive in the handshake stage: it waits for the initiator's msg1 on its
-receive loop, authorizes the recovered `s_I` against the pinned peer key, and
-replies with msg2.
+One `SecureChannelCore` drives both roles through signaling, hole-punching,
+handshake, receive, ACK/replay, diagnostics, and cleanup. The compatibility
+names `SecureChannelTransport` and `SecureChannelResponder` are type aliases;
+only handshake direction and send/receive key selection vary by role.
+
+Socket readiness and the handshake each have an 8-second monotonic deadline.
+Cancellation cancels the underlying `NWConnection` and resolves the waiting
+continuation exactly once. The initiator retransmits the exact same msg1 every
+500 ms until msg2 arrives or the deadline expires. The responder caches msg2
+only for the exact authenticated msg1 that established the session, allowing a
+lost msg2 to recover without accepting a different or unauthenticated msg1.
+Timeout errors are surfaced as retryable failures.
 
 ---
 
@@ -429,7 +438,12 @@ The value layer is exercised by `apple/Tests/SharedTests/SecureChannelTests.swif
 (run via the `SharedTests` scheme): full handshake derives identical directional
 keys; a wrong responder static key or mismatched static key fails; tampered
 header / ciphertext fail to open; nonce XOR uniqueness; replay window accept /
-reject; reliable messenger ack / backoff / abandonment; ack-tracker dedup; and
-the connection state machine's legal/illegal transitions. The suite also checks
-Keychain migration behavior, token generation/validation, HTTPS enforcement,
-and POST-only signaling request construction.
+reject, wraparound, and 10,000-message memory bounds; reliable messenger ack /
+backoff / bounded abandonment history; ack-tracker dedup; retransmit deadlines;
+duplicate-msg1 response caching; and shared-core directional-key parity. The
+suite also checks Keychain migration behavior, token generation/validation,
+HTTPS enforcement, and POST-only signaling request construction.
+
+Local control-sync and FrameLink pairing are covered separately by
+`PeerSyncAuthenticationTests` and `FrameLinkSecurityTests`; see
+`device-pairing-and-framelink.md` for those protocols and their revocation flow.

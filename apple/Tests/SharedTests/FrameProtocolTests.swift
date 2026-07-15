@@ -4,8 +4,7 @@ import XCTest
 @testable import Copilot
 
 /// Unit tests for the pure, socket-free ``FrameProtocol`` value layer:
-/// packet roundtrips, HEVC configuration preservation, UDP fragmentation, and
-/// the loss/reorder/dedup behaviour of the reassembler.
+/// packet roundtrips, HEVC configuration preservation, and stream budgets.
 final class FrameProtocolTests: XCTestCase {
 
     // MARK: - Helpers
@@ -137,108 +136,71 @@ final class FrameProtocolTests: XCTestCase {
         XCTAssertNil(FrameProtocol.decode(Data()))
     }
 
-    // MARK: - Fragmentation
+    func testConfigurationRejectsImpossibleDimensionsAndParameterLengths() {
+        let oversized = FrameProtocol.VideoConfiguration(
+            width: FrameProtocol.maxVideoDimension + 1,
+            height: 1080,
+            chroma: .yuv420,
+            vps: data([1]), sps: data([2]), pps: data([3])
+        )
+        XCTAssertTrue(FrameProtocol.encode(.configuration(oversized)).isEmpty)
 
-    func testLargeFrameFragmentsIntoMultipleDatagrams() {
-        let length = FrameProtocol.maxFragmentPayload * 2 + 100
-        let sample = makeSample(id: 5, key: false, length: length)
-        let datagrams = FrameProtocol.fragment(sample: sample)
-        XCTAssertEqual(datagrams.count, 3)
-        for datagram in datagrams {
-            let payload = datagram.count - FrameProtocol.fragmentHeaderSize
-            XCTAssertLessThanOrEqual(payload, FrameProtocol.maxFragmentPayload)
+        var malformed = Data([1, 0])
+        appendUInt32(1_920, to: &malformed)
+        appendUInt32(1_080, to: &malformed)
+        appendUInt32(UInt32.max, to: &malformed)
+        appendUInt32(UInt32.max, to: &malformed)
+        appendUInt32(UInt32.max, to: &malformed)
+        XCTAssertNil(FrameProtocol.decode(malformed), "length arithmetic must not overflow")
+    }
+
+    func testLengthPrefixedDecoderRejectsImpossiblePrefixImmediately() {
+        var decoder = FrameLink.StreamDecoder(maxPayloadBytes: 1_024)
+        let result = decoder.append(Data([0xFF, 0xFF, 0xFF, 0xFF]))
+        XCTAssertEqual(try? result.get(), nil)
+        guard case .failure(.invalidLength) = result else {
+            return XCTFail("expected invalid-length violation")
+        }
+        XCTAssertTrue(decoder.buffer.isEmpty)
+    }
+
+    func testLengthPrefixedDecoderHandlesBoundariesAndSplitInput() throws {
+        var decoder = FrameLink.StreamDecoder(maxPayloadBytes: 8, receiveSlack: 8)
+        var packet = Data([0, 0, 0, 8])
+        packet.append(Data(repeating: 0xAB, count: 8))
+        XCTAssertEqual(try decoder.append(packet.prefix(3)).get(), [])
+        let decoded = try decoder.append(packet.dropFirst(3)).get()
+        XCTAssertEqual(decoded, [Data(repeating: 0xAB, count: 8)])
+    }
+
+    func testLengthPrefixedDecoderCapsBufferedBytes() {
+        var decoder = FrameLink.StreamDecoder(maxPayloadBytes: 8, receiveSlack: 4)
+        let result = decoder.append(Data(repeating: 0, count: 13))
+        guard case .failure(.bufferLimit) = result else {
+            return XCTFail("expected buffer-limit violation")
         }
     }
 
-    func testSmallFrameProducesSingleDatagram() {
-        let sample = makeSample(id: 1, key: true, length: 10)
-        XCTAssertEqual(FrameProtocol.fragment(sample: sample).count, 1)
-    }
-
-    func testInOrderReassemblyReconstructsSample() {
-        let sample = makeSample(id: 1, key: true, length: FrameProtocol.maxFragmentPayload * 2 + 7)
-        let reassembler = FrameProtocol.Reassembler()
-        var completed: FrameProtocol.VideoSample?
-        for datagram in FrameProtocol.fragment(sample: sample) {
-            if let s = reassembler.ingest(datagram).sample { completed = s }
+    func testMalformedStreamFuzzNeverExceedsTheConnectionBudget() {
+        var seed: UInt64 = 0xB1A0_F00D
+        var decoder = FrameLink.StreamDecoder(maxPayloadBytes: 4_096, receiveSlack: 256)
+        for _ in 0 ..< 2_000 {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1
+            let length = Int(seed % 96)
+            var bytes = [UInt8](repeating: 0, count: length)
+            for index in bytes.indices {
+                seed = seed &* 2_862_933_555_777_941_757 &+ 3_037_000_493
+                bytes[index] = UInt8(truncatingIfNeeded: seed >> 24)
+            }
+            if case .failure = decoder.append(Data(bytes)) {
+                decoder.reset()
+            }
+            XCTAssertLessThanOrEqual(decoder.buffer.count, decoder.maxBufferedBytes)
         }
-        XCTAssertEqual(completed?.data, sample.data)
-        XCTAssertEqual(completed?.frameID, 1)
-        XCTAssertTrue(completed?.isKeyFrame ?? false)
     }
 
-    func testOutOfOrderFragmentsStillReassemble() {
-        let sample = makeSample(id: 7, key: true, length: FrameProtocol.maxFragmentPayload * 3 + 1)
-        let datagrams = FrameProtocol.fragment(sample: sample).reversed()
-        let reassembler = FrameProtocol.Reassembler()
-        var completed: FrameProtocol.VideoSample?
-        for datagram in datagrams {
-            if let s = reassembler.ingest(datagram).sample { completed = s }
-        }
-        XCTAssertEqual(completed?.data, sample.data)
-    }
-
-    func testMissingFragmentNeverCompletesAndGapIsFlaggedLater() {
-        // Keyframe 0 completes; P-frame 1 loses a fragment and never completes;
-        // P-frame 2 completes -> gap (frame 1 missing) should be flagged.
-        let reassembler = FrameProtocol.Reassembler()
-
-        let key = makeSample(id: 0, key: true, length: 10)
-        XCTAssertNotNil(reassembler.ingest(FrameProtocol.fragment(sample: key)[0]).sample)
-
-        let lossy = makeSample(id: 1, key: false, length: FrameProtocol.maxFragmentPayload * 2 + 5)
-        let lossyDatagrams = FrameProtocol.fragment(sample: lossy)
-        // Deliver only the first fragment of frame 1; it can never complete.
-        XCTAssertNil(reassembler.ingest(lossyDatagrams[0]).sample)
-
-        let next = makeSample(id: 2, key: false, length: 10)
-        let result = reassembler.ingest(FrameProtocol.fragment(sample: next)[0])
-        XCTAssertNotNil(result.sample)
-        XCTAssertTrue(result.needsKeyframe, "non-contiguous completed frame should flag a gap")
-    }
-
-    func testDuplicateDatagramIsIgnored() {
-        let sample = makeSample(id: 3, key: true, length: FrameProtocol.maxFragmentPayload + 50)
-        let datagrams = FrameProtocol.fragment(sample: sample)
-        XCTAssertEqual(datagrams.count, 2)
-        let reassembler = FrameProtocol.Reassembler()
-
-        // Feed fragment 0 twice, then fragment 1. The duplicate must not
-        // prematurely "complete" the frame nor corrupt the assembled data.
-        XCTAssertNil(reassembler.ingest(datagrams[0]).sample)
-        XCTAssertNil(reassembler.ingest(datagrams[0]).sample)
-        let completed = reassembler.ingest(datagrams[1]).sample
-        XCTAssertEqual(completed?.data, sample.data)
-    }
-
-    func testPFrameBeforeAnyKeyframeIsDiscarded() {
-        let reassembler = FrameProtocol.Reassembler()
-        let pframe = makeSample(id: 0, key: false, length: 10)
-        let result = reassembler.ingest(FrameProtocol.fragment(sample: pframe)[0])
-        XCTAssertNil(result.sample, "P-frame arriving before any keyframe must be dropped")
-
-        // Once a keyframe arrives and completes, later P-frames flow normally.
-        let key = makeSample(id: 1, key: true, length: 10)
-        XCTAssertNotNil(reassembler.ingest(FrameProtocol.fragment(sample: key)[0]).sample)
-        let p2 = makeSample(id: 2, key: false, length: 10)
-        XCTAssertNotNil(reassembler.ingest(FrameProtocol.fragment(sample: p2)[0]).sample)
-    }
-
-    func testStalePartialEvictedBeyondWindowFlagsKeyframe() {
-        let reassembler = FrameProtocol.Reassembler(windowSize: 4)
-        // Complete a keyframe so P-frames are accepted.
-        let key = makeSample(id: 0, key: true, length: 10)
-        XCTAssertNotNil(reassembler.ingest(FrameProtocol.fragment(sample: key)[0]).sample)
-
-        // Start (but never finish) frame 1 with a multi-fragment sample.
-        let stuck = makeSample(id: 1, key: false, length: FrameProtocol.maxFragmentPayload * 2 + 1)
-        XCTAssertNil(reassembler.ingest(FrameProtocol.fragment(sample: stuck)[0]).sample)
-
-        // Advance well past the window with a far-future single-fragment frame.
-        // Frame 1 is now older than windowSize behind and must be evicted,
-        // which flags a keyframe request.
-        let future = makeSample(id: 20, key: false, length: 10)
-        let result = reassembler.ingest(FrameProtocol.fragment(sample: future)[0])
-        XCTAssertTrue(result.needsKeyframe)
+    private func appendUInt32(_ value: UInt32, to data: inout Data) {
+        var bigEndian = value.bigEndian
+        data.append(Data(bytes: &bigEndian, count: 4))
     }
 }
