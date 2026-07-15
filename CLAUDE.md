@@ -1,29 +1,61 @@
-# blau
+# Contributor and coding-agent guide
 
-Three-app ecosystem + landing page.
+This file is portable repository context. It does not assume a particular AI
+tool, plugin, skill router, or globally installed utility.
 
-## Structure
+## Repository map
 
-- `apple/` — Pilot (macOS), Copilot (iOS), Wingman (watchOS). Built with SwiftUI, XcodeGen, Swift 6.0. Run `xcodegen generate` from `apple/`.
-- `workers/web/` — Landing page at blau.app. Built with Astro, deployed to Cloudflare (Workers Static Assets) via `.github/workflows/deploy.yml`.
-- `workers/rendezvous/` — Cloudflare Worker (Durable Object WebSocket relay) that pairs blau peers across networks. Deployed alongside web by the same workflow.
+- `apple/` — Pilot (macOS), Copilot (iOS), Plotter (iPadOS), Wingman (watchOS),
+  shared peer protocols, unit/UI tests, XcodeGen source, and screenshot tools.
+- `workers/web/` — Astro static site deployed to Cloudflare.
+- `workers/rendezvous/` — Cloudflare Worker and Durable Object relay.
+- `docs/` — security models, display policy, binary-artifact provenance, and
+  production operations.
 
-## Skill routing
+## Before changing code
 
-When the user's request matches an available skill, ALWAYS invoke it using the Skill
-tool as your FIRST action. Do NOT answer directly, do NOT use other tools first.
-The skill has specialized workflows that produce better results than ad-hoc answers.
+1. Read [README.md](README.md) for the supported Xcode/Bun versions and setup.
+2. Read the closest security or operations document for peer, Worker, release,
+   credential, or deployment changes.
+3. Inspect the current worktree before editing. Preserve unrelated changes.
+4. Keep generated files reproducible. Edit `apple/project.yml`, then run the
+   pinned `apple/bin/install-xcodegen.sh`; never hand-author project drift.
 
-Key routing rules:
-- Product ideas, "is this worth building", brainstorming → invoke office-hours
-- Bugs, errors, "why is this broken", 500 errors → invoke investigate
-- Ship, deploy, push, create PR → invoke ship
-- QA, test the site, find bugs → invoke qa
-- Code review, check my diff → invoke review
-- Update docs after shipping → invoke document-release
-- Weekly retro → invoke retro
-- Design system, brand → invoke design-consultation
-- Visual audit, design polish → invoke design-review
-- Architecture review → invoke plan-eng-review
-- Save progress, checkpoint, resume → invoke checkpoint
-- Code quality, health check → invoke health
+## Verification contract
+
+Run the smallest relevant checks while iterating and the complete affected
+lane before handoff:
+
+```bash
+apple/bin/build-ci.sh
+apple/bin/test.sh all
+apple/bin/lint-swift.sh --all
+apple/bin/app-icon-tool.swift validate
+bun run ci
+bin/check-docs.sh
+```
+
+CI runs Apple work on Xcode 26 and Worker work from the frozen Bun lockfile.
+Avoid new unpinned network downloads or Actions. A generated artifact must have
+one authoritative source, a checked-in regeneration path, and a validation
+step.
+
+## Repository conventions
+
+- Swift 6 concurrency checking is enabled. Keep UI state on the main actor and
+  make ownership/cancellation explicit for long-lived tasks.
+- Treat all peer, WebSocket, Bonjour, pasteboard, browser-message, subprocess,
+  and file inputs as untrusted. Enforce size/lifetime/replay bounds before
+  allocation or state mutation.
+- Do not weaken pairing, authentication, content security policy, signing, or
+  CI checks to make a test pass.
+- Do not commit secrets, `.dev.vars`, local `.env` files, signing material,
+  derived data, release symbols, or generated dependency caches.
+- Keep GitHub issue references stable; do not document source line numbers that
+  become stale as files move.
+
+## Handoff
+
+Summarize behavior changes, files with non-obvious policy decisions, commands
+run, and checks that could not run. Deployment, release publication, repository
+settings, and destructive history migration require explicit maintainer scope.

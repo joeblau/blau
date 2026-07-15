@@ -1,2 +1,3 @@
 brew "gh"
+brew "fastlane"
 brew "xcodegen"

@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       apple: ${{ steps.filter.outputs.apple }}
+      docs: ${{ steps.filter.outputs.docs }}
       workers: ${{ steps.filter.outputs.workers }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -25,12 +26,27 @@ jobs:
           filters: |
             apple:
               - 'apple/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/ghosttykit-bootstrap.yml'
+            docs:
+              - '**/*.md'
+              - 'bin/check-docs.sh'
+              - '.github/workflows/ci.yml'
             workers:
               - 'workers/**'
               - 'package.json'
               - 'bun.lock'
               - 'turbo.json'
               - 'eslint.config.js'
+              - '.github/workflows/ci.yml'
+
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - run: bin/check-docs.sh
 
   workers:
     needs: changes
@@ -80,7 +96,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: apple/.ci-source-packages
-          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode26-${{ hashFiles('apple/blau.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode26-${{ hashFiles('apple/blau.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'apple/Packages/GhosttyKit/Package.swift') }}
+      - name: Validate application icons
+        run: apple/bin/app-icon-tool.swift validate
       - name: Verify generated Xcode project
         run: |
           apple/bin/install-xcodegen.sh generate --spec apple/project.yml --project apple
@@ -92,7 +110,7 @@ jobs:
 
   complete:
     if: always()
-    needs: [changes, workers, apple-lint, apple-build-test]
+    needs: [changes, docs, workers, apple-lint, apple-build-test]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected gate

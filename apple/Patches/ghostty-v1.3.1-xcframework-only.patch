@@ -1,0 +1,31 @@
+diff --git a/build.zig b/build.zig
+index b90e3bb17..c0814b433 100644
+--- a/build.zig
++++ b/build.zig
+@@ -116,7 +116,9 @@ pub fn build(b: *std.Build) !void {
+         );
+     };
+     libghostty_vt_shared.install(libvt_step);
+-    libghostty_vt_shared.install(b.getInstallStep());
++    // blau's binary release needs only GhosttyXCFramework. Keeping the
++    // independent libghostty-vt dylib off the default install step prevents
++    // an unrelated host dylib build from contaminating this artifact job.
+ 
+     // Helpgen
+     if (config.emit_helpgen) deps.help_strings.install();
+diff --git a/src/build/LibtoolStep.zig b/src/build/LibtoolStep.zig
+index 0bdf20ba8..cf61f56e9 100644
+--- a/src/build/LibtoolStep.zig
++++ b/src/build/LibtoolStep.zig
+@@ -44,7 +44,10 @@ pub fn create(b: *std.Build, opts: Options) *LibtoolStep {
+     const self = b.allocator.create(LibtoolStep) catch @panic("OOM");
+ 
+     const run_step = RunStep.create(b, b.fmt("libtool {s}", .{opts.name}));
+-    run_step.addArgs(&.{ "libtool", "-static", "-o" });
++    // Xcode 27's libtool rejects valid Zig Mach-O members that aren't padded
++    // to 8 bytes. LLVM ar's qL mode flattens each dependency archive and
++    // writes the correct deterministic Darwin archive without dropping them.
++    run_step.addArgs(&.{ "zig", "ar", "--format=darwin", "qcsDL" });
+     const output = run_step.addOutputFileArg(opts.out_name);
+     for (opts.sources) |source| run_step.addFileArg(source);
+ 
