@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -788,6 +788,8 @@
 				8833109D0027DBF808B774DA /* PBXTargetDependency */,
 			);
 			name = PlotterUITests;
+			packageProductDependencies = (
+			);
 			productName = PlotterUITests;
 			productReference = 6470DA7198630EEEED1F83E5 /* PlotterUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -826,6 +828,8 @@
 				848A01304996CA69D930D069 /* PBXTargetDependency */,
 			);
 			name = PilotTests;
+			packageProductDependencies = (
+			);
 			productName = PilotTests;
 			productReference = 52D5914A6EBA1115A33AE425 /* PilotTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -842,6 +846,8 @@
 			dependencies = (
 			);
 			name = "Wingman Watch App";
+			packageProductDependencies = (
+			);
 			productName = "Wingman Watch App";
 			productReference = 89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */;
 			productType = "com.apple.product-type.application";
@@ -858,6 +864,8 @@
 				D6FAD4960B623690EFB1F633 /* PBXTargetDependency */,
 			);
 			name = CopilotUITests;
+			packageProductDependencies = (
+			);
 			productName = CopilotUITests;
 			productReference = 37AF3DF097D535DA68029E46 /* CopilotUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -876,6 +884,8 @@
 				0A1AD6DF866F3D69ED6BD4B9 /* PBXTargetDependency */,
 			);
 			name = Plotter;
+			packageProductDependencies = (
+			);
 			productName = Plotter;
 			productReference = 46C4196429C52AD7709CA4CF /* Plotter.app */;
 			productType = "com.apple.product-type.application";
@@ -892,6 +902,8 @@
 				9E22AEE7C35FB537E6F4FF17 /* PBXTargetDependency */,
 			);
 			name = SharedTests;
+			packageProductDependencies = (
+			);
 			productName = SharedTests;
 			productReference = 97052041CFD5C5F3CAFA379C /* SharedTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -907,6 +919,8 @@
 			dependencies = (
 			);
 			name = PlotterWidgets;
+			packageProductDependencies = (
+			);
 			productName = PlotterWidgets;
 			productReference = 54378CCC8B919AFA650CF9E1 /* PlotterWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -952,7 +966,6 @@
 				};
 			};
 			buildConfigurationList = 74ADF296704D0196519381CD /* Build configuration list for PBXProject "blau" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -960,12 +973,15 @@
 				en,
 			);
 			mainGroup = F636F1A41A2EA0642253731E;
+			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				71EDA6A5C3688FCD868ADCCC /* XCRemoteSwiftPackageReference "CodeEditLanguages" */,
 				A897E60FF62D36C0B29E3DAB /* XCRemoteSwiftPackageReference "CodeEditSourceEditor" */,
 				42CBA16A25AD5D46E7F1A183 /* XCRemoteSwiftPackageReference "royalvnc" */,
 				50F0B147F324DFF1703BC4B0 /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = F8B4DA7DF1CF626E57F97CC4 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
