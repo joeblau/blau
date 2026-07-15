@@ -182,17 +182,17 @@ enum NoiseIK {
         /// Raw Noise IK authenticates that *some* initiator possesses the static
         /// key it presents, but it cannot tell whether that initiator is the peer
         /// the user actually paired with. The caller MUST therefore supply an
-        /// `authorize` closure that checks the recovered initiator static key
-        /// against the pinned/allow-listed peer; otherwise the responder would
+        /// `expectedInitiator` key that checks the recovered initiator static
+        /// key against the pinned peer; otherwise the responder would
         /// establish an authenticated session with any attacker who knows the
         /// responder's (out-of-band shared) static key. When `authorize` returns
         /// `false` this throws `.unauthorizedPeer` and no transport keys are ever
-        /// released. The default closure accepts any key — pass an explicit pin
-        /// for real (non-test) callers.
+        /// released. There is deliberately no accept-all overload: callers
+        /// cannot construct a responder handshake without an explicit pin.
         static func receive(
             staticKey: Curve25519.KeyAgreement.PrivateKey,
             message: Data,
-            authorize: (Curve25519.KeyAgreement.PublicKey) -> Bool = { _ in true }
+            expectedInitiator: Curve25519.KeyAgreement.PublicKey
         ) throws -> Responder {
             var transcript = CryptoCore.Transcript(protocolLabel: protocolLabel)
             var ck = Data(SHA256.hash(data: Data(protocolLabel.utf8)))
@@ -226,7 +226,9 @@ enum NoiseIK {
             // Reject unpinned initiators before doing any further work or
             // releasing transport keys. This closes the unknown-key-share /
             // spoofed-initiator gap that raw IK leaves open on the responder.
-            guard authorize(sI) else { throw HandshakeError.unauthorizedPeer }
+            guard sI.rawRepresentation == expectedInitiator.rawRepresentation else {
+                throw HandshakeError.unauthorizedPeer
+            }
             transcript.mix(sealedStatic)
 
             // ss = DH(s_R, s_I) -> payload key.

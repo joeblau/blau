@@ -1,0 +1,66 @@
+# Local device pairing and FrameLink security
+
+Pilot accepts remote-control commands and mirrored-screen clients only after an
+explicit device pairing. A nearby service name is never an authorization
+credential.
+
+## Copilot ↔ Pilot control sync
+
+`PeerSyncService` advertises a public Curve25519 identity and includes the same
+identity in its invitation context. On first contact, both apps show the same
+SHA-256 verification code derived from the ordered pair of public keys and
+require the user to approve it. Users should compare the codes displayed on
+both devices before selecting **Pair**.
+
+The approved peer key is stored in the Keychain. Every Multipeer connection
+then performs a fresh, nonce-bound X25519/HMAC possession proof. `isConnected`
+remains false and application messages are ignored until both proofs succeed.
+Each command is carried in a session-bound authenticated envelope with a
+monotonic replay window. Multipeer transport encryption remains required, but
+it is not treated as peer authentication.
+
+Only one peer is authorized at a time. A changed public key produces a separate
+**Trust New Key** confirmation; a `.deviceKey` message cannot create or replace
+the stored pin.
+
+## Pilot ↔ Plotter FrameLink
+
+FrameLink has one supported production transport: the `_blau-frames._tcp`
+Bonjour service. The retired UDP and standalone annotation services have been
+removed. Annotation commands and screen frames share the same authenticated
+TCP connection.
+
+Bonjour metadata contains no identity or other sensitive identifier. Once the
+direct TCP connection is open, Pilot and Plotter exchange a public key and a
+fresh 32-byte nonce. Unknown or changed keys require the same verification-code
+approval described above. The peers then prove possession of their pinned
+X25519 keys with a transcript-bound HMAC.
+
+After authentication, every protocol packet is protected with
+ChaCha20-Poly1305. Direction-specific keys, nonces, and authenticated associated
+data bind the ciphertext to the current handshake transcript, sender identity,
+and sequence number. Tampered, replayed, wrong-key, prior-session, plaintext,
+and surplus-client traffic is rejected before Pilot sends a frame or accepts an
+annotation.
+
+The TCP decoder rejects zero, overflowing, or over-budget length prefixes
+immediately. Packet kinds also enforce video-dimension, parameter-set, sample,
+JPEG, and annotation ceilings. Diagnostics expose only aggregate invalid/drop
+counters, never payload contents.
+
+## Revocation and key rotation
+
+- Plotter can revoke its Pilot pin by long-pressing the connection badge and
+  choosing **Forget Paired Pilot**. The active connection is closed immediately
+  and the next connection requires approval.
+- The transport objects also expose `revokePairing()` for Pilot-side settings
+  and administrative flows; it removes the Keychain pin and disconnects the
+  authenticated client.
+- Regenerating a device identity is a rotation, not an automatic replacement.
+  The other device sees a key-change warning and must explicitly approve the
+  new verification code. Rejecting it preserves the old pin.
+- Uninstalling an app or clearing its Keychain removes its local identity and
+  therefore requires a new pairing ceremony.
+
+Pairing state is stored with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
+and is never synchronized to another device or written to `UserDefaults`.

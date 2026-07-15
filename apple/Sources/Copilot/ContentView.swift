@@ -54,7 +54,8 @@ struct ContentView: View {
         .onChange(of: syncService.isConnected) {
             guard syncService.isConnected else { return }
             sendDeviceStatus()
-            // Auto-exchange device keys with Pilot once connected.
+            secureIdentity.refreshPeer()
+            // Confirm the already-approved pin to the authenticated peer.
             secureIdentity.announce()
         }
         .overlay(alignment: .top) {
@@ -94,6 +95,25 @@ struct ContentView: View {
             Button("OK", role: .cancel) { transcription.modelErrorMessage = nil }
         } message: {
             Text(transcription.modelErrorMessage ?? "")
+        }
+        .alert(
+            syncService.pairingRequest?.isKeyChange == true
+                ? "Trust New Pilot Identity?"
+                : "Pair with Pilot?",
+            isPresented: Binding(
+                get: { syncService.pairingRequest != nil },
+                set: { if !$0 { syncService.resolvePairingRequest(approved: false) } }
+            )
+        ) {
+            Button("Reject", role: .cancel) {
+                syncService.resolvePairingRequest(approved: false)
+            }
+            Button(syncService.pairingRequest?.isKeyChange == true ? "Trust New Key" : "Pair") {
+                syncService.resolvePairingRequest(approved: true)
+            }
+        } message: {
+            let request = syncService.pairingRequest
+            Text("Verify this fingerprint on \(request?.displayName ?? "the other device") before approving:\n\n\(request?.fingerprint ?? "")")
         }
     }
 

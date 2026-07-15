@@ -172,6 +172,7 @@ struct SecureMessagingView: View {
                 allowInsecureLocalhost: allowInsecureLocalhost
             )
             let t = SecureChannelTransport(
+                role: .initiator,
                 signaling: client,
                 token: token,
                 staticKey: identity,

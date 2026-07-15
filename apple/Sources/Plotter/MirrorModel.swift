@@ -19,6 +19,7 @@ final class MirrorModel {
     private(set) var annotationStatusText = "Annotation idle"
     private(set) var frameCount = 0
     private(set) var videoSize: CGSize = .zero
+    private(set) var pairingRequest: FrameLinkPairingRequest?
 
     /// True when launched with `-demoMode YES`. In demo mode the live decode /
     /// receive path is short-circuited and the view renders a representative
@@ -81,6 +82,11 @@ final class MirrorModel {
                 PlotterActivityController.shared.setConnected(connected, title: "Pilot")
             }
         }
+        receiver.onPairingRequestChanged = { [weak self] request in
+            Task { @MainActor in
+                self?.pairingRequest = request
+            }
+        }
     }
 
     func start() {
@@ -102,6 +108,18 @@ final class MirrorModel {
         receiver.stop()
         feedbackTask?.cancel()
         feedbackTask = nil
+    }
+
+    func resolvePairingRequest(approved: Bool) {
+        pairingRequest = nil
+        receiver.resolvePairingRequest(approved: approved)
+    }
+
+    func forgetPilot() {
+        pairingRequest = nil
+        receiver.revokePairing()
+        frameCount = 0
+        statusText = "Pilot pairing revoked"
     }
 
     /// Seeds representative state for screenshots: a 16:10 dark still, a

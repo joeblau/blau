@@ -753,13 +753,22 @@ struct WebViewRepresentable: NSViewRepresentable {
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         // Browser Annotate: inject the in-page overlay + a message handler for
         // the single "send" round-trip.
-        config.userContentController.add(context.coordinator, name: BrowserAnnotate.messageName)
+        config.userContentController.add(
+            context.coordinator,
+            contentWorld: BrowserAnnotate.contentWorld,
+            name: BrowserAnnotate.messageName
+        )
         // Main frame only: the page snapshot covers the top document, so element
         // rects must be in top-document coordinates. Injecting into subframes
         // would let the box open inside an iframe with rects the screenshot
         // can't line up against.
         config.userContentController.addUserScript(
-            WKUserScript(source: BrowserAnnotate.userScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+            WKUserScript(
+                source: BrowserAnnotate.userScript,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true,
+                in: BrowserAnnotate.contentWorld
+            )
         )
         let webView = BrowserWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -823,7 +832,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         // Browser Annotate: push the enabled state into the injected overlay.
         if context.coordinator.lastAnnotateToggleID != annotateToggleRequestID {
             context.coordinator.lastAnnotateToggleID = annotateToggleRequestID
-            nsView.evaluateJavaScript(BrowserAnnotate.setEnabledScript(annotateMode))
+            context.coordinator.setAnnotateMode(annotateMode, in: nsView)
         }
 
         // Always apply appearance — NSAppearance drives prefers-color-scheme in WKWebView
@@ -868,6 +877,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         var lastAnnotateToggleID = -1
         private var urlObservation: NSKeyValueObservation?
         private var pendingDestinations: [ObjectIdentifier: URL] = [:]
+        private var annotateGrant: BrowserAnnotate.BridgeGrant?
 
         init(state: BrowserState, targetTerminalPaneID: @escaping @MainActor () -> UUID?) {
             self.state = state
@@ -880,28 +890,37 @@ struct WebViewRepresentable: NSViewRepresentable {
 
         // MARK: - Browser Annotate
 
-        /// The single web→Swift hop: on "send", screenshot the page, compose the
-        /// prompt, and reuse `.pilotSendIssuePrompt` (paste + Enter into the
-        /// active terminal — the one the user just clicked).
+        func setAnnotateMode(_ enabled: Bool, in webView: WKWebView) {
+            guard enabled, let navigationURL = webView.url?.absoluteString else {
+                annotateGrant = nil
+                BrowserAnnotate.evaluate(BrowserAnnotate.setEnabledScript(false), in: webView)
+                return
+            }
+            let token = UUID().uuidString
+            annotateGrant = BrowserAnnotate.BridgeGrant(
+                token: token,
+                navigationURL: navigationURL,
+                expiresAt: Date(timeIntervalSinceNow: BrowserAnnotate.grantLifetime)
+            )
+            BrowserAnnotate.evaluate(
+                BrowserAnnotate.setEnabledScript(true, token: token),
+                in: webView
+            )
+        }
+
+        /// The isolated-world web→Swift hop. A main-frame, current-navigation,
+        /// single-use grant is consumed before the asynchronous snapshot starts.
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.name == BrowserAnnotate.messageName,
-                  let body = message.body as? [String: Any],
-                  (body["action"] as? String) == "send" else { return }
-            let instruction = body["instruction"] as? String ?? ""
-            let url = body["url"] as? String ?? ""
-            let selector = body["selector"] as? String ?? ""
-            let outerHTML = body["outerHTML"] as? String ?? ""
-            guard let selectionID = body["selectionID"] as? String,
-                  !selectionID.isEmpty else { return }
-            let rect = body["rect"] as? [String: Any] ?? [:]
-            func intValue(_ key: String) -> Int { Int((rect[key] as? NSNumber)?.doubleValue ?? 0) }
-            let rx = intValue("x"), ry = intValue("y"), rw = intValue("w"), rh = intValue("h")
+                  message.frameInfo.isMainFrame,
+                  let payload = BrowserAnnotate.MessagePayload.parse(message.body) else { return }
             // WebKit calls this on the main thread.
             MainActor.assumeIsolated {
-                // Only honor sends while the user has annotate mode on — a page
-                // can postMessage to this handler, so don't let an untrusted site
-                // inject a prompt into the user's terminal on its own.
-                guard state.annotateMode, let webView = message.webView else { return }
+                guard state.annotateMode,
+                      let webView = message.webView,
+                      let currentURL = webView.url?.absoluteString,
+                      annotateGrant?.consume(payload, currentURL: currentURL) == true else { return }
+                annotateGrant = nil
                 // Resolve the terminal synchronously while the user's last
                 // terminal click is still authoritative. `takeSnapshot` is
                 // asynchronous; looking it up in its completion can send to a
@@ -909,23 +928,51 @@ struct WebViewRepresentable: NSViewRepresentable {
                 let dispatch = BrowserAnnotate.DispatchContext(
                     targetPaneID: targetTerminalPaneID()
                 )
-                webView.takeSnapshot(with: WKSnapshotConfiguration()) { image, _ in
-                    // The page intentionally keeps the selected element outlined
-                    // until this completion so the screenshot marks exactly what
-                    // the user asked the agent to change.
-                    webView.evaluateJavaScript(BrowserAnnotate.finishSendScript(selectionID: selectionID))
-                    let path = BrowserAnnotate.writeScreenshot(image)
-                    let prompt = BrowserAnnotate.buildPrompt(
-                        instruction: instruction, url: url, selector: selector, outerHTML: outerHTML,
-                        rectX: rx, rectY: ry, rectW: rw, rectH: rh, screenshotPath: path
-                    )
-                    NotificationCenter.default.post(
-                        name: .pilotSendIssuePrompt,
-                        object: nil,
-                        userInfo: dispatch.notificationUserInfo(prompt: prompt)
-                    )
+                webView.takeSnapshot(with: WKSnapshotConfiguration()) { [weak self, weak webView] image, _ in
+                    Task { @MainActor in
+                        guard let self, let webView,
+                              webView.url?.absoluteString == payload.url else { return }
+                        // Keep the trusted outline through capture, then clear it
+                        // in the same isolated content world.
+                        BrowserAnnotate.evaluate(
+                            BrowserAnnotate.finishSendScript(selectionID: payload.selectionID),
+                            in: webView
+                        )
+                        let path = BrowserAnnotate.writeScreenshot(image)
+                        let prompt = BrowserAnnotate.buildPrompt(
+                            instruction: payload.instruction,
+                            url: payload.url,
+                            selector: payload.selector,
+                            outerHTML: payload.outerHTML,
+                            rectX: payload.rectX,
+                            rectY: payload.rectY,
+                            rectW: payload.rectW,
+                            rectH: payload.rectH,
+                            screenshotPath: path
+                        )
+                        if self.confirmDispatch(instruction: payload.instruction, url: payload.url) {
+                            NotificationCenter.default.post(
+                                name: .pilotSendIssuePrompt,
+                                object: nil,
+                                userInfo: dispatch.notificationUserInfo(prompt: prompt)
+                            )
+                        }
+                        if self.state.annotateMode {
+                            self.setAnnotateMode(true, in: webView)
+                        }
+                    }
                 }
             }
+        }
+
+        private func confirmDispatch(instruction: String, url: String) -> Bool {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Send browser annotation to the terminal?"
+            alert.informativeText = "Instruction: \(instruction)\n\nPage: \(url)\n\nPage content is untrusted and will be clearly delimited in the prompt."
+            alert.addButton(withTitle: "Send")
+            alert.addButton(withTitle: "Cancel")
+            return alert.runModal() == .alertFirstButtonReturn
         }
 
         /// KVO on `WKWebView.url` so the address bar reflects every URL
@@ -1016,6 +1063,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            annotateGrant = nil
             state.isLoading = true
             updateNavState(webView)
         }
@@ -1039,7 +1087,7 @@ struct WebViewRepresentable: NSViewRepresentable {
             // The user script re-injects (disabled) on each load — re-assert
             // annotate mode so it survives navigation.
             if state.annotateMode {
-                webView.evaluateJavaScript(BrowserAnnotate.setEnabledScript(true))
+                setAnnotateMode(true, in: webView)
             }
         }
 

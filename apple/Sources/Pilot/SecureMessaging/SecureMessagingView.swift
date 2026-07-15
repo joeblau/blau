@@ -178,6 +178,7 @@ struct PilotSecureMessagingView: View {
                 allowInsecureLocalhost: allowInsecureLocalhost
             )
             let t = SecureChannelResponder(
+                role: .responder,
                 signaling: client,
                 token: token,
                 staticKey: identity,

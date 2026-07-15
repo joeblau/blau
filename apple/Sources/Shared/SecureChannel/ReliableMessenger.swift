@@ -19,6 +19,8 @@ struct ReliableMessenger {
     /// First retransmit delay; doubles each attempt up to `maxBackoff`.
     static let defaultBaseBackoff: TimeInterval = 0.25
     static let defaultMaxBackoff: TimeInterval = 8.0
+    /// Keep only recent delivery failures for diagnostics.
+    static let defaultAbandonedHistoryLimit = 256
 
     /// An on-wire reliable control message paired with its ACK token.
     struct Message: Equatable, Sendable {
@@ -45,20 +47,24 @@ struct ReliableMessenger {
     private let maxAttempts: Int
     private let baseBackoff: TimeInterval
     private let maxBackoff: TimeInterval
+    private let abandonedHistoryLimit: Int
 
     private var nextID: UInt64 = 1
     private var inFlight: [UInt64: InFlight] = [:]
     /// IDs whose retransmission budget was exhausted before an ACK arrived.
-    private(set) var abandoned: Set<UInt64> = []
+    private(set) var abandoned: [UInt64] = []
 
     init(
         maxAttempts: Int = ReliableMessenger.defaultMaxAttempts,
         baseBackoff: TimeInterval = ReliableMessenger.defaultBaseBackoff,
-        maxBackoff: TimeInterval = ReliableMessenger.defaultMaxBackoff
+        maxBackoff: TimeInterval = ReliableMessenger.defaultMaxBackoff,
+        abandonedHistoryLimit: Int = ReliableMessenger.defaultAbandonedHistoryLimit
     ) {
+        precondition(abandonedHistoryLimit > 0)
         self.maxAttempts = maxAttempts
         self.baseBackoff = baseBackoff
         self.maxBackoff = maxBackoff
+        self.abandonedHistoryLimit = abandonedHistoryLimit
     }
 
     /// Number of messages still awaiting an ACK.
@@ -70,6 +76,8 @@ struct ReliableMessenger {
     /// Enqueue a new reliable message for delivery. Returns the assigned
     /// `msgID`, which the receiver will echo in its ACK. The first send is due
     /// immediately (`now`); the caller transmits it on the next `due(now:)`.
+    /// IDs use wrapping UInt64 serial arithmetic; the receiver's bounded
+    /// `AckTracker` handles rollover. A reconnect resets both sides to ID 1.
     mutating func enqueue(_ payload: Data, now: TimeInterval) -> Message {
         let id = nextID
         nextID &+= 1
@@ -108,7 +116,10 @@ struct ReliableMessenger {
             if entry.nextFireAt <= now {
                 if entry.attempts >= maxAttempts {
                     inFlight.removeValue(forKey: id)
-                    abandoned.insert(id)
+                    abandoned.append(id)
+                    if abandoned.count > abandonedHistoryLimit {
+                        abandoned.removeFirst(abandoned.count - abandonedHistoryLimit)
+                    }
                     continue
                 }
                 entry.attempts += 1
@@ -135,14 +146,22 @@ struct ReliableMessenger {
 /// been delivered to the app so duplicates (from sender retransmits) are
 /// ACK'd again but not re-delivered.
 struct AckTracker {
-    private var delivered: Set<UInt64> = []
+    static let defaultWindowSize: UInt64 = 4_096
+
+    private var delivered: ReplayWindow
+
+    init(windowSize: UInt64 = AckTracker.defaultWindowSize) {
+        delivered = ReplayWindow(size: windowSize)
+    }
+
+    var retainedCount: Int { delivered.retainedCount }
 
     /// Register receipt of a reliable message. Returns `true` if this is the
     /// first time (deliver it to the app); `false` for a duplicate (still ACK
     /// it so the sender stops retransmitting, but don't re-deliver).
     @discardableResult
     mutating func receive(_ id: UInt64) -> Bool {
-        delivered.insert(id).inserted
+        delivered.accept(id)
     }
 
     func hasDelivered(_ id: UInt64) -> Bool { delivered.contains(id) }

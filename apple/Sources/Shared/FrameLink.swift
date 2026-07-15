@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Network
 import os
@@ -19,16 +20,12 @@ public enum FrameLink {
     /// annotation channel.
     public static let serviceType = "_blau-frames._tcp"
 
-    /// Bonjour service type for the unreliable UDP media channel: carries
-    /// fragmented P-frame access units. Advertised/browsed alongside the TCP
-    /// service. Running a parallel bonjour service (rather than tunnelling the
-    /// UDP endpoint over TCP) keeps each side's discovery/reconnect logic
-    /// symmetric and lets AWDL negotiate the peer link per service.
-    public static let udpServiceType = "_blau-frames-udp._udp"
-
     /// Size, in bytes, of the big-endian length prefix that precedes each
-    /// TCP packet. UDP datagrams are self-framing and carry no prefix.
+    /// TCP packet.
     static let headerSize = 4
+    static let maxTCPPayloadBytes = FrameProtocol.maxSampleBytes + 6
+    static let maxControlPayloadBytes = FrameProtocol.maxAnnotationBytes + 5
+    static let maxSecureRecordBytes = maxTCPPayloadBytes + FrameLinkSecureSession.encryptedOverhead
 
     /// The packets carried by the link. ``FrameProtocol`` owns the actual
     /// value types and wire format; ``FrameLink.Packet`` is a thin alias so the
@@ -40,12 +37,20 @@ public enum FrameLink {
     public typealias LinkFeedback = FrameProtocol.LinkFeedback
     public typealias Capability = FrameProtocol.Capability
 
-    /// Encodes a length-prefixed TCP packet ready for the wire.
+    /// Encodes the typed plaintext that is then sealed by the per-connection
+    /// secure session. Plain media/control bytes are never written directly.
     static func encode(_ packet: Packet) -> Data {
-        let payload = FrameProtocol.encode(packet)
-        var length = UInt32(payload.count).bigEndian
+        FrameProtocol.encode(packet)
+    }
+
+    /// Applies the outer TCP length prefix to a handshake or AEAD record.
+    static func frame(_ record: Data) -> Data {
+        guard !record.isEmpty,
+              record.count <= maxSecureRecordBytes,
+              let recordLength = UInt32(exactly: record.count) else { return Data() }
+        var length = recordLength.bigEndian
         var framed = Data(bytes: &length, count: headerSize)
-        framed.append(payload)
+        framed.append(record)
         return framed
     }
 
@@ -67,12 +72,59 @@ public enum FrameLink {
         return parameters
     }
 
-    /// Network parameters for the unreliable media channel. Peer-to-peer
-    /// (AWDL) is enabled for the same high-bandwidth direct link.
-    static func udpParameters() -> NWParameters {
-        let parameters = NWParameters.udp
-        parameters.includePeerToPeer = true
-        return parameters
+    /// Incremental, overflow-safe decoder for the TCP length prefix. A bad
+    /// prefix poisons the connection immediately; callers must disconnect
+    /// rather than wait for an attacker-selected allocation size.
+    struct StreamDecoder {
+        enum Violation: Error, Equatable {
+            case bufferLimit
+            case invalidLength
+        }
+
+        private(set) var buffer = Data()
+        let maxPayloadBytes: Int
+        let maxBufferedBytes: Int
+
+        init(maxPayloadBytes: Int, receiveSlack: Int = 1 << 16) {
+            self.maxPayloadBytes = max(1, maxPayloadBytes)
+            let (sum, overflow) = self.maxPayloadBytes.addingReportingOverflow(receiveSlack)
+            self.maxBufferedBytes = overflow ? self.maxPayloadBytes : sum
+        }
+
+        mutating func append(_ incoming: Data) -> Result<[Data], Violation> {
+            let (newCount, overflow) = buffer.count.addingReportingOverflow(incoming.count)
+            guard !overflow, newCount <= maxBufferedBytes else {
+                buffer.removeAll(keepingCapacity: false)
+                return .failure(.bufferLimit)
+            }
+            buffer.append(incoming)
+
+            var packets: [Data] = []
+            while buffer.count >= FrameLink.headerSize {
+                let rawLength = buffer.prefix(FrameLink.headerSize).reduce(UInt32(0)) {
+                    ($0 << 8) | UInt32($1)
+                }
+                guard rawLength > 0,
+                      let length = Int(exactly: rawLength),
+                      length <= maxPayloadBytes else {
+                    buffer.removeAll(keepingCapacity: false)
+                    return .failure(.invalidLength)
+                }
+                let (total, totalOverflow) = FrameLink.headerSize.addingReportingOverflow(length)
+                guard !totalOverflow else {
+                    buffer.removeAll(keepingCapacity: false)
+                    return .failure(.invalidLength)
+                }
+                guard buffer.count >= total else { break }
+                packets.append(buffer.subdata(in: FrameLink.headerSize ..< total))
+                buffer.removeSubrange(0 ..< total)
+            }
+            return .success(packets)
+        }
+
+        mutating func reset() {
+            buffer.removeAll(keepingCapacity: true)
+        }
     }
 }
 
@@ -85,13 +137,14 @@ public enum FrameLink {
 public final class FrameSender: @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.blau.framelink.sender")
     private var listener: NWListener?
-    private var udpListener: NWListener?
     private var connections: [ObjectIdentifier: ConnectionState] = [:]
-    /// UDP client endpoints discovered as datagrams arrive (the receiver pokes
-    /// the listener with a tiny hello so we learn where to send P-frames).
-    private var udpConnections: [ObjectIdentifier: NWConnection] = [:]
     private var running = false
     private var framesSent = 0
+    private var invalidPacketCount = 0
+    private let localKey: Curve25519.KeyAgreement.PrivateKey
+    private let pairingStore = FrameLinkPairingStore()
+    private var trustedPeerPublicKey: String?
+    private var pendingPairing: (id: ObjectIdentifier, request: FrameLinkPairingRequest)?
 
     /// Diagnostics, invoked on `queue`. Lets the UI surface whether the
     /// listener is up, how many clients are connected, and how many frames
@@ -99,6 +152,8 @@ public final class FrameSender: @unchecked Sendable {
     public var onListenerReady: (() -> Void)?
     public var onClientCountChanged: ((Int) -> Void)?
     public var onFrameSent: ((Int) -> Void)?
+    public var onInvalidPacketCountChanged: ((Int) -> Void)?
+    var onPairingRequestChanged: ((FrameLinkPairingRequest?) -> Void)?
     /// Invoked for every annotation update received from a client, carrying
     /// the update's sequence number so the handler can acknowledge it via
     /// ``sendAnnotationAck(_:)`` once accepted.
@@ -114,7 +169,13 @@ public final class FrameSender: @unchecked Sendable {
     /// Invoked when a client advertises its decode capabilities (handshake).
     public var onCapability: ((FrameLink.Capability) -> Void)?
 
-    public init() {}
+    public init() {
+        let isTesting = ProcessInfo.processInfo.environment.keys.contains("XCTestConfigurationFilePath")
+        localKey = isTesting
+            ? Curve25519.KeyAgreement.PrivateKey()
+            : ((try? DeviceIdentity.loadOrCreate()) ?? Curve25519.KeyAgreement.PrivateKey())
+        trustedPeerPublicKey = isTesting ? nil : pairingStore.loadPeerPublicKey()
+    }
 
     deinit { stop() }
 
@@ -122,11 +183,6 @@ public final class FrameSender: @unchecked Sendable {
         queue.async { [weak self] in
             self?.running = true
             self?.startListenerLocked()
-            // The UDP media path is unused — all frames go over TCP (see
-            // send(_:)). Starting the UDP listener here only spun in a
-            // restart loop, spamming the log and burning energy, so it's not
-            // started. sendOverUDP/startUDPListenerLocked are kept for if/when
-            // the hybrid path is revived.
         }
     }
 
@@ -136,27 +192,37 @@ public final class FrameSender: @unchecked Sendable {
             self.running = false
             self.listener?.cancel()
             self.listener = nil
-            self.udpListener?.cancel()
-            self.udpListener = nil
             for state in self.connections.values {
                 state.connection.cancel()
             }
             self.connections.removeAll()
-            for connection in self.udpConnections.values {
-                connection.cancel()
+            self.pendingPairing = nil
+            self.onPairingRequestChanged?(nil)
+        }
+    }
+
+    public func resolvePairingRequest(approved: Bool) {
+        queue.async { [weak self] in
+            self?.resolvePairingRequestLocked(approved: approved)
+        }
+    }
+
+    public func revokePairing() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.trustedPeerPublicKey = nil
+            try? self.pairingStore.revoke()
+            for state in self.connections.values {
+                state.security.revokePeer()
+                state.connection.cancel()
             }
-            self.udpConnections.removeAll()
+            self.connections.removeAll()
+            self.onClientCountChanged?(0)
         }
     }
 
     /// Sends one media packet to every connected client over the reliable TCP
-    /// channel. The hybrid UDP P-frame path proved unreliable on real
-    /// AWDL/Local-Network links (the receiver's UDP browse fails with NoAuth and
-    /// the listener restart-loops), starving the stream of everything but
-    /// keyframes. TCP carries 60fps HEVC comfortably on a LAN; the only cost is
-    /// latency spikes under heavy loss, which is negligible here and far better
-    /// than the freeze-every-2s the UDP split produced. UDP can return as an
-    /// optimisation once discovery is sorted (see sendOverUDP, kept but unused).
+    /// channel. TCP is the only supported production media transport.
     public func send(_ mediaPacket: FrameLink.Packet) {
         sendOverTCP(mediaPacket)
     }
@@ -200,28 +266,17 @@ public final class FrameSender: @unchecked Sendable {
         }
     }
 
-    private func sendOverUDP(_ sample: FrameProtocol.VideoSample) {
-        let datagrams = FrameProtocol.fragment(sample: sample)
-        queue.async { [weak self] in
-            guard let self else { return }
-            var delivered = false
-            for connection in self.udpConnections.values where connection.state == .ready {
-                for datagram in datagrams {
-                    connection.send(content: datagram, completion: .contentProcessed { _ in })
-                }
-                delivered = true
-            }
-            if delivered {
-                self.countFrameSent()
-            }
-        }
-    }
-
     @discardableResult
     private func broadcastTCP(_ packet: Data) -> Bool {
+        guard !packet.isEmpty else { return false }
         var delivered = false
-        for state in connections.values where state.connection.state == .ready {
-            state.connection.send(content: packet, completion: .contentProcessed { _ in })
+        for state in connections.values
+            where state.connection.state == .ready && state.security.isAuthenticated {
+            guard let record = state.security.seal(packet) else { continue }
+            state.connection.send(
+                content: FrameLink.frame(record),
+                completion: .contentProcessed { _ in }
+            )
             delivered = true
         }
         return delivered
@@ -275,43 +330,6 @@ public final class FrameSender: @unchecked Sendable {
         listener.start(queue: queue)
     }
 
-    private func startUDPListenerLocked() {
-        guard running, udpListener == nil else { return }
-
-        let listener: NWListener
-        do {
-            listener = try NWListener(using: FrameLink.udpParameters())
-        } catch {
-            queue.asyncAfter(deadline: .now() + 1) { [weak self] in
-                self?.startUDPListenerLocked()
-            }
-            return
-        }
-
-        listener.service = NWListener.Service(type: FrameLink.udpServiceType)
-        listener.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                frameLinkLog.log("FrameSender: UDP listener ready, advertising \(FrameLink.udpServiceType, privacy: .public)")
-            case .failed, .cancelled:
-                self.udpListener = nil
-                guard self.running else { return }
-                self.queue.asyncAfter(deadline: .now() + 1) { [weak self] in
-                    self?.startUDPListenerLocked()
-                }
-            default:
-                break
-            }
-        }
-        listener.newConnectionHandler = { [weak self] connection in
-            self?.adoptUDP(connection)
-        }
-
-        self.udpListener = listener
-        listener.start(queue: queue)
-    }
-
     private func scheduleListenerRestart() {
         guard running else { return }
         queue.asyncAfter(deadline: .now() + 1) { [weak self] in
@@ -320,61 +338,47 @@ public final class FrameSender: @unchecked Sendable {
     }
 
     private func adopt(_ connection: NWConnection) {
+        guard connections.isEmpty else {
+            // FrameLink is intentionally one-to-one: surplus clients never see
+            // a handshake, let alone a mirrored frame.
+            connection.cancel()
+            return
+        }
         let id = ObjectIdentifier(connection)
-        connections[id] = ConnectionState(connection: connection)
-        frameLinkLog.log("FrameSender: client connection accepted (\(self.connections.count, privacy: .public) total)")
-        onClientCountChanged?(connections.count)
+        connections[id] = ConnectionState(
+            connection: connection,
+            security: FrameLinkSecureSession(
+                localKey: localKey,
+                trustedPeerPublicKey: trustedPeerPublicKey
+            )
+        )
+        frameLinkLog.log("FrameSender: candidate connection accepted for authentication")
 
         connection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             switch state {
             case .ready:
-                // A fresh client needs a keyframe to begin decoding.
-                self.onClientConnected?()
+                guard let connectionState = self.connections[id],
+                      let hello = connectionState.security.begin() else {
+                    connection.cancel()
+                    return
+                }
+                self.sendRecord(hello, using: connectionState)
                 self.receiveNext(from: id)
             case .failed, .cancelled:
+                let wasAuthenticated = self.connections[id]?.security.isAuthenticated == true
                 self.connections.removeValue(forKey: id)
-                self.onClientCountChanged?(self.connections.count)
+                if self.pendingPairing?.id == id {
+                    self.pendingPairing = nil
+                    self.onPairingRequestChanged?(nil)
+                }
+                if wasAuthenticated { self.onClientCountChanged?(0) }
             default:
                 break
             }
         }
 
         connection.start(queue: queue)
-    }
-
-    /// Adopts an inbound UDP "connection" (a datagram flow from one receiver)
-    /// so we can address P-frame datagrams back to that endpoint.
-    private func adoptUDP(_ connection: NWConnection) {
-        let id = ObjectIdentifier(connection)
-        udpConnections[id] = connection
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                self.receiveUDPHello(from: id)
-            case .failed, .cancelled:
-                self.udpConnections.removeValue(forKey: id)
-            default:
-                break
-            }
-        }
-        connection.start(queue: queue)
-    }
-
-    /// Drains (and discards) the receiver's UDP keep-alive/hello datagrams. We
-    /// only need the flow to stay alive so our outbound P-frames have a route.
-    private func receiveUDPHello(from id: ObjectIdentifier) {
-        guard let connection = udpConnections[id] else { return }
-        connection.receiveMessage { [weak self] _, _, isComplete, error in
-            guard let self else { return }
-            if error != nil || isComplete {
-                self.udpConnections.removeValue(forKey: id)
-                connection.cancel()
-                return
-            }
-            self.receiveUDPHello(from: id)
-        }
     }
 
     private func receiveNext(from id: ObjectIdentifier) {
@@ -385,14 +389,20 @@ public final class FrameSender: @unchecked Sendable {
                   let state = self.connections[id] else { return }
 
             if let data, !data.isEmpty {
-                state.buffer.append(data)
-                self.drainInboundPackets(from: id)
+                switch state.decoder.append(data) {
+                case .success(let payloads):
+                    self.processSecureRecords(payloads, from: id, state: state)
+                case .failure:
+                    self.rejectConnection(id, state: state)
+                    return
+                }
             }
 
             if error != nil || isComplete {
+                let wasAuthenticated = state.security.isAuthenticated
                 self.connections.removeValue(forKey: id)
                 state.connection.cancel()
-                self.onClientCountChanged?(self.connections.count)
+                if wasAuthenticated { self.onClientCountChanged?(0) }
                 return
             }
 
@@ -400,20 +410,42 @@ public final class FrameSender: @unchecked Sendable {
         }
     }
 
-    private func drainInboundPackets(from id: ObjectIdentifier) {
-        guard let state = connections[id] else { return }
-        while state.buffer.count >= FrameLink.headerSize {
-            let length = state.buffer.prefix(FrameLink.headerSize).reduce(UInt32(0)) {
-                ($0 << 8) | UInt32($1)
+    private func processSecureRecords(
+        _ records: [Data],
+        from id: ObjectIdentifier,
+        state: ConnectionState
+    ) {
+        for record in records {
+            guard let opened = state.security.receive(record, displayName: "Plotter") else {
+                rejectConnection(id, state: state)
+                return
             }
-            let packetLength = Int(length)
-            let total = FrameLink.headerSize + packetLength
-            guard state.buffer.count >= total else { break }
+            switch opened {
+            case .send(let response):
+                sendRecord(response, using: state)
 
-            let payload = state.buffer.subdata(in: FrameLink.headerSize ..< total)
-            state.buffer.removeSubrange(0 ..< total)
+            case .pairingRequired(let request):
+                guard pendingPairing == nil else {
+                    rejectConnection(id, state: state)
+                    return
+                }
+                pendingPairing = (id, request)
+                onPairingRequestChanged?(request)
 
-            switch FrameLink.decodePayload(payload) {
+            case .waiting:
+                break
+
+            case .authenticated:
+                didAuthenticateClient()
+
+            case .plaintext(let payload):
+                processInboundPacket(payload)
+            }
+        }
+    }
+
+    private func processInboundPacket(_ payload: Data) {
+        switch FrameLink.decodePayload(payload) {
             case .annotation(let seq, let message):
                 frameLinkLog.log("FrameSender: annotation packet received (seq \(seq, privacy: .public))")
                 onAnnotationMessage?(seq, message)
@@ -424,17 +456,67 @@ public final class FrameSender: @unchecked Sendable {
             case .capability(let capability):
                 onCapability?(capability)
             default:
-                continue
-            }
+                recordInvalidPacket()
         }
+    }
+
+    private func sendRecord(_ record: Data, using state: ConnectionState) {
+        let framed = FrameLink.frame(record)
+        guard !framed.isEmpty else { return }
+        state.connection.send(content: framed, completion: .contentProcessed { _ in })
+    }
+
+    private func resolvePairingRequestLocked(approved: Bool) {
+        guard let pending = pendingPairing,
+              let state = connections[pending.id] else { return }
+        pendingPairing = nil
+        onPairingRequestChanged?(nil)
+        guard approved,
+              let approval = state.security.approvePending(publicKey: pending.request.publicKey) else {
+            state.security.rejectPending()
+            rejectConnection(pending.id, state: state)
+            return
+        }
+        trustedPeerPublicKey = pending.request.publicKey
+        if !ProcessInfo.processInfo.environment.keys.contains("XCTestConfigurationFilePath") {
+            try? pairingStore.setPeerPublicKey(pending.request.publicKey)
+        }
+        sendRecord(approval.proof, using: state)
+        if approval.authenticated { didAuthenticateClient() }
+    }
+
+    private func didAuthenticateClient() {
+        frameLinkLog.log("FrameSender: Plotter identity authenticated")
+        onClientCountChanged?(1)
+        // A freshly authenticated client needs a keyframe to decode.
+        onClientConnected?()
+    }
+
+    private func rejectConnection(_ id: ObjectIdentifier, state: ConnectionState) {
+        let wasAuthenticated = state.security.isAuthenticated
+        connections.removeValue(forKey: id)
+        state.connection.cancel()
+        if pendingPairing?.id == id {
+            pendingPairing = nil
+            onPairingRequestChanged?(nil)
+        }
+        if wasAuthenticated { onClientCountChanged?(0) }
+        recordInvalidPacket()
+    }
+
+    private func recordInvalidPacket() {
+        invalidPacketCount += 1
+        onInvalidPacketCountChanged?(invalidPacketCount)
     }
 
     private final class ConnectionState {
         let connection: NWConnection
-        var buffer = Data()
+        var decoder = FrameLink.StreamDecoder(maxPayloadBytes: FrameLink.maxSecureRecordBytes)
+        var security: FrameLinkSecureSession
 
-        init(connection: NWConnection) {
+        init(connection: NWConnection, security: FrameLinkSecureSession) {
             self.connection = connection
+            self.security = security
         }
     }
 }
@@ -448,15 +530,15 @@ public final class FrameReceiver: @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.blau.framelink.receiver")
     private var browser: NWBrowser?
     private var connection: NWConnection?
-    private var udpBrowser: NWBrowser?
-    private var udpConnection: NWConnection?
-    private var buffer = Data()
+    private var decoder = FrameLink.StreamDecoder(maxPayloadBytes: FrameLink.maxSecureRecordBytes)
     private var running = false
     private var framesReceived = 0
     private var pendingOutbound: [Data] = []
+    private var invalidPacketCount = 0
+    private let pairingStore = FrameLinkPairingStore()
+    private var security: FrameLinkSecureSession
+    private var pairingRequest: FrameLinkPairingRequest?
 
-    /// Reassembles fragmented P-frames arriving over UDP.
-    private let reassembler = FrameProtocol.Reassembler()
     /// True while a keyframe request is outstanding (single-outstanding
     /// recovery): suppresses a storm of requests until the next keyframe.
     private var keyframeRequestOutstanding = false
@@ -468,16 +550,27 @@ public final class FrameReceiver: @unchecked Sendable {
     /// Called on an internal queue for every complete JPEG frame received.
     public var onFrame: ((Data) -> Void)?
     /// Called on an internal queue for every decoded media packet received.
-    /// Both TCP packets and fully reassembled UDP samples are delivered here.
+    /// All production packets arrive over the authenticated TCP stream.
     public var onPacket: ((FrameLink.Packet) -> Void)?
     public var onStatusChanged: ((String) -> Void)?
     public var onFrameCountChanged: ((Int) -> Void)?
+    public var onInvalidPacketCountChanged: ((Int) -> Void)?
+    var onPairingRequestChanged: ((FrameLinkPairingRequest?) -> Void)?
     /// Fired with `true` when the frame connection becomes ready and `false`
     /// when it tears down, so the UI can match Pilot's appearance only while
     /// actually connected.
     public var onConnectedChanged: ((Bool) -> Void)?
 
-    public init() {}
+    public init() {
+        let isTesting = ProcessInfo.processInfo.environment.keys.contains("XCTestConfigurationFilePath")
+        let key = isTesting
+            ? Curve25519.KeyAgreement.PrivateKey()
+            : ((try? DeviceIdentity.loadOrCreate()) ?? Curve25519.KeyAgreement.PrivateKey())
+        security = FrameLinkSecureSession(
+            localKey: key,
+            trustedPeerPublicKey: isTesting ? nil : pairingStore.loadPeerPublicKey()
+        )
+    }
 
     deinit { stop() }
 
@@ -485,9 +578,6 @@ public final class FrameReceiver: @unchecked Sendable {
         queue.async { [weak self] in
             self?.running = true
             self?.startBrowserLocked()
-            // UDP media path is unused (all frames arrive over TCP). Browsing
-            // for the UDP service only failed in a loop (NoAuth without Local
-            // Network), so it's not started. Kept for a future hybrid revival.
         }
     }
 
@@ -499,13 +589,26 @@ public final class FrameReceiver: @unchecked Sendable {
             self.browser = nil
             self.connection?.cancel()
             self.connection = nil
-            self.udpBrowser?.cancel()
-            self.udpBrowser = nil
-            self.udpConnection?.cancel()
-            self.udpConnection = nil
-            self.buffer.removeAll()
+            self.decoder.reset()
             self.pendingOutbound.removeAll()
-            self.reassembler.reset()
+            self.security.resetSession()
+            self.pairingRequest = nil
+            self.onPairingRequestChanged?(nil)
+        }
+    }
+
+    public func resolvePairingRequest(approved: Bool) {
+        queue.async { [weak self] in
+            self?.resolvePairingRequestLocked(approved: approved)
+        }
+    }
+
+    public func revokePairing() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            try? self.pairingStore.revoke()
+            self.security.revokePeer()
+            self.teardownConnection()
         }
     }
 
@@ -546,11 +649,7 @@ public final class FrameReceiver: @unchecked Sendable {
         keyframeRequestOutstanding = true
         lastKeyframeRequest = now
         let packet = FrameLink.encode(.keyframeRequest)
-        if connection?.state == .ready {
-            connection?.send(content: packet, completion: .contentProcessed { _ in })
-        } else {
-            enqueueOutboundLocked(packet)
-        }
+        enqueueOutboundLocked(packet)
     }
 
     private func enqueueOutbound(_ packet: Data) {
@@ -560,14 +659,19 @@ public final class FrameReceiver: @unchecked Sendable {
     }
 
     private func enqueueOutboundLocked(_ packet: Data) {
-        guard connection?.state == .ready else {
+        guard !packet.isEmpty,
+              connection?.state == .ready,
+              let record = security.seal(packet) else {
             pendingOutbound.append(packet)
             if pendingOutbound.count > 16 {
                 pendingOutbound.removeFirst(pendingOutbound.count - 16)
             }
             return
         }
-        connection?.send(content: packet, completion: .contentProcessed { _ in })
+        connection?.send(
+            content: FrameLink.frame(record),
+            completion: .contentProcessed { _ in }
+        )
     }
 
     private func startBrowserLocked() {
@@ -610,37 +714,6 @@ public final class FrameReceiver: @unchecked Sendable {
         browser.start(queue: queue)
     }
 
-    private func startUDPBrowserLocked() {
-        guard running, udpBrowser == nil else { return }
-
-        let browser = NWBrowser(
-            for: .bonjour(type: FrameLink.udpServiceType, domain: nil),
-            using: FrameLink.udpParameters()
-        )
-        browser.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .failed, .cancelled:
-                self.udpBrowser = nil
-                guard self.running else { return }
-                self.queue.asyncAfter(deadline: .now() + 1) { [weak self] in
-                    self?.startUDPBrowserLocked()
-                }
-            default:
-                break
-            }
-        }
-        browser.browseResultsChangedHandler = { [weak self] results, _ in
-            guard let self,
-                  self.udpConnection == nil,
-                  let first = results.first else { return }
-            self.connectUDP(to: first.endpoint)
-        }
-
-        self.udpBrowser = browser
-        browser.start(queue: queue)
-    }
-
     private func scheduleBrowserRestart() {
         guard running else { return }
         queue.asyncAfter(deadline: .now() + 1) { [weak self] in
@@ -655,9 +728,12 @@ public final class FrameReceiver: @unchecked Sendable {
             guard let self else { return }
             switch state {
             case .ready:
-                self.updateStatus("Frame stream connected")
-                self.onConnectedChanged?(true)
-                self.flushPendingOutbound()
+                guard let hello = self.security.begin() else {
+                    self.teardownConnection()
+                    return
+                }
+                self.updateStatus("Authenticating Pilot frame stream")
+                self.sendRecord(hello)
                 self.receiveNext()
             case .failed, .cancelled:
                 self.updateStatus("Frame stream disconnected")
@@ -670,81 +746,17 @@ public final class FrameReceiver: @unchecked Sendable {
         }
 
         self.connection = connection
-        buffer.removeAll(keepingCapacity: true)
+        decoder.reset()
         connection.start(queue: queue)
-    }
-
-    private func connectUDP(to endpoint: NWEndpoint) {
-        let connection = NWConnection(to: endpoint, using: FrameLink.udpParameters())
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                // Poke the sender so it learns our endpoint and can route
-                // P-frame datagrams back to us. Repeated periodically to keep
-                // the NAT/flow alive.
-                self.sendUDPHello()
-                self.receiveUDP()
-            case .failed, .cancelled:
-                self.udpConnection = nil
-                self.reassembler.reset()
-                guard self.running, self.udpBrowser == nil else { return }
-                self.queue.asyncAfter(deadline: .now() + 1) { [weak self] in
-                    self?.startUDPBrowserLocked()
-                }
-            default:
-                break
-            }
-        }
-        self.udpConnection = connection
-        connection.start(queue: queue)
-    }
-
-    private func sendUDPHello() {
-        guard udpConnection?.state == .ready else { return }
-        udpConnection?.send(content: Data([0x0]), completion: .contentProcessed { _ in })
-        // Keep the flow alive so the sender's route to us doesn't expire.
-        queue.asyncAfter(deadline: .now() + 2) { [weak self] in
-            self?.sendUDPHello()
-        }
-    }
-
-    private func receiveUDP() {
-        udpConnection?.receiveMessage { [weak self] data, _, isComplete, error in
-            guard let self else { return }
-            if let data, !data.isEmpty {
-                self.ingestUDP(data)
-            }
-            if error != nil || isComplete {
-                self.udpConnection?.cancel()
-                self.udpConnection = nil
-                self.reassembler.reset()
-                if self.running, self.udpBrowser == nil {
-                    self.queue.asyncAfter(deadline: .now() + 1) { [weak self] in
-                        self?.startUDPBrowserLocked()
-                    }
-                }
-                return
-            }
-            self.receiveUDP()
-        }
-    }
-
-    private func ingestUDP(_ datagram: Data) {
-        let result = reassembler.ingest(datagram)
-        if result.needsKeyframe {
-            requestKeyframeLocked()
-        }
-        if let sample = result.sample {
-            countReceivedFrame()
-            onPacket?(.sample(sample))
-        }
     }
 
     private func teardownConnection() {
         connection?.cancel()
         connection = nil
-        buffer.removeAll(keepingCapacity: true)
+        decoder.reset()
+        security.resetSession()
+        pairingRequest = nil
+        onPairingRequestChanged?(nil)
         onConnectedChanged?(false)
         // Browser may still be alive; if not, restart browsing to find a peer.
         if running, browser == nil {
@@ -758,8 +770,15 @@ public final class FrameReceiver: @unchecked Sendable {
             guard let self else { return }
 
             if let data, !data.isEmpty {
-                self.buffer.append(data)
-                self.drainFrames()
+                switch self.decoder.append(data) {
+                case .success(let records):
+                    self.processSecureRecords(records)
+                case .failure:
+                    self.recordInvalidPacket()
+                    self.updateStatus("Rejected invalid frame stream")
+                    self.teardownConnection()
+                    return
+                }
             }
 
             if error != nil || isComplete {
@@ -776,22 +795,74 @@ public final class FrameReceiver: @unchecked Sendable {
         }
     }
 
-    /// Pulls as many complete length-prefixed packets out of `buffer` as are
-    /// currently available. The TCP channel carries configuration, keyframe
-    /// samples, control packets and the annotation ACK.
-    private func drainFrames() {
-        while buffer.count >= FrameLink.headerSize {
-            let length = buffer.prefix(FrameLink.headerSize).reduce(UInt32(0)) {
-                ($0 << 8) | UInt32($1)
+    private func processSecureRecords(_ records: [Data]) {
+        for record in records {
+            guard let opened = security.receive(record, displayName: "Pilot") else {
+                recordInvalidPacket()
+                updateStatus("Rejected unauthenticated frame stream")
+                teardownConnection()
+                return
             }
-            let frameLength = Int(length)
-            let total = FrameLink.headerSize + frameLength
-            guard buffer.count >= total else { break }
+            switch opened {
+            case .send(let response):
+                sendRecord(response)
 
-            let payload = buffer.subdata(in: FrameLink.headerSize ..< total)
-            buffer.removeSubrange(0 ..< total)
+            case .pairingRequired(let request):
+                guard pairingRequest == nil else {
+                    teardownConnection()
+                    return
+                }
+                pairingRequest = request
+                onPairingRequestChanged?(request)
+                updateStatus("Approval required to pair Pilot")
 
-            guard frameLength > 0, let packet = FrameLink.decodePayload(payload) else {
+            case .waiting:
+                break
+
+            case .authenticated:
+                didAuthenticatePilot()
+
+            case .plaintext(let payload):
+                processFrames([payload])
+            }
+        }
+    }
+
+    private func resolvePairingRequestLocked(approved: Bool) {
+        guard let request = pairingRequest else { return }
+        pairingRequest = nil
+        onPairingRequestChanged?(nil)
+        guard approved,
+              let approval = security.approvePending(publicKey: request.publicKey) else {
+            security.rejectPending()
+            updateStatus("Pilot pairing rejected")
+            teardownConnection()
+            return
+        }
+        if !ProcessInfo.processInfo.environment.keys.contains("XCTestConfigurationFilePath") {
+            try? pairingStore.setPeerPublicKey(request.publicKey)
+        }
+        sendRecord(approval.proof)
+        if approval.authenticated { didAuthenticatePilot() }
+    }
+
+    private func didAuthenticatePilot() {
+        updateStatus("Frame stream authenticated")
+        onConnectedChanged?(true)
+        flushPendingOutbound()
+    }
+
+    private func sendRecord(_ record: Data) {
+        let framed = FrameLink.frame(record)
+        guard !framed.isEmpty else { return }
+        connection?.send(content: framed, completion: .contentProcessed { _ in })
+    }
+
+    /// Delivers complete, authenticated plaintext packets.
+    private func processFrames(_ payloads: [Data]) {
+        for payload in payloads {
+            guard let packet = FrameLink.decodePayload(payload) else {
+                recordInvalidPacket()
                 continue
             }
 
@@ -803,9 +874,6 @@ public final class FrameReceiver: @unchecked Sendable {
                 }
                 countReceivedFrame()
             case .configuration:
-                // New stream geometry/parameter sets: reset reassembly so we
-                // don't splice fragments across a codec change.
-                reassembler.reset()
                 keyframeRequestOutstanding = false
             case .jpeg(let frame):
                 countReceivedFrame()
@@ -822,6 +890,11 @@ public final class FrameReceiver: @unchecked Sendable {
         }
     }
 
+    private func recordInvalidPacket() {
+        invalidPacketCount += 1
+        onInvalidPacketCountChanged?(invalidPacketCount)
+    }
+
     private func countReceivedFrame() {
         framesReceived += 1
         if framesReceived == 1 {
@@ -831,303 +904,20 @@ public final class FrameReceiver: @unchecked Sendable {
     }
 
     private func flushPendingOutbound() {
-        guard connection?.state == .ready else { return }
+        guard connection?.state == .ready, security.isAuthenticated else { return }
         let packets = pendingOutbound
         pendingOutbound.removeAll()
         for packet in packets {
-            connection?.send(content: packet, completion: .contentProcessed { _ in })
+            guard let record = security.seal(packet) else { continue }
+            connection?.send(
+                content: FrameLink.frame(record),
+                completion: .contentProcessed { _ in }
+            )
         }
     }
 
     private func updateStatus(_ status: String) {
         frameLinkLog.log("FrameReceiver: \(status, privacy: .public)")
-        onStatusChanged?(status)
-    }
-}
-
-// MARK: - Annotation Control Channel (iPad / Plotter -> macOS / Pilot)
-
-enum AnnotationLink {
-    static let serviceType = "_blau-annotate._tcp"
-
-    static func encode(_ message: AnnotationMessage) throws -> Data {
-        let payload = try JSONEncoder().encode(message)
-        var length = UInt32(payload.count).bigEndian
-        var packet = Data(bytes: &length, count: FrameLink.headerSize)
-        packet.append(payload)
-        return packet
-    }
-
-    static func decode(_ payload: Data) -> AnnotationMessage? {
-        try? JSONDecoder().decode(AnnotationMessage.self, from: payload)
-    }
-}
-
-final class AnnotationReceiver: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "app.blau.annotation.receiver")
-    private var listener: NWListener?
-    private var connections: [ObjectIdentifier: ConnectionState] = [:]
-    private var running = false
-
-    var onMessage: ((AnnotationMessage) -> Void)?
-
-    init() {}
-
-    deinit { stop() }
-
-    func start() {
-        queue.async { [weak self] in
-            self?.running = true
-            self?.startListenerLocked()
-        }
-    }
-
-    func stop() {
-        queue.async { [weak self] in
-            guard let self else { return }
-            self.running = false
-            self.listener?.cancel()
-            self.listener = nil
-            for state in self.connections.values {
-                state.connection.cancel()
-            }
-            self.connections.removeAll()
-        }
-    }
-
-    private func startListenerLocked() {
-        guard running, listener == nil else { return }
-
-        let listener: NWListener
-        do {
-            listener = try NWListener(using: .tcp)
-        } catch {
-            scheduleListenerRestart()
-            return
-        }
-
-        listener.service = NWListener.Service(type: AnnotationLink.serviceType)
-        listener.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                frameLinkLog.log("AnnotationReceiver: listener ready, advertising \(AnnotationLink.serviceType, privacy: .public)")
-            case .failed(let error):
-                frameLinkLog.error("AnnotationReceiver: listener failed: \(error.localizedDescription, privacy: .public)")
-                self.listener = nil
-                self.scheduleListenerRestart()
-            case .cancelled:
-                self.listener = nil
-                self.scheduleListenerRestart()
-            default:
-                break
-            }
-        }
-        listener.newConnectionHandler = { [weak self] connection in
-            self?.adopt(connection)
-        }
-
-        self.listener = listener
-        listener.start(queue: queue)
-    }
-
-    private func scheduleListenerRestart() {
-        guard running else { return }
-        queue.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.startListenerLocked()
-        }
-    }
-
-    private func adopt(_ connection: NWConnection) {
-        let id = ObjectIdentifier(connection)
-        connections[id] = ConnectionState(connection: connection)
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                self.receiveNext(from: id)
-            case .failed, .cancelled:
-                self.connections.removeValue(forKey: id)
-            default:
-                break
-            }
-        }
-        connection.start(queue: queue)
-    }
-
-    private func receiveNext(from id: ObjectIdentifier) {
-        guard let state = connections[id] else { return }
-        state.connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) {
-            [weak self] data, _, isComplete, error in
-            guard let self else { return }
-            guard let state = self.connections[id] else { return }
-
-            if let data, !data.isEmpty {
-                state.buffer.append(data)
-                self.drainMessages(from: id)
-            }
-
-            if error != nil || isComplete {
-                self.connections.removeValue(forKey: id)
-                state.connection.cancel()
-                return
-            }
-
-            self.receiveNext(from: id)
-        }
-    }
-
-    private func drainMessages(from id: ObjectIdentifier) {
-        guard let state = connections[id] else { return }
-        while state.buffer.count >= FrameLink.headerSize {
-            let length = state.buffer.prefix(FrameLink.headerSize).reduce(UInt32(0)) {
-                ($0 << 8) | UInt32($1)
-            }
-            let messageLength = Int(length)
-            let total = FrameLink.headerSize + messageLength
-            guard state.buffer.count >= total else { break }
-
-            let payload = state.buffer.subdata(in: FrameLink.headerSize ..< total)
-            state.buffer.removeSubrange(0 ..< total)
-
-            if let message = AnnotationLink.decode(payload) {
-                onMessage?(message)
-            }
-        }
-    }
-
-    private final class ConnectionState {
-        let connection: NWConnection
-        var buffer = Data()
-
-        init(connection: NWConnection) {
-            self.connection = connection
-        }
-    }
-}
-
-final class AnnotationSender: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "app.blau.annotation.sender")
-    private var browser: NWBrowser?
-    private var connection: NWConnection?
-    private var pending: [Data] = []
-    private var running = false
-
-    var onStatusChanged: ((String) -> Void)?
-
-    init() {}
-
-    deinit { stop() }
-
-    func start() {
-        queue.async { [weak self] in
-            self?.running = true
-            self?.startBrowserLocked()
-        }
-    }
-
-    func stop() {
-        queue.async { [weak self] in
-            guard let self else { return }
-            self.running = false
-            self.browser?.cancel()
-            self.browser = nil
-            self.connection?.cancel()
-            self.connection = nil
-            self.pending.removeAll()
-        }
-    }
-
-    func send(_ message: AnnotationMessage) {
-        queue.async { [weak self] in
-            guard let self,
-                  let packet = try? AnnotationLink.encode(message) else { return }
-
-            if self.connection?.state == .ready {
-                self.connection?.send(content: packet, completion: .contentProcessed { _ in })
-            } else {
-                self.pending.append(packet)
-                if self.pending.count > 8 {
-                    self.pending.removeFirst(self.pending.count - 8)
-                }
-                self.startBrowserLocked()
-            }
-        }
-    }
-
-    private func startBrowserLocked() {
-        guard running, browser == nil else { return }
-
-        let browser = NWBrowser(
-            for: .bonjour(type: AnnotationLink.serviceType, domain: nil),
-            using: .tcp
-        )
-        browser.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                self.updateStatus("Browsing for Pilot annotation channel")
-            case .failed, .cancelled:
-                self.updateStatus("Annotation browser stopped")
-                self.browser = nil
-                self.scheduleBrowserRestart()
-            case .waiting(let error):
-                self.updateStatus("Annotation browser waiting: \(error.localizedDescription)")
-            default:
-                break
-            }
-        }
-        browser.browseResultsChangedHandler = { [weak self] results, _ in
-            guard let self,
-                  self.connection == nil,
-                  let first = results.first else { return }
-            self.connect(to: first.endpoint)
-        }
-
-        self.browser = browser
-        browser.start(queue: queue)
-    }
-
-    private func scheduleBrowserRestart() {
-        guard running else { return }
-        queue.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.startBrowserLocked()
-        }
-    }
-
-    private func connect(to endpoint: NWEndpoint) {
-        let connection = NWConnection(to: endpoint, using: .tcp)
-        updateStatus("Connecting to Pilot annotation channel")
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                self.updateStatus("Annotation channel connected")
-                self.flushPending()
-            case .failed, .cancelled:
-                self.updateStatus("Annotation channel disconnected")
-                self.connection = nil
-            case .waiting(let error):
-                self.updateStatus("Annotation channel waiting: \(error.localizedDescription)")
-            default:
-                break
-            }
-        }
-        self.connection = connection
-        connection.start(queue: queue)
-    }
-
-    private func flushPending() {
-        guard connection?.state == .ready else { return }
-        let packets = pending
-        pending.removeAll()
-        for packet in packets {
-            connection?.send(content: packet, completion: .contentProcessed { _ in })
-        }
-    }
-
-    private func updateStatus(_ status: String) {
-        frameLinkLog.log("AnnotationSender: \(status, privacy: .public)")
         onStatusChanged?(status)
     }
 }

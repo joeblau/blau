@@ -25,7 +25,8 @@ final class SecureChannelTests: XCTestCase {
 
         let responder = try NoiseIK.Responder.receive(
             staticKey: responderStatic,
-            message: msg1
+            message: msg1,
+            expectedInitiator: initiatorStatic.publicKey
         )
         // Responder recovers and authenticates the initiator's static key + payload.
         XCTAssertEqual(responder.initiatorPayload, Data("hello".utf8))
@@ -86,6 +87,20 @@ final class SecureChannelTests: XCTestCase {
         XCTAssertEqual(opened2.type, .bestEffortBlob)
     }
 
+    func testBothTransportRolesUseComplementaryDirectionalKeys() throws {
+        let keys = try completeHandshake().initiator
+        let initiatorSend = SecureChannelCore.Role.initiator.sendKey(from: keys)
+        let responderReceive = SecureChannelCore.Role.responder.receiveKey(from: keys)
+        let responderSend = SecureChannelCore.Role.responder.sendKey(from: keys)
+        let initiatorReceive = SecureChannelCore.Role.initiator.receiveKey(from: keys)
+
+        XCTAssertEqual(initiatorSend.key, responderReceive.key)
+        XCTAssertEqual(initiatorSend.nonce, responderReceive.nonce)
+        XCTAssertEqual(responderSend.key, initiatorReceive.key)
+        XCTAssertEqual(responderSend.nonce, initiatorReceive.nonce)
+        XCTAssertNotEqual(initiatorSend.key, responderSend.key)
+    }
+
     /// A WRONG responder static key (the authentication guarantee) must make the
     /// handshake fail to open — the initiator believed it was talking to one
     /// device, but the responder holds a different static key.
@@ -103,7 +118,11 @@ final class SecureChannelTests: XCTestCase {
         // The real responder (different static key) can't open msg1: DH(e,s)
         // differs, so the AEAD key differs and the open fails.
         XCTAssertThrowsError(
-            try NoiseIK.Responder.receive(staticKey: realResponder, message: msg1)
+            try NoiseIK.Responder.receive(
+                staticKey: realResponder,
+                message: msg1,
+                expectedInitiator: initiatorStatic.publicKey
+            )
         ) { error in
             XCTAssertEqual(error as? NoiseIK.HandshakeError, .decryptFailed)
         }
@@ -125,12 +144,77 @@ final class SecureChannelTests: XCTestCase {
         // responderB happens to also receive msg1 — but it was sealed to A, so
         // it cannot even open it.
         XCTAssertThrowsError(
-            try NoiseIK.Responder.receive(staticKey: responderB, message: msg1)
+            try NoiseIK.Responder.receive(
+                staticKey: responderB,
+                message: msg1,
+                expectedInitiator: initiatorStatic.publicKey
+            )
         )
         // And the legitimate A completes fine (control).
-        let respA = try NoiseIK.Responder.receive(staticKey: responderA, message: msg1)
+        let respA = try NoiseIK.Responder.receive(
+            staticKey: responderA,
+            message: msg1,
+            expectedInitiator: initiatorStatic.publicKey
+        )
         let (_, msg2) = try respA.respond()
         XCTAssertNoThrow(try initiatorState.receive(msg2))
+    }
+
+    func testResponderRejectsUnpinnedInitiatorBeforeReleasingKeys() throws {
+        let pairedInitiator = Curve25519.KeyAgreement.PrivateKey()
+        let attacker = Curve25519.KeyAgreement.PrivateKey()
+        let responder = Curve25519.KeyAgreement.PrivateKey()
+        let (_, attackerMessage) = try NoiseIK.Initiator.start(
+            staticKey: attacker,
+            responderStatic: responder.publicKey
+        )
+
+        XCTAssertThrowsError(
+            try NoiseIK.Responder.receive(
+                staticKey: responder,
+                message: attackerMessage,
+                expectedInitiator: pairedInitiator.publicKey
+            )
+        ) { error in
+            XCTAssertEqual(error as? NoiseIK.HandshakeError, .unauthorizedPeer)
+        }
+    }
+
+    func testHandshakeResponseCacheOnlyReplaysMatchingRequest() {
+        var cache = HandshakeResponseCache()
+        cache.record(request: Data("msg1".utf8), response: Data("msg2".utf8))
+
+        XCTAssertEqual(cache.response(for: Data("msg1".utf8)), Data("msg2".utf8))
+        XCTAssertNil(cache.response(for: Data("forged".utf8)))
+        cache.reset()
+        XCTAssertNil(cache.response(for: Data("msg1".utf8)))
+    }
+
+    func testAttemptDeadlineBoundsPerpetuallyWaitingOperation() async {
+        let started = ContinuousClock.now
+        do {
+            _ = try await SecureChannelDeadline.run(
+                timeout: .milliseconds(25),
+                timeoutError: .socketReadinessTimedOut
+            ) {
+                try await Task.sleep(for: .seconds(60))
+                return true
+            }
+            XCTFail("expected socket timeout")
+        } catch {
+            XCTAssertEqual(error as? SecureChannelAttemptError, .socketReadinessTimedOut)
+        }
+        XCTAssertLessThan(started.duration(to: .now), .seconds(1))
+    }
+
+    func testAttemptDeadlineReturnsCompletedOperation() async throws {
+        let value = try await SecureChannelDeadline.run(
+            timeout: .seconds(1),
+            timeoutError: .handshakeTimedOut
+        ) {
+            42
+        }
+        XCTAssertEqual(value, 42)
     }
 
     // MARK: - Packet codec / tampering
@@ -233,6 +317,15 @@ final class SecureChannelTests: XCTestCase {
         XCTAssertFalse(window.accept(512))
     }
 
+    func testReplayWindowHandlesCounterRollover() {
+        var window = ReplayWindow(size: 16)
+        XCTAssertTrue(window.accept(UInt64.max - 1))
+        XCTAssertTrue(window.accept(UInt64.max))
+        XCTAssertTrue(window.accept(0))
+        XCTAssertTrue(window.accept(1))
+        XCTAssertFalse(window.accept(UInt64.max))
+    }
+
     // MARK: - Connection state machine
 
     func testStateMachineHappyPath() {
@@ -333,6 +426,33 @@ final class SecureChannelTests: XCTestCase {
         XCTAssertTrue(tracker.receive(43))
     }
 
+    func testAckTrackerUsesBoundedSlidingWindowWithReordering() {
+        var tracker = AckTracker(windowSize: 64)
+        for id in UInt64(0)..<10_000 {
+            XCTAssertTrue(tracker.receive(id))
+        }
+
+        XCTAssertLessThanOrEqual(tracker.retainedCount, 64)
+        XCTAssertFalse(tracker.receive(9_999)) // recent duplicate
+        XCTAssertFalse(tracker.receive(1)) // too old to re-deliver
+        XCTAssertTrue(tracker.receive(10_002))
+        XCTAssertTrue(tracker.receive(10_001)) // bounded reordering
+    }
+
+    func testAbandonedDiagnosticsAreBounded() {
+        var sender = ReliableMessenger(
+            maxAttempts: 0,
+            abandonedHistoryLimit: 8
+        )
+        for _ in 0..<100 {
+            _ = sender.enqueue(Data(), now: 0)
+            _ = sender.due(now: 0)
+        }
+
+        XCTAssertEqual(sender.abandoned.count, 8)
+        XCTAssertEqual(sender.abandoned, Array(93...100))
+    }
+
     // MARK: - Helpers
 
     private func completeHandshake() throws -> (initiator: TransportKeys, responder: TransportKeys) {
@@ -342,7 +462,11 @@ final class SecureChannelTests: XCTestCase {
             staticKey: initiatorStatic,
             responderStatic: responderStatic.publicKey
         )
-        let responder = try NoiseIK.Responder.receive(staticKey: responderStatic, message: msg1)
+        let responder = try NoiseIK.Responder.receive(
+            staticKey: responderStatic,
+            message: msg1,
+            expectedInitiator: initiatorStatic.publicKey
+        )
         let (responderKeys, msg2) = try responder.respond()
         let (initiatorKeys, _) = try initiatorState.receive(msg2)
         return (initiatorKeys, responderKeys)
