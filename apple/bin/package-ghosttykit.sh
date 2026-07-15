@@ -10,15 +10,22 @@ UPSTREAM_TAG="v${UPSTREAM_VERSION}"
 UPSTREAM_TAG_OBJECT="22efb0be2bbea73e5339f5426fa3b20edabcaa11"
 UPSTREAM_REVISION="332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28"
 REQUIRED_ZIG="0.15.2"
-RELEASE_ID="${UPSTREAM_VERSION}-blau.1"
+REQUIRED_XCODE_MAJOR="26"
+RELEASE_ID="${UPSTREAM_VERSION}-blau.2"
 RELEASE_TAG="ghosttykit-${RELEASE_ID}"
 BUILD_PATCH="$APPLE_ROOT/Patches/ghostty-v1.3.1-xcframework-only.patch"
 LICENSE_SOURCE="$APPLE_ROOT/Packages/GhosttyKit/LICENSE.ghostty"
+PACKAGING_SCRIPT="$APPLE_ROOT/bin/package-ghosttykit.sh"
+ZIG_PROVENANCE_SCRIPT="$APPLE_ROOT/bin/write-ghosttykit-zig-provenance.sh"
+LINK_SMOKE_SOURCE="$APPLE_ROOT/Packages/GhosttyKit/LinkSmoke/main.c"
+MODULE_SMOKE_SOURCE="$APPLE_ROOT/Packages/GhosttyKit/ModuleSmoke/main.m"
 RUNTIME_ARCHIVE="GhosttyKit.xcframework.zip"
 SYMBOL_ARCHIVE="GhosttyKit.symbols.zip"
 LICENSE_ASSET="LICENSE.ghostty"
 MAX_RUNTIME_ARCHIVE_BYTES=$((40 * 1024 * 1024))
 MAX_RUNTIME_EXPANDED_BYTES=$((128 * 1024 * 1024))
+MAX_SYMBOL_ARCHIVE_BYTES=$((160 * 1024 * 1024))
+MAX_SYMBOL_EXPANDED_BYTES=$((640 * 1024 * 1024))
 
 usage() {
   cat <<'EOF'
@@ -34,6 +41,29 @@ EOF
 
 require_tool() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing required tool: $1" >&2; exit 1; }
+}
+
+require_supported_xcode() {
+  local version
+  version="$(xcodebuild -version)"
+  printf '%s\n' "$version"
+  printf '%s\n' "$version" | grep -Eq "^Xcode ${REQUIRED_XCODE_MAJOR}\\." || {
+    echo "GhosttyKit releases require Xcode ${REQUIRED_XCODE_MAJOR}.x" >&2
+    exit 1
+  }
+}
+
+verify_packaging_inputs() {
+  git -C "$REPO_ROOT" diff --quiet HEAD -- \
+    apple/bin/package-ghosttykit.sh \
+    apple/bin/write-ghosttykit-zig-provenance.sh \
+    apple/Patches/ghostty-v1.3.1-xcframework-only.patch \
+    apple/Packages/GhosttyKit/LICENSE.ghostty \
+    apple/Packages/GhosttyKit/LinkSmoke/main.c \
+    apple/Packages/GhosttyKit/ModuleSmoke/main.m || {
+      echo "GhosttyKit packaging inputs differ from the recorded Git revision" >&2
+      exit 1
+    }
 }
 
 archive_tree() {
@@ -64,6 +94,21 @@ normalize_framework_plist() {
   plutil -replace AvailableLibraries -json "$libraries" "$plist"
 }
 
+normalize_module_maps() {
+  local framework="$1"
+  local headers
+  for headers in "$framework"/*/Headers; do
+    # Ghostty's embedding module exposes ghostty.h. The adjacent ghostty/vt
+    # headers form a separate C API and must not be inferred as missing
+    # umbrella members by Clang.
+    printf '%s\n' \
+      'module GhosttyKit {' \
+      '  header "ghostty.h"' \
+      '  export *' \
+      '}' > "$headers/module.modulemap"
+  done
+}
+
 validate_framework() {
   local framework="$1"
   local plist="$framework/Info.plist"
@@ -75,7 +120,8 @@ validate_framework() {
   [[ "$(/usr/libexec/PlistBuddy -c 'Print :AvailableLibraries' "$plist" | grep -Ec 'LibraryIdentifier =')" == "3" ]]
   [[ -f "$reference_headers/ghostty.h" ]]
   [[ -f "$reference_headers/module.modulemap" ]]
-  grep -E '^module GhosttyKit ' "$reference_headers/module.modulemap" >/dev/null
+  grep -Fx 'module GhosttyKit {' "$reference_headers/module.modulemap" >/dev/null
+  grep -Fx '  header "ghostty.h"' "$reference_headers/module.modulemap" >/dev/null
 
   for identifier in macos-arm64_x86_64 ios-arm64 ios-arm64-simulator; do
     local directory="$framework/$identifier"
@@ -133,8 +179,17 @@ validate_framework() {
       echo "$identifier architectures are '$actual'; expected '$expected'" >&2
       return 1
     }
-    nm -gU "$library" | grep -E ' _ghostty_app_new$' >/dev/null
-    nm -gU "$library" | grep -E ' _ghostty_surface_new$' >/dev/null
+    if [[ "$identifier" == "macos-arm64_x86_64" ]]; then
+      for architecture in arm64 x86_64; do
+        for symbol in _ghostty_config_new _ghostty_app_new _ghostty_surface_new; do
+          nm -arch "$architecture" -gU "$library" | grep -F " $symbol" >/dev/null
+        done
+      done
+    else
+      for symbol in _ghostty_config_new _ghostty_app_new _ghostty_surface_new; do
+        nm -gU "$library" | grep -F " $symbol" >/dev/null
+      done
+    fi
     diff -qr "$reference_headers" "$directory/Headers" >/dev/null
   done
 
@@ -145,25 +200,81 @@ validate_framework() {
   }
 }
 
-link_smoke_test() {
+link_smoke_tests() {
   local framework="$1"
   local output="$2"
-  local slice="$framework/macos-arm64_x86_64"
-  local library="$slice/libghostty.a"
-  [[ -f "$library" ]] || library="$(find "$slice" -maxdepth 1 -name '*.a' -print -quit)"
+  local mac_slice="$framework/macos-arm64_x86_64"
+  local ios_slice="$framework/ios-arm64"
+  local simulator_slice="$framework/ios-arm64-simulator"
+  local mac_library="$mac_slice/libghostty.a"
+  local ios_library="$ios_slice/libghostty-fat.a"
+  local simulator_library="$simulator_slice/libghostty-fat.a"
 
-  xcrun clang -arch arm64 -DGHOSTTY_STATIC \
-    -I "$slice/Headers" \
-    "$APPLE_ROOT/Packages/GhosttyKit/LinkSmoke/main.c" \
-    "$library" \
-    -o "$output" \
+  # Compile the actual Clang module for every SDK/slice. This catches malformed
+  # module maps and incomplete umbrella-header diagnostics, not just direct
+  # textual inclusion of ghostty.h.
+  xcrun --sdk macosx clang -arch arm64 -fmodules -fsyntax-only \
+    -fmodule-map-file="$mac_slice/Headers/module.modulemap" \
+    -I "$mac_slice/Headers" "$MODULE_SMOKE_SOURCE"
+  xcrun --sdk macosx clang -arch x86_64 -fmodules -fsyntax-only \
+    -fmodule-map-file="$mac_slice/Headers/module.modulemap" \
+    -I "$mac_slice/Headers" "$MODULE_SMOKE_SOURCE"
+  xcrun --sdk iphoneos clang -arch arm64 -mios-version-min=18.0 -fmodules -fsyntax-only \
+    -fmodule-map-file="$ios_slice/Headers/module.modulemap" \
+    -I "$ios_slice/Headers" "$MODULE_SMOKE_SOURCE"
+  xcrun --sdk iphonesimulator clang -arch arm64 -mios-simulator-version-min=18.0 \
+    -fmodules -fsyntax-only \
+    -fmodule-map-file="$simulator_slice/Headers/module.modulemap" \
+    -I "$simulator_slice/Headers" "$MODULE_SMOKE_SOURCE"
+
+  xcrun --sdk macosx clang -arch arm64 -DGHOSTTY_STATIC \
+    -I "$mac_slice/Headers" \
+    "$LINK_SMOKE_SOURCE" \
+    "$mac_library" \
+    -o "$output-macos-arm64" \
     -lc++ \
     -framework Metal -framework MetalKit -framework QuartzCore \
     -framework CoreText -framework IOKit -framework IOSurface \
     -framework CoreGraphics -framework Foundation -framework Carbon \
     -framework CoreFoundation -framework AppKit -framework CoreServices \
     -framework AVFoundation -framework CoreMedia -framework CoreMediaIO
-  "$output"
+  xcrun --sdk macosx clang -arch x86_64 -DGHOSTTY_STATIC \
+    -I "$mac_slice/Headers" \
+    "$LINK_SMOKE_SOURCE" \
+    "$mac_library" \
+    -o "$output-macos-x86_64" \
+    -lc++ \
+    -framework Metal -framework MetalKit -framework QuartzCore \
+    -framework CoreText -framework IOKit -framework IOSurface \
+    -framework CoreGraphics -framework Foundation -framework Carbon \
+    -framework CoreFoundation -framework AppKit -framework CoreServices \
+    -framework AVFoundation -framework CoreMedia -framework CoreMediaIO
+  xcrun --sdk iphoneos clang -arch arm64 -mios-version-min=18.0 -DGHOSTTY_STATIC \
+    -I "$ios_slice/Headers" \
+    "$LINK_SMOKE_SOURCE" \
+    "$ios_library" \
+    -o "$output-ios-arm64" \
+    -lc++ \
+    -framework Metal -framework MetalKit -framework QuartzCore \
+    -framework CoreText -framework UIKit -framework IOSurface \
+    -framework CoreGraphics -framework Foundation -framework CoreFoundation \
+    -framework AVFoundation -framework CoreMedia
+  xcrun --sdk iphonesimulator clang -arch arm64 -mios-simulator-version-min=18.0 \
+    -DGHOSTTY_STATIC -I "$simulator_slice/Headers" \
+    "$LINK_SMOKE_SOURCE" \
+    "$simulator_library" \
+    -o "$output-ios-simulator-arm64" \
+    -lc++ \
+    -framework Metal -framework MetalKit -framework QuartzCore \
+    -framework CoreText -framework UIKit -framework IOSurface \
+    -framework CoreGraphics -framework Foundation -framework CoreFoundation \
+    -framework AVFoundation -framework CoreMedia
+
+  case "$(uname -m)" in
+    arm64) "$output-macos-arm64" ;;
+    x86_64) "$output-macos-x86_64" ;;
+    *) echo "Unsupported macOS host architecture: $(uname -m)" >&2; return 1 ;;
+  esac
 }
 
 package_framework() {
@@ -202,10 +313,11 @@ package_framework() {
   find "$staged_framework" -type d -name '*.dSYM' -prune -exec rm -rf {} +
   find "$staged_framework" -type f -name '*.bcsymbolmap' -delete
 
+  normalize_module_maps "$staged_framework"
   validate_framework "$staged_framework"
   normalize_framework_plist "$staged_framework"
   validate_framework "$staged_framework"
-  link_smoke_test "$staged_framework" "$work/ghostty-link-smoke"
+  link_smoke_tests "$staged_framework" "$work/ghostty-link-smoke"
 
   # Normalize mtimes and traversal order. Zip's -X removes host-specific extra
   # attributes, producing a stable SwiftPM checksum for identical inputs.
@@ -221,8 +333,18 @@ package_framework() {
   local symbols_sha
   local license_sha
   local swift_checksum
+  local runtime_expanded_bytes
+  local symbols_bytes
+  local symbols_expanded_bytes
   local headers_sha
   local build_patch_sha
+  local packaging_script_sha
+  local packaging_revision
+  local zig_provenance_script_sha
+  local link_smoke_sha
+  local module_smoke_sha
+  local zig_toolchain_sha
+  local zig_toolchain_json
   local xcode_version
   archive_bytes="$(stat -f '%z' "$runtime_path")"
   (( archive_bytes <= MAX_RUNTIME_ARCHIVE_BYTES )) || {
@@ -230,6 +352,17 @@ package_framework() {
     exit 1
   }
   archive_sha="$(shasum -a 256 "$runtime_path" | awk '{print $1}')"
+  runtime_expanded_bytes="$(du -sk "$staged_framework" | awk '{print $1 * 1024}')"
+  symbols_bytes="$(stat -f '%z' "$symbols_path")"
+  symbols_expanded_bytes="$(du -sk "$symbols_root" | awk '{print $1 * 1024}')"
+  (( symbols_bytes <= MAX_SYMBOL_ARCHIVE_BYTES )) || {
+    echo "Symbols archive is $symbols_bytes bytes; budget is $MAX_SYMBOL_ARCHIVE_BYTES" >&2
+    exit 1
+  }
+  (( symbols_expanded_bytes <= MAX_SYMBOL_EXPANDED_BYTES )) || {
+    echo "Expanded symbols are $symbols_expanded_bytes bytes; budget is $MAX_SYMBOL_EXPANDED_BYTES" >&2
+    exit 1
+  }
   symbols_sha="$(shasum -a 256 "$symbols_path" | awk '{print $1}')"
   license_sha="$(shasum -a 256 "$license_path" | awk '{print $1}')"
   swift_checksum="$(swift package compute-checksum "$runtime_path")"
@@ -243,27 +376,66 @@ package_framework() {
       | awk '{print $1}'
   )"
   build_patch_sha="$(shasum -a 256 "$BUILD_PATCH" | awk '{print $1}')"
+  packaging_script_sha="$(shasum -a 256 "$PACKAGING_SCRIPT" | awk '{print $1}')"
+  zig_provenance_script_sha="$(shasum -a 256 "$ZIG_PROVENANCE_SCRIPT" | awk '{print $1}')"
+  link_smoke_sha="$(shasum -a 256 "$LINK_SMOKE_SOURCE" | awk '{print $1}')"
+  module_smoke_sha="$(shasum -a 256 "$MODULE_SMOKE_SOURCE" | awk '{print $1}')"
+  [[ -f "${GHOSTTYKIT_ZIG_PROVENANCE_FILE:-}" ]] || {
+    echo "GHOSTTYKIT_ZIG_PROVENANCE_FILE must name the pinned Zig provenance JSON" >&2
+    exit 1
+  }
+  jq -e '
+    .schemaVersion == 1 and
+    .version == "0.15.2_1" and
+    .formulaRevision == "1" and
+    .formulaGitRevision == "66277812877bd6b470da86a59208ef0be903ca0c" and
+    .formulaSHA256 == "91e0a69da295d32f65938042255de5199ebc83602d5b87a517acad1bb3ec9829" and
+    .sourceSHA256 == "d9b30c7aa983fcff5eed2084d54ae83eaafe7ff3a84d8fb754d854165a6e521c"
+  ' "$GHOSTTYKIT_ZIG_PROVENANCE_FILE" >/dev/null
+  [[ "$(jq -r .executableSHA256 "$GHOSTTYKIT_ZIG_PROVENANCE_FILE")" == \
+      "$(shasum -a 256 "$(command -v zig)" | awk '{print $1}')" ]]
+  zig_toolchain_sha="$(shasum -a 256 "$GHOSTTYKIT_ZIG_PROVENANCE_FILE" | awk '{print $1}')"
+  zig_toolchain_json="$(jq -cS . "$GHOSTTYKIT_ZIG_PROVENANCE_FILE")"
+  packaging_revision="$(git -C "$REPO_ROOT" rev-parse HEAD)"
   xcode_version="$(xcodebuild -version | paste -sd ' ' -)"
 
   printf '%s\n' \
     '{' \
-    '  "schemaVersion": 1,' \
+    '  "schemaVersion": 2,' \
     "  \"upstream\": \"$UPSTREAM_URL\"," \
     "  \"upstreamVersion\": \"$UPSTREAM_VERSION\"," \
     "  \"upstreamRevision\": \"$UPSTREAM_REVISION\"," \
     "  \"requiredZigVersion\": \"$REQUIRED_ZIG\"," \
+    "  \"requiredXcodeMajorVersion\": \"$REQUIRED_XCODE_MAJOR\"," \
     "  \"xcodeVersion\": \"$xcode_version\"," \
+    '  "packagingRepository": "https://github.com/joeblau/blau",' \
+    "  \"packagingRevision\": \"$packaging_revision\"," \
+    "  \"packagingScriptSHA256\": \"$packaging_script_sha\"," \
+    "  \"zigProvenanceScriptSHA256\": \"$zig_provenance_script_sha\"," \
+    "  \"linkSmokeSourceSHA256\": \"$link_smoke_sha\"," \
+    "  \"moduleSmokeSourceSHA256\": \"$module_smoke_sha\"," \
+    "  \"zigToolchainSHA256\": \"$zig_toolchain_sha\"," \
+    "  \"zigToolchain\": $zig_toolchain_json," \
     "  \"buildOnlyPatchSHA256\": \"$build_patch_sha\"," \
     "  \"releaseTag\": \"$RELEASE_TAG\"," \
     "  \"artifact\": \"$RUNTIME_ARCHIVE\"," \
     "  \"artifactBytes\": $archive_bytes," \
+    "  \"artifactExpandedBytes\": $runtime_expanded_bytes," \
     "  \"artifactSHA256\": \"$archive_sha\"," \
     "  \"swiftPMChecksum\": \"$swift_checksum\"," \
     "  \"symbolsArtifact\": \"$SYMBOL_ARCHIVE\"," \
+    "  \"symbolsArtifactBytes\": $symbols_bytes," \
+    "  \"symbolsExpandedBytes\": $symbols_expanded_bytes," \
     "  \"symbolsSHA256\": \"$symbols_sha\"," \
     "  \"licenseArtifact\": \"$LICENSE_ASSET\"," \
     "  \"licenseSHA256\": \"$license_sha\"," \
     "  \"headersTreeSHA256\": \"$headers_sha\"," \
+    '  "sizeBudgets": {' \
+    "    \"runtimeArchiveBytes\": $MAX_RUNTIME_ARCHIVE_BYTES," \
+    "    \"runtimeExpandedBytes\": $MAX_RUNTIME_EXPANDED_BYTES," \
+    "    \"symbolsArchiveBytes\": $MAX_SYMBOL_ARCHIVE_BYTES," \
+    "    \"symbolsExpandedBytes\": $MAX_SYMBOL_EXPANDED_BYTES" \
+    '  },' \
     '  "architectures": {' \
     '    "macOS": ["arm64", "x86_64"],' \
     '    "iOS": ["arm64"],' \
@@ -271,9 +443,10 @@ package_framework() {
     '  },' \
     '  "validation": {' \
     '    "strip": "Apple strip -S completed for every static library",' \
-    '    "requiredSymbols": ["_ghostty_app_new", "_ghostty_surface_new"],' \
-    '    "arm64MacOSConsumer": "compiled, linked, and exited successfully",' \
-    '    "headersAndModuleMap": "identical across all slices"' \
+    '    "requiredSymbols": ["_ghostty_config_new", "_ghostty_app_new", "_ghostty_surface_new"],' \
+    '    "linkedConsumers": ["macOS arm64", "macOS x86_64", "iOS arm64", "iOS Simulator arm64"],' \
+    '    "hostMacOSConsumer": "compiled, linked, and exited successfully",' \
+    '    "headersAndModuleMap": "identical and module-imported across all slices"' \
     '  }' \
     '}' > "$metadata_path"
 
@@ -297,7 +470,9 @@ command="${1:-}"
 case "$command" in
   build)
     output_directory="${2:-$REPO_ROOT/release-artifacts/$RELEASE_TAG}"
-    for tool in git zig xcodebuild xcrun zip shasum swift plutil lipo nm; do require_tool "$tool"; done
+    for tool in git jq zig xcodebuild xcrun zip shasum swift plutil lipo nm; do require_tool "$tool"; done
+    require_supported_xcode
+    verify_packaging_inputs
     [[ "$(zig version)" == "$REQUIRED_ZIG" ]] || {
       echo "Ghostty $UPSTREAM_TAG requires Zig $REQUIRED_ZIG (found $(zig version))" >&2
       exit 1
@@ -341,6 +516,9 @@ case "$command" in
     ;;
   package)
     [[ $# -ge 2 ]] || { usage; exit 2; }
+    for tool in git jq zig xcodebuild xcrun zip shasum swift plutil lipo nm; do require_tool "$tool"; done
+    require_supported_xcode
+    verify_packaging_inputs
     output_directory="${3:-$REPO_ROOT/release-artifacts/$RELEASE_TAG}"
     work="$(mktemp -d -t blau-ghosttykit-package.XXXXXX)"
     trap 'rm -rf "${work:-}"' EXIT
