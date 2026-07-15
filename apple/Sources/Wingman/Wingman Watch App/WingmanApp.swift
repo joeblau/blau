@@ -1,5 +1,8 @@
 import SwiftUI
 import WatchConnectivity
+#if os(watchOS)
+import WatchKit
+#endif
 
 private struct WingmanDoublePinchPayload: Sendable {
     let commandID: UUID
@@ -17,9 +20,12 @@ private struct WingmanDoublePinchPayload: Sendable {
 }
 
 @Observable
+@MainActor
 final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendable {
     var isReachable = false
     var deliveryStatus = "Ready"
+    private var deliveryState = WingmanDeliveryState()
+    private var replyTimeoutTask: Task<Void, Never>?
 
     nonisolated func session(_ session: WCSession,
                              activationDidCompleteWith activationState: WCSessionActivationState,
@@ -52,19 +58,27 @@ final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendab
     @MainActor
     private func updateReachability(_ isReachable: Bool) {
         self.isReachable = isReachable
+        if !isReachable, !deliveryState.isInFlight {
+            deliveryStatus = "Copilot unavailable"
+        }
     }
 
     func sendDoublePinch(source: String) {
         let session = WCSession.default
+        guard !deliveryState.isInFlight else {
+            deliveryStatus = "Still sending…"
+            play(.failure)
+            return
+        }
         let payload = WingmanDoublePinchPayload(
             commandID: UUID(),
             source: source,
             sentAt: Date().timeIntervalSince1970
         )
-        let dictionary = payload.dictionary
 
         guard session.activationState == .activated else {
             deliveryStatus = "Copilot unavailable"
+            play(.failure)
             return
         }
 
@@ -74,25 +88,124 @@ final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendab
         #if os(watchOS)
         guard session.isCompanionAppInstalled else {
             deliveryStatus = "Install Copilot first"
+            play(.failure)
             return
         }
         #endif
 
-        if session.isReachable {
-            deliveryStatus = "Sending…"
-            session.sendMessage(dictionary, replyHandler: { [weak self] reply in
-                let accepted = reply["status"] as? String == "accepted"
-                Task { @MainActor in
-                    self?.deliveryStatus = accepted ? "Delivered" : "Rejected"
-                }
-            }, errorHandler: { [weak self] _ in
-                // Terminal commands are deliberately never queued: a delayed
-                // Enter after reconnection could submit unrelated shell input.
-                Task { @MainActor in self?.deliveryStatus = "Not delivered" }
-            })
-        } else {
+        guard session.isReachable else {
             deliveryStatus = "Copilot unavailable"
+            play(.failure)
+            return
         }
+
+        guard deliveryState.begin(commandID: payload.commandID) else { return }
+        deliveryStatus = "Sending…"
+        transmit(
+            payload,
+            sentAt: Date(timeIntervalSince1970: payload.sentAt),
+            attempt: 0
+        )
+    }
+
+    private func transmit(
+        _ payload: WingmanDoublePinchPayload,
+        sentAt: Date,
+        attempt: Int
+    ) {
+        let commandID = payload.commandID
+        guard deliveryState.isCurrent(commandID: commandID, attempt: attempt) else { return }
+        replyTimeoutTask?.cancel()
+        replyTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: WingmanDeliveryRetryPolicy.replyTimeout)
+            guard !Task.isCancelled else { return }
+            self?.retryOrFail(
+                payload,
+                sentAt: sentAt,
+                attempt: attempt
+            )
+        }
+
+        WCSession.default.sendMessage(payload.dictionary, replyHandler: { [weak self] reply in
+            let accepted = reply["status"] as? String == "accepted"
+            Task { @MainActor in
+                self?.finish(commandID: commandID, attempt: attempt, accepted: accepted)
+            }
+        }, errorHandler: { [weak self] _ in
+            // Retry once immediately over the live path, reusing the same ID.
+            // Copilot acknowledges the duplicate without pressing Enter twice.
+            Task { @MainActor in
+                self?.retryOrFail(
+                    payload,
+                    sentAt: sentAt,
+                    attempt: attempt
+                )
+            }
+        })
+    }
+
+    private func retryOrFail(
+        _ payload: WingmanDoublePinchPayload,
+        sentAt: Date,
+        attempt: Int
+    ) {
+        let commandID = payload.commandID
+        let session = WCSession.default
+        switch deliveryState.decideRetry(
+            commandID: commandID,
+            attempt: attempt,
+            sentAt: sentAt,
+            now: Date(),
+            isReachable: session.isReachable
+        ) {
+        case .retry(let nextAttempt):
+            deliveryStatus = "Confirming…"
+            transmit(
+                payload,
+                sentAt: sentAt,
+                attempt: nextAttempt
+            )
+        case .fail:
+            finish(
+                commandID: commandID,
+                attempt: attempt,
+                accepted: false,
+                unavailable: !session.isReachable
+            )
+        case .ignoreStaleCallback:
+            break
+        }
+    }
+
+    private func finish(
+        commandID: UUID,
+        attempt: Int,
+        accepted: Bool,
+        unavailable: Bool = false
+    ) {
+        guard deliveryState.finish(
+            commandID: commandID,
+            attempt: attempt,
+            accepted: accepted
+        ) else { return }
+        replyTimeoutTask?.cancel()
+        replyTimeoutTask = nil
+        deliveryStatus = accepted ? "Delivered" : (unavailable ? "Copilot unavailable" : "Not delivered")
+        play(accepted ? .success : .failure)
+    }
+
+    private enum DeliveryHaptic {
+        case success
+        case failure
+    }
+
+    private func play(_ haptic: DeliveryHaptic) {
+        #if os(watchOS)
+        switch haptic {
+        case .success: WKInterfaceDevice.current().play(.success)
+        case .failure: WKInterfaceDevice.current().play(.failure)
+        }
+        #endif
     }
 }
 

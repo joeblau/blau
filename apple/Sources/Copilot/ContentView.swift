@@ -18,7 +18,8 @@ struct ContentView: View {
     @State private var rearmTrigger = 0
     @State private var showModelDownloadConfirmation = false
     @State private var pendingRecordingWorkspaceID: UUID?
-    @AppStorage("transcription.modelDownloadApproved") private var modelDownloadApproved = false
+    @State private var showSpeechStorage = false
+    @AppStorage("transcription.allowRestrictedNetwork") private var allowRestrictedNetwork = false
     /// Auto-generated identity key, auto-exchanged with Pilot over the
     /// encrypted channel (issue #51). Drives the Settings "Identity & Keys".
     @State private var secureIdentity = SecureIdentity(role: .copilot)
@@ -61,7 +62,12 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             if transcription.isModelLoading {
                 HStack(spacing: 10) {
-                    ProgressView()
+                    if let fraction = transcription.modelLoadingFraction {
+                        ProgressView(value: fraction)
+                            .frame(width: 70)
+                    } else {
+                        ProgressView()
+                    }
                     Text(transcription.modelLoadingProgress)
                         .font(.footnote)
                     Spacer()
@@ -79,22 +85,41 @@ struct ContentView: View {
             Button("Not Now", role: .cancel) {
                 pendingRecordingWorkspaceID = nil
             }
-            Button("Download") {
-                modelDownloadApproved = true
-                let workspaceID = pendingRecordingWorkspaceID
+            Button("Download on Wi-Fi") {
                 pendingRecordingWorkspaceID = nil
-                beginRecording(workspaceID: workspaceID)
+                prepareSpeechModel(allowRestrictedNetwork: false)
+            }
+            Button("Use Cellular") {
+                allowRestrictedNetwork = true
+                pendingRecordingWorkspaceID = nil
+                prepareSpeechModel(allowRestrictedNetwork: true)
             }
         } message: {
-            Text("On-device transcription requires an approximately 150 MB model. It is downloaded only once and cached on this iPhone.")
+            Text("On-device transcription requires an approximately 150 MB model. It is downloaded only once and cached on this iPhone. After it finishes, hold Volume Down again to record.")
         }
         .alert("Transcription unavailable", isPresented: Binding(
             get: { transcription.modelErrorMessage != nil },
             set: { if !$0 { transcription.modelErrorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) { transcription.modelErrorMessage = nil }
+            Button("Retry") {
+                transcription.modelErrorMessage = nil
+                prepareSpeechModel(allowRestrictedNetwork: allowRestrictedNetwork)
+            }
+            Button("Use Cellular") {
+                transcription.modelErrorMessage = nil
+                allowRestrictedNetwork = true
+                prepareSpeechModel(allowRestrictedNetwork: true)
+            }
+            Button("Manage Storage") {
+                transcription.modelErrorMessage = nil
+                showSpeechStorage = true
+            }
+            Button("Not Now", role: .cancel) { transcription.modelErrorMessage = nil }
         } message: {
             Text(transcription.modelErrorMessage ?? "")
+        }
+        .sheet(isPresented: $showSpeechStorage) {
+            SpeechModelStorageView(transcription: transcription)
         }
         .alert(
             syncService.pairingRequest?.isKeyChange == true
@@ -153,7 +178,7 @@ struct ContentView: View {
                 case .down:
                     // Hold volume DOWN to record into the selected workspace.
                     let workspaceID = preHoldWorkspaceID ?? selectedID
-                    if transcription.isModelLoaded || modelDownloadApproved {
+                    if transcription.isModelLoaded || transcription.hasCachedModel {
                         beginRecording(workspaceID: workspaceID)
                     } else {
                         pendingRecordingWorkspaceID = workspaceID
@@ -199,13 +224,22 @@ struct ContentView: View {
     private func beginRecording(workspaceID: UUID?) {
         recordingWorkspaceID = workspaceID
         Task {
-            let started = await transcription.start()
-            guard started, recordingWorkspaceID == workspaceID else { return }
+            let started = await transcription.start(allowRestrictedNetwork: allowRestrictedNetwork)
+            guard started, recordingWorkspaceID == workspaceID else {
+                if recordingWorkspaceID == workspaceID { recordingWorkspaceID = nil }
+                return
+            }
             // Show Pilot's listening state only after the model and microphone
             // are actually ready; cancelled downloads never create a false state.
             syncService.send(.voiceRecord(
                 VoiceRecordCommand(control: .start, workspaceID: workspaceID)
             ))
+        }
+    }
+
+    private func prepareSpeechModel(allowRestrictedNetwork: Bool) {
+        Task {
+            _ = await transcription.loadModel(allowRestrictedNetwork: allowRestrictedNetwork)
         }
     }
 
@@ -246,6 +280,14 @@ struct ContentView: View {
         // "•••" settings entry, top-left.
         ToolbarItem(placement: .topBarLeading) {
             SettingsButton()
+        }
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                showSpeechStorage = true
+            } label: {
+                Image(systemName: "waveform.badge.magnifyingglass")
+            }
+            .accessibilityLabel("Speech Model Storage")
         }
         // Device connection status, top-right.
         ToolbarItemGroup(placement: .topBarTrailing) {
@@ -335,6 +377,47 @@ struct ContentView: View {
     private func sendDeviceStatus() {
         guard !demoMode else { return }
         syncService.send(.deviceStatus(localDeviceStatus))
+    }
+}
+
+private struct SpeechModelStorageView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Bindable var transcription: TranscriptionService
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Model", value: "Whisper base")
+                    LabeledContent("Download size", value: "About 150 MB")
+                    LabeledContent("Stored", value: transcription.cachedModelSize)
+                    if transcription.hasCachedModel || transcription.isModelLoaded {
+                        Button("Remove Download", role: .destructive) {
+                            Task { await transcription.removeCachedModel() }
+                        }
+                        .disabled(transcription.isModelLoading)
+                    } else {
+                        Button("Download on Wi-Fi") {
+                            Task { _ = await transcription.loadModel(allowRestrictedNetwork: false) }
+                        }
+                        Button("Use Cellular") {
+                            Task { _ = await transcription.loadModel(allowRestrictedNetwork: true) }
+                        }
+                    }
+                } header: {
+                    Text("On-device Speech Model")
+                } footer: {
+                    Text("The model stays on this iPhone and transcription audio is processed on-device.")
+                }
+            }
+            .navigationTitle("Speech Storage")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 

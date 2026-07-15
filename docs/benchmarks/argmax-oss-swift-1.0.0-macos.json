@@ -1,0 +1,41 @@
+{
+  "sdk": "argmax-oss-swift 1.0.0",
+  "generatedAt": "2026-07-15T02:48:35Z",
+  "hardware": "Mac15,8",
+  "operatingSystem": "Version 27.0 (Build 26A5378j)",
+  "model": "openai_whisper-base",
+  "modelLoadSeconds": 8.189818833,
+  "firstTranscriptionSeconds": 0.09661575,
+  "meanRealTimeFactor": 0.060256639740700335,
+  "peakResidentBytes": 143409152,
+  "commandAccuracy": 0.8888888888888888,
+  "cases": [
+    {
+      "audioPath": "/tmp/blau-whisper-cases/open-dashboard.aiff",
+      "expected": "open the dashboard",
+      "recognized": "Open the dashboard.",
+      "audioSeconds": 1.316825396825397,
+      "transcriptionSeconds": 0.09661575,
+      "realTimeFactor": 0.07337020552073288,
+      "wordErrorRate": 0
+    },
+    {
+      "audioPath": "/tmp/blau-whisper-cases/run-tests.aiff",
+      "expected": "run the tests",
+      "recognized": "Run the tests.",
+      "audioSeconds": 1.1448979591836734,
+      "transcriptionSeconds": 0.066081083,
+      "realTimeFactor": 0.05771787998217469,
+      "wordErrorRate": 0
+    },
+    {
+      "audioPath": "/tmp/blau-whisper-cases/show-status.aiff",
+      "expected": "show git status",
+      "recognized": "Show Get Status",
+      "audioSeconds": 1.2752380952380953,
+      "transcriptionSeconds": 0.063356167,
+      "realTimeFactor": 0.04968183371919343,
+      "wordErrorRate": 0.3333333333333333
+    }
+  ]
+}

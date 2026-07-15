@@ -13,6 +13,29 @@ enum DeviceConnectionStatus: Sendable, Equatable {
     case failed(String)
 }
 
+enum CaptureFrameError: LocalizedError, Equatable {
+    case timedOut
+    case cancelled
+    case sessionStopped
+    case detached
+    case coordinatorReleased
+
+    var errorDescription: String? {
+        switch self {
+        case .timedOut:
+            "No video frame arrived before the screenshot timed out. Wake the device and retry."
+        case .cancelled:
+            "The screenshot request was cancelled."
+        case .sessionStopped:
+            "The screenshot was cancelled because device capture stopped."
+        case .detached:
+            "The screenshot was cancelled because the device disconnected. Reconnect it and retry."
+        case .coordinatorReleased:
+            "The screenshot was cancelled because the capture pane closed."
+        }
+    }
+}
+
 // DeviceCaptureSession — drives an `AVCaptureSession` that mirrors a
 // USB-tethered iPhone, the same way QuickTime's "Movie Recording" does:
 // it flips the CMIO `AllowScreenCaptureDevices` switch so the iPhone
@@ -146,7 +169,7 @@ final class DeviceCaptureSession: NSObject {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
-        coordinator.cancelPendingFrames()
+        coordinator.shutdown()
     }
 
     func start() {
@@ -170,7 +193,7 @@ final class DeviceCaptureSession: NSObject {
 
     func stop() {
         cancelRecovery()
-        coordinator.cancelPendingFrames()
+        coordinator.cancelPendingFrames(reason: .sessionStopped)
         if isRecording {
             coordinator.stopRecording()
         }
@@ -195,7 +218,10 @@ final class DeviceCaptureSession: NSObject {
             return
         }
         let url = Self.timestampedURL(folder: "Desktop", name: "iPhone Recording", ext: "mov")
-        coordinator.startRecording(to: url)
+        guard coordinator.startRecording(to: url) else {
+            lastError = "A recording is already being prepared or saved. Wait for it to finish and retry."
+            return
+        }
         isRecording = true
         lastError = nil
         // No paired audio device means the writer has no audio track to fill —
@@ -221,12 +247,13 @@ final class DeviceCaptureSession: NSObject {
         guard status == .streaming else { return }
         Task { [weak self] in
             guard let self else { return }
-            guard let cgImage = await self.coordinator.nextFrame() else {
-                self.lastError = "Couldn't grab a frame for the screenshot."
-                return
+            do {
+                let cgImage = try await self.coordinator.nextFrame()
+                let url = Self.timestampedURL(folder: "Desktop", name: "iPhone Screenshot", ext: "png")
+                self.write(cgImage: cgImage, to: url)
+            } catch {
+                self.lastError = error.localizedDescription
             }
-            let url = Self.timestampedURL(folder: "Desktop", name: "iPhone Screenshot", ext: "png")
-            self.write(cgImage: cgImage, to: url)
         }
     }
 
@@ -238,30 +265,31 @@ final class DeviceCaptureSession: NSObject {
         guard status == .streaming else { return }
         Task { [weak self] in
             guard let self else { return }
-            guard let cgImage = await self.coordinator.nextFrame() else {
-                self.lastError = "Couldn't grab a frame to copy."
-                return
-            }
-            let image = NSImage(
-                cgImage: cgImage,
-                size: NSSize(width: cgImage.width, height: cgImage.height)
-            )
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            // Write `NSImage` so paste targets that prefer image data get
-            // it, and add an explicit PNG representation for clients that
-            // ask for raw bytes (Slack, browsers, etc.).
-            var wroteAny = pasteboard.writeObjects([image])
-            let bitmap = NSBitmapImageRep(cgImage: cgImage)
-            if let pngData = bitmap.representation(using: .png, properties: [:]) {
-                pasteboard.setData(pngData, forType: .png)
-                wroteAny = true
-            }
-            if !wroteAny {
-                self.lastError = "Couldn't put the screenshot on the clipboard."
-            } else {
-                self.lastError = nil
-                self.clipboardCopyCount &+= 1
+            do {
+                let cgImage = try await self.coordinator.nextFrame()
+                let image = NSImage(
+                    cgImage: cgImage,
+                    size: NSSize(width: cgImage.width, height: cgImage.height)
+                )
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                // Write `NSImage` so paste targets that prefer image data get
+                // it, and add an explicit PNG representation for clients that
+                // ask for raw bytes (Slack, browsers, etc.).
+                var wroteAny = pasteboard.writeObjects([image])
+                let bitmap = NSBitmapImageRep(cgImage: cgImage)
+                if let pngData = bitmap.representation(using: .png, properties: [:]) {
+                    pasteboard.setData(pngData, forType: .png)
+                    wroteAny = true
+                }
+                if !wroteAny {
+                    self.lastError = "Couldn't put the screenshot on the clipboard."
+                } else {
+                    self.lastError = nil
+                    self.clipboardCopyCount &+= 1
+                }
+            } catch {
+                self.lastError = error.localizedDescription
             }
         }
     }
@@ -281,12 +309,18 @@ final class DeviceCaptureSession: NSObject {
         }
     }
 
-    private static func timestampedURL(folder: String, name: String, ext: String) -> URL {
+    static func timestampedURL(
+        folder: String,
+        name: String,
+        ext: String,
+        date: Date = Date(),
+        uniqueID: UUID = UUID()
+    ) -> URL {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss.SSS"
-        let stamp = formatter.string(from: Date())
-        let unique = UUID().uuidString.prefix(8).lowercased()
+        let stamp = formatter.string(from: date)
+        let unique = uniqueID.uuidString.lowercased()
         let home = URL(fileURLWithPath: NSHomeDirectory())
         return home.appendingPathComponent(folder).appendingPathComponent("\(name) \(stamp)-\(unique).\(ext)")
     }
@@ -720,7 +754,10 @@ final class DeviceCaptureSession: NSObject {
         // every teardown path (unplug, recovery rebuild, an attach() that throws)
         // so no zombie tick survives. attach() restarts it.
         stopWatchdog()
-        coordinator.cancelPendingFrames()
+        coordinator.cancelPendingFrames(reason: .detached)
+        if isRecording {
+            coordinator.stopRecording(reason: "Recording stopped because the capture device disconnected.")
+        }
         hasAudioInput = false
         session.beginConfiguration()
         for input in session.inputs { session.removeInput(input) }
@@ -835,13 +872,13 @@ private extension [AVFrameRateRange] {
 /// serial delivery queue, so video/audio callbacks never overlap; only
 /// `start`/`stopRecording` (called from the main actor) race them, and the
 /// lock serializes that.
-private final class CaptureCoordinator: NSObject,
+final class CaptureCoordinator: NSObject,
     AVCaptureVideoDataOutputSampleBufferDelegate,
     AVCaptureAudioDataOutputSampleBufferDelegate,
     @unchecked Sendable {
     private let lock = NSLock()
     private let ciContext = CIContext()
-    private var pending: [UUID: CheckedContinuation<CGImage?, Never>] = [:]
+    private var pending: [UUID: CheckedContinuation<CGImage, Error>] = [:]
 
     private var writer: AVAssetWriter?
     private var videoInput: AVAssetWriterInput?
@@ -853,58 +890,73 @@ private final class CaptureCoordinator: NSObject,
     /// Called on completion with the saved URL and an error description (if any).
     var onFinish: (@Sendable (URL, String?) -> Void)?
 
+    deinit {
+        shutdown()
+    }
+
+    func shutdown() {
+        cancelPendingFrames(reason: .coordinatorReleased)
+        stopRecording(reason: "Recording stopped because the capture coordinator closed.")
+    }
+
     // MARK: Screenshot
 
-    func nextFrame(timeout: TimeInterval = 2) async -> CGImage? {
+    func nextFrame(timeout: TimeInterval = 2) async throws -> CGImage {
         let requestID = UUID()
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
                 lock.lock()
                 pending[requestID] = continuation
                 lock.unlock()
 
                 if Task.isCancelled {
-                    resolveFrameRequest(requestID, with: nil)
+                    resolveFrameRequest(requestID, result: .failure(CaptureFrameError.cancelled))
                     return
                 }
                 DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout) { [weak self] in
-                    self?.resolveFrameRequest(requestID, with: nil)
+                    self?.resolveFrameRequest(requestID, result: .failure(CaptureFrameError.timedOut))
                 }
             }
         } onCancel: { [weak self] in
-            self?.resolveFrameRequest(requestID, with: nil)
+            self?.resolveFrameRequest(requestID, result: .failure(CaptureFrameError.cancelled))
         }
     }
 
-    func cancelPendingFrames() {
+    func cancelPendingFrames(reason: CaptureFrameError) {
         lock.lock()
         let continuations = Array(pending.values)
         pending.removeAll()
         lock.unlock()
-        continuations.forEach { $0.resume(returning: nil) }
+        continuations.forEach { $0.resume(throwing: reason) }
     }
 
-    private func resolveFrameRequest(_ id: UUID, with image: CGImage?) {
+    private func resolveFrameRequest(_ id: UUID, result: Result<CGImage, Error>) {
         lock.lock()
         let continuation = pending.removeValue(forKey: id)
         lock.unlock()
-        continuation?.resume(returning: image)
+        continuation?.resume(with: result)
     }
 
     // MARK: Recording control
 
-    func startRecording(to url: URL) {
+    @discardableResult
+    func startRecording(to url: URL) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard writer == nil else { return }
+        guard writer == nil, !armed, !finishing else { return false }
         recordingURL = url
         armed = true
         finishing = false
+        return true
     }
 
-    func stopRecording() {
+    func stopRecording(reason: String? = nil) {
         lock.lock()
-        guard let writer, !finishing else {
+        if finishing {
+            lock.unlock()
+            return
+        }
+        guard let writer else {
             // An armed/no-frame recording still has to finish the public state
             // machine; otherwise DeviceCaptureSession stays "recording" forever.
             let wasArmed = armed
@@ -914,7 +966,7 @@ private final class CaptureCoordinator: NSObject,
             recordingURL = nil
             lock.unlock()
             if wasArmed, let url {
-                callback?(url, "Recording stopped before the first video frame arrived.")
+                callback?(url, reason ?? "Recording stopped before the first video frame arrived.")
             }
             return
         }
@@ -963,45 +1015,86 @@ private final class CaptureCoordinator: NSObject,
 
         guard !continuations.isEmpty else { return }
         guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            continuations.forEach { $0.resume(returning: nil) }
+            continuations.forEach {
+                $0.resume(throwing: CaptureFrameError.timedOut)
+            }
             return
         }
         let ciImage = CIImage(cvImageBuffer: imageBuffer)
         let image = ciContext.createCGImage(ciImage, from: ciImage.extent)
+        guard let image else {
+            continuations.forEach { $0.resume(throwing: CaptureFrameError.timedOut) }
+            return
+        }
         continuations.forEach { $0.resume(returning: image) }
     }
 
     private func appendVideo(_ sampleBuffer: CMSampleBuffer) {
         lock.lock()
-        defer { lock.unlock() }
         if armed, writer == nil {
             buildWriter(from: sampleBuffer)
         }
-        guard let writer, let videoInput, !finishing else { return }
+        guard let writer, let videoInput, !finishing else {
+            lock.unlock()
+            return
+        }
         if writer.status == .unknown {
-            writer.startWriting()
+            guard writer.startWriting() else {
+                let failure = takeRecordingFailureLocked(
+                    writer.error?.localizedDescription ?? "The recording writer could not start."
+                )
+                lock.unlock()
+                notifyRecordingFailure(failure)
+                return
+            }
             writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
         }
         if writer.status == .writing, videoInput.isReadyForMoreMediaData {
-            videoInput.append(sampleBuffer)
+            guard videoInput.append(sampleBuffer) else {
+                let failure = takeRecordingFailureLocked(
+                    writer.error?.localizedDescription ?? "The recording writer rejected a video frame."
+                )
+                lock.unlock()
+                notifyRecordingFailure(failure)
+                return
+            }
         }
+        lock.unlock()
     }
 
     private func appendAudio(_ sampleBuffer: CMSampleBuffer) {
         lock.lock()
-        defer { lock.unlock() }
         // Only once the writer is live (video frame started the session) —
         // appending audio before `startSession` would fail.
         guard let writer, let audioInput, !finishing,
-              writer.status == .writing, audioInput.isReadyForMoreMediaData else { return }
-        audioInput.append(sampleBuffer)
+              writer.status == .writing, audioInput.isReadyForMoreMediaData else {
+            lock.unlock()
+            return
+        }
+        guard audioInput.append(sampleBuffer) else {
+            let failure = takeRecordingFailureLocked(
+                writer.error?.localizedDescription ?? "The recording writer rejected an audio frame."
+            )
+            lock.unlock()
+            notifyRecordingFailure(failure)
+            return
+        }
+        lock.unlock()
     }
 
     /// Build the writer sized to the device's real frame dimensions. Called
     /// with `lock` held, on the first video sample of a recording.
     private func buildWriter(from sampleBuffer: CMSampleBuffer) {
-        guard let url = recordingURL,
-              let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
+        guard let url = recordingURL else { return }
+        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else {
+            let callback = onFinish
+            armed = false
+            recordingURL = nil
+            DispatchQueue.global(qos: .userInitiated).async {
+                callback?(url, "Could not read the first video frame's format.")
+            }
+            return
+        }
         let dimensions = CMVideoFormatDescriptionGetDimensions(formatDescription)
         do {
             let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
@@ -1012,7 +1105,14 @@ private final class CaptureCoordinator: NSObject,
                 AVVideoHeightKey: Int(dimensions.height),
             ])
             videoInput.expectsMediaDataInRealTime = true
-            if writer.canAdd(videoInput) { writer.add(videoInput) }
+            guard writer.canAdd(videoInput) else {
+                throw NSError(
+                    domain: "app.blau.pilot.capture",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "The recording writer cannot accept the video format."]
+                )
+            }
+            writer.add(videoInput)
 
             let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -1037,5 +1137,39 @@ private final class CaptureCoordinator: NSObject,
                 }
             }
         }
+    }
+
+    private typealias RecordingFailure = (
+        url: URL,
+        callback: @Sendable (URL, String?) -> Void,
+        message: String
+    )
+
+    /// Takes and clears recording state while `lock` is held. The callback is
+    /// always invoked after unlocking so UI work can never re-enter the writer.
+    private func takeRecordingFailureLocked(_ message: String) -> RecordingFailure? {
+        guard let url = recordingURL ?? writer?.outputURL, let callback = onFinish else {
+            writer?.cancelWriting()
+            writer = nil
+            videoInput = nil
+            audioInput = nil
+            recordingURL = nil
+            armed = false
+            finishing = false
+            return nil
+        }
+        writer?.cancelWriting()
+        writer = nil
+        videoInput = nil
+        audioInput = nil
+        recordingURL = nil
+        armed = false
+        finishing = false
+        return (url, callback, message)
+    }
+
+    private func notifyRecordingFailure(_ failure: RecordingFailure?) {
+        guard let failure else { return }
+        failure.callback(failure.url, failure.message)
     }
 }
