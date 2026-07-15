@@ -25,6 +25,7 @@ struct ContentView: View {
     @AppStorage("inspector.width") private var inspectorWidth = 280.0
     @FocusState private var isBrowserURLFieldFocused: Bool
     @State private var notesToggleMonitor: Any?
+    @State private var persistenceFailure: PersistenceFailure?
 
     var body: some View {
         let activeInspectorRepoPath = isInspectorPresentedForSelectedWorkspace ? selectedWorkspaceRootPath : nil
@@ -183,6 +184,24 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .pilotFocusBrowserAddressBar)) { _ in
             focusBrowserAddressBar()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pilotPersistenceSaveFailed)) { notification in
+            let operation = notification.userInfo?["operation"] as? String ?? "Saving Pilot data"
+            let message = notification.userInfo?["message"] as? String ?? "Unknown persistence error"
+            persistenceFailure = PersistenceFailure(operation: operation, message: message)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UsageConsent.changedNotification)) { _ in
+            usageStore.reload()
+        }
+        .alert(item: $persistenceFailure) { failure in
+            Alert(
+                title: Text("Changes could not be saved"),
+                message: Text("\(failure.operation) failed: \(failure.message)\n\nYour non-destructive edits remain in memory. Free disk space or fix permissions, then retry."),
+                primaryButton: .default(Text("Retry")) {
+                    _ = store.modelContext.saveReporting(operation: "Retrying Pilot data save")
+                },
+                secondaryButton: .cancel()
+            )
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {

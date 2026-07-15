@@ -22,6 +22,9 @@ struct ContentView: View {
             VStack {
                 gestureDisplay
                     .frame(maxHeight: .infinity)
+                Text(sessionDelegate.deliveryStatus)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             .navigationTitle("Wingman")
             .safeAreaInset(edge: .bottom) {

@@ -16,6 +16,9 @@ struct ContentView: View {
     /// Bumped after each recording cycle to re-arm volume observation, since
     /// `transcription.stop()` deactivates the shared audio session.
     @State private var rearmTrigger = 0
+    @State private var showModelDownloadConfirmation = false
+    @State private var pendingRecordingWorkspaceID: UUID?
+    @AppStorage("transcription.modelDownloadApproved") private var modelDownloadApproved = false
     /// Auto-generated identity key, auto-exchanged with Pilot over the
     /// encrypted channel (issue #51). Drives the Settings "Identity & Keys".
     @State private var secureIdentity = SecureIdentity(role: .copilot)
@@ -53,6 +56,44 @@ struct ContentView: View {
             sendDeviceStatus()
             // Auto-exchange device keys with Pilot once connected.
             secureIdentity.announce()
+        }
+        .overlay(alignment: .top) {
+            if transcription.isModelLoading {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text(transcription.modelLoadingProgress)
+                        .font(.footnote)
+                    Spacer()
+                    Button("Cancel") {
+                        transcription.cancelModelLoad()
+                        recordingWorkspaceID = nil
+                    }
+                }
+                .padding(12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding()
+            }
+        }
+        .alert("Download Speech Model?", isPresented: $showModelDownloadConfirmation) {
+            Button("Not Now", role: .cancel) {
+                pendingRecordingWorkspaceID = nil
+            }
+            Button("Download") {
+                modelDownloadApproved = true
+                let workspaceID = pendingRecordingWorkspaceID
+                pendingRecordingWorkspaceID = nil
+                beginRecording(workspaceID: workspaceID)
+            }
+        } message: {
+            Text("On-device transcription requires an approximately 150 MB model. It is downloaded only once and cached on this iPhone.")
+        }
+        .alert("Transcription unavailable", isPresented: Binding(
+            get: { transcription.modelErrorMessage != nil },
+            set: { if !$0 { transcription.modelErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { transcription.modelErrorMessage = nil }
+        } message: {
+            Text(transcription.modelErrorMessage ?? "")
         }
     }
 
@@ -92,14 +133,12 @@ struct ContentView: View {
                 case .down:
                     // Hold volume DOWN to record into the selected workspace.
                     let workspaceID = preHoldWorkspaceID ?? selectedID
-                    recordingWorkspaceID = workspaceID
-                    // Tell Pilot to focus that workspace immediately and
-                    // show the listening indicator — the actual mic/Whisper
-                    // run on this device.
-                    syncService.send(.voiceRecord(
-                        VoiceRecordCommand(control: .start, workspaceID: workspaceID)
-                    ))
-                    Task { await transcription.start() }
+                    if transcription.isModelLoaded || modelDownloadApproved {
+                        beginRecording(workspaceID: workspaceID)
+                    } else {
+                        pendingRecordingWorkspaceID = workspaceID
+                        showModelDownloadConfirmation = true
+                    }
                 case .up:
                     // Hold volume UP to press Enter in the selected terminal.
                     syncService.send(.terminalInput(.enter))
@@ -111,6 +150,7 @@ struct ContentView: View {
                 // Only the record gesture (hold-down) has work to finish on
                 // release; hold-up (Enter) already fired on hold-start.
                 guard direction == .down else { return }
+                pendingRecordingWorkspaceID = nil
                 let workspaceID = recordingWorkspaceID ?? selectedID
                 recordingWorkspaceID = nil
                 preHoldWorkspaceID = nil
@@ -133,6 +173,19 @@ struct ContentView: View {
             rearmToken: rearmTrigger
         ) { workspace, isHighlighted in
             workspaceRow(workspace, isHighlighted: isHighlighted)
+        }
+    }
+
+    private func beginRecording(workspaceID: UUID?) {
+        recordingWorkspaceID = workspaceID
+        Task {
+            let started = await transcription.start()
+            guard started, recordingWorkspaceID == workspaceID else { return }
+            // Show Pilot's listening state only after the model and microphone
+            // are actually ready; cancelled downloads never create a false state.
+            syncService.send(.voiceRecord(
+                VoiceRecordCommand(control: .start, workspaceID: workspaceID)
+            ))
         }
     }
 
@@ -238,10 +291,6 @@ struct ContentView: View {
             }
         }
         syncService.start()
-        // Prewarm Whisper so the first hold doesn't pay the ~2s model
-        // load. Network download (≈150 MB for `base`) still happens
-        // lazily on first run; subsequent launches reuse the cache.
-        Task { await transcription.loadModel() }
     }
 
     /// Populates the workspace list with representative fixture content

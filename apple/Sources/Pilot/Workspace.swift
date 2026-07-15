@@ -258,7 +258,7 @@ final class Pane {
         guard currentDirectory != trimmed else { return }
         currentDirectory = trimmed
         workspace?.syncDefaultRootPathIfNeeded(using: self)
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     var persistentSessionName: String {
@@ -283,6 +283,25 @@ final class Pane {
         return withUnsafePointer(to: &info.pvi_cdir.vip_path) {
             $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) {
                 String(cString: $0)
+            }
+        }
+    }
+
+    /// Stops every runtime-only resource owned by this pane. Model deletion and
+    /// individual pane closing must share this path so a new runtime pane kind
+    /// cannot be cleaned up in one flow but leaked in another.
+    func tearDownRuntimeResources() {
+        PersistentTerminalSession.killSession(for: self)
+        let paneID = id
+        let paneKind = kind
+        MainActor.assumeIsolated {
+            switch paneKind {
+            case .device:
+                DeviceCaptureRegistry.shared.remove(paneID: paneID)
+            case .simulator:
+                SimulatorRegistry.shared.remove(paneID: paneID)
+            case .terminal, .browser, .editor:
+                break
             }
         }
     }
@@ -437,21 +456,7 @@ final class Workspace {
     }
 
     func removePane(_ pane: Pane) {
-        PersistentTerminalSession.killSession(for: pane)
-        if pane.kind == .device || pane.kind == .simulator {
-            let paneID = pane.id
-            let kind = pane.kind
-            // `removePane` is invoked from SwiftUI on the main thread, but
-            // isn't `@MainActor`-annotated; assume the isolation rather than
-            // jump asynchronously so teardown happens before the row drops.
-            MainActor.assumeIsolated {
-                if kind == .device {
-                    DeviceCaptureRegistry.shared.remove(paneID: paneID)
-                } else {
-                    SimulatorRegistry.shared.remove(paneID: paneID)
-                }
-            }
-        }
+        pane.tearDownRuntimeResources()
         panes.removeAll { $0.id == pane.id }
         if selectedPaneID == pane.id {
             selectedPaneID = sortedPanes.first(where: { !$0.isCollapsed })?.id ?? sortedPanes.first?.id
@@ -466,7 +471,7 @@ final class Workspace {
     func setFrontmostTerminalPaneID(_ paneID: UUID?) {
         guard frontmostTerminalPaneID != paneID else { return }
         frontmostTerminalPaneID = paneID
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     /// Move the selection to the next pane, wrapping around. In focus mode
@@ -507,19 +512,19 @@ final class Workspace {
         if next.kind == .terminal {
             frontmostTerminalPaneID = next.id
         }
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     func setInspectorPresented(_ isPresented: Bool) {
         guard isInspectorPresented != isPresented else { return }
         isInspectorPresented = isPresented
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     func setInspectorTab(_ tab: InspectorTab) {
         guard inspectorTab != tab else { return }
         inspectorTab = tab
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     /// Returns normalized size fractions for sorted panes, ensuring they sum to 1.0.
@@ -590,7 +595,7 @@ final class Workspace {
         for pane in sortedPanes where !pane.isCollapsed {
             pane.sizeFraction = fractions[pane.id] ?? (1.0 / Double(max(panes.count, 1)))
         }
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     /// Reset all panes to equal size.
@@ -603,7 +608,7 @@ final class Workspace {
                 pane.sizeFraction = equal
             }
         }
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     func collapsePane(_ pane: Pane) {
@@ -621,7 +626,7 @@ final class Workspace {
                 ?? (pane.kind == .terminal ? pane.id : nil)
         }
 
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     func expandPane(_ pane: Pane) {
@@ -643,7 +648,7 @@ final class Workspace {
             frontmostTerminalPaneID = pane.id
         }
 
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     func focusPane(_ pane: Pane) {
@@ -683,7 +688,7 @@ final class Workspace {
             frontmostTerminalPaneID = pane.id
         }
 
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     func syncDefaultRootPathIfNeeded(using pane: Pane? = nil) {
@@ -692,7 +697,7 @@ final class Workspace {
         guard let rootTrackingTerminalPane else {
             if !rootPath.isEmpty {
                 rootPath = ""
-                try? modelContext?.save()
+                _ = modelContext?.saveReporting()
             }
             return
         }
@@ -711,7 +716,7 @@ final class Workspace {
 
         guard rootPath != nextRootPath else { return }
         rootPath = nextRootPath
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     func setRootPath(_ path: String) {
@@ -724,7 +729,7 @@ final class Workspace {
         guard rootPath != nextRootPath || rootPathSource != nextSource else { return }
         rootPath = nextRootPath
         rootPathSource = nextSource
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     enum Side {
@@ -809,7 +814,7 @@ final class Workspace {
                 ?? sortedPanes.first(where: { $0.kind == .terminal })?.id
         }
 
-        try? modelContext?.save()
+        _ = modelContext?.saveReporting()
     }
 
     private func resizePanePair(leadingID: UUID, trailingID: UUID) -> (Pane, Pane)? {

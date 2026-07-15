@@ -18,6 +18,23 @@
 # Run from apple/:  ./bin/capture-pilot.sh
 set -euo pipefail
 
+usage() {
+  echo "Usage: $0 [--dry-run] [--preserve-build]"
+  echo "  --dry-run         print the resolved capture plan without building or launching"
+  echo "  --preserve-build  keep temporary DerivedData for debugging"
+}
+
+DRY_RUN="${DRY_RUN:-0}"
+PRESERVE_BUILD="${PRESERVE_BUILD:-0}"
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+    --preserve-build) PRESERVE_BUILD=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown argument: $arg" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT_DIR="$APPLE_DIR/../workers/web/public/screenshots/pilot"
@@ -27,6 +44,38 @@ mkdir -p "$OUT_DIR"
 PROJECT="$APPLE_DIR/blau.xcodeproj"
 SCHEME="Pilot"
 CAPTURE_DELAY="${PILOT_CAPTURE_DELAY:-5}"
+DERIVED=""
+PILOT_PID=""
+TMP_OUT="${OUT%.png}.tmp.$$.png"
+
+cleanup() {
+  status=$?
+  trap - EXIT INT TERM
+  rm -f -- "$TMP_OUT"
+  if [ -n "$PILOT_PID" ]; then
+    kill "$PILOT_PID" 2>/dev/null || true
+    wait "$PILOT_PID" 2>/dev/null || true
+  fi
+  if [ -n "$DERIVED" ] && [ "$PRESERVE_BUILD" != "1" ]; then
+    rm -rf -- "$DERIVED"
+  elif [ -n "$DERIVED" ]; then
+    echo "    Preserved DerivedData: $DERIVED"
+  fi
+  exit "$status"
+}
+trap cleanup EXIT INT TERM
+
+for tool in xcodebuild xcode-select open osascript screencapture; do
+  command -v "$tool" >/dev/null || { echo "ERROR: required tool not found: $tool" >&2; exit 1; }
+done
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo "Project: $PROJECT"
+  echo "Scheme: $SCHEME"
+  echo "Output: $OUT"
+  echo "Capture delay: ${CAPTURE_DELAY}s"
+  exit 0
+fi
 
 # Preflight: the Pilot build pulls in CodeEditSourceEditor, whose targets carry a
 # transitive SwiftLint build-tool plugin. Xcode runs that plugin's swiftlint in a
@@ -52,7 +101,7 @@ if [ ! -d "$ACTIVE_DEV/Toolchains/XcodeDefault.xctoolchain/usr/lib/sourcekitdInP
 fi
 
 echo "==> Building $SCHEME (Debug)"
-DERIVED="$(mktemp -d)"
+DERIVED="$(mktemp -d -t blau-pilot-capture.XXXXXX)"
 xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
@@ -69,8 +118,10 @@ fi
 echo "    App: $APP_PATH"
 
 echo "==> Launching Pilot in demo mode"
-# -n forces a fresh instance; pass demo-mode launch args through to the app.
-open -n "$APP_PATH" --args -demoMode YES
+# Launch the built executable directly so cleanup can terminate exactly the
+# process created by this script rather than every app named Pilot.
+"$APP_PATH/Contents/MacOS/Pilot" -demoMode YES >/dev/null 2>&1 &
+PILOT_PID=$!
 
 echo "==> Waiting ${CAPTURE_DELAY}s for the window to appear"
 sleep "$CAPTURE_DELAY"
@@ -110,11 +161,13 @@ PY
 
 if [ -n "$PILOT_WIN" ]; then
   echo "==> Capturing Pilot window #$PILOT_WIN -> $OUT"
-  screencapture -o -l"$PILOT_WIN" "$OUT"
+  screencapture -o -l"$PILOT_WIN" "$TMP_OUT"
 else
   echo "==> Could not resolve a window id automatically."
   echo "    Falling back to interactive region capture: drag to select the Pilot window."
-  screencapture -o -i "$OUT"
+  screencapture -o -i "$TMP_OUT"
 fi
+
+mv -f -- "$TMP_OUT" "$OUT"
 
 echo "==> Done: $OUT"

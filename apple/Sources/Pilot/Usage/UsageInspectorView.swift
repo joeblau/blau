@@ -136,6 +136,9 @@ private struct ProviderCard: View {
     @ViewBuilder
     private var content: some View {
         switch state {
+        case .disabled:
+            setupPrompt(message: "Disabled. Enable this provider in Usage settings before Pilot reads its CLI credentials.")
+
         case .loading:
             ProgressView().controlSize(.small)
                 .frame(maxWidth: .infinity, alignment: .center)

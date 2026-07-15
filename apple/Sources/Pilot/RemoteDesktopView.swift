@@ -174,6 +174,7 @@ private struct RemoteConnectionPane: View {
     @State private var session = RemoteConnectionSession()
     @State private var password = ""
     @State private var savePassword = false
+    @State private var shareClipboard = false
 
     var body: some View {
         ZStack {
@@ -188,6 +189,7 @@ private struct RemoteConnectionPane: View {
                     port: connection.port,
                     username: connection.username,
                     password: password,
+                    isClipboardRedirectionEnabled: shareClipboard,
                     session: session
                 )
                 .background(Color.black)
@@ -201,7 +203,10 @@ private struct RemoteConnectionPane: View {
         // Auto-connect on tab switch when a password is saved. The pane (and its
         // `session`) is recreated per connection via `.id(connection.id)`, so this
         // fires once each time you tab to a machine.
-        .onAppear(perform: restoreSavedPasswordAndConnect)
+        .onAppear {
+            shareClipboard = VNCPreferences.isClipboardRedirectionEnabled(id: connection.id)
+            restoreSavedPasswordAndConnect()
+        }
     }
 
     private func restoreSavedPasswordAndConnect() {
@@ -253,6 +258,14 @@ private struct RemoteConnectionPane: View {
                     .toggleStyle(.checkbox)
                     .controlSize(.small)
                     .frame(width: 280, alignment: .leading)
+                Toggle("Share clipboard with remote Mac", isOn: $shareClipboard)
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
+                    .frame(width: 280, alignment: .leading)
+                Text("Off by default. Enabling this lets the remote VNC server read and replace your Mac clipboard.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 280, alignment: .leading)
             }
 
             if let error {
@@ -281,8 +294,9 @@ private struct RemoteConnectionPane: View {
         } else if !savePassword {
             VNCKeychain.delete(id: connection.id)
         }
+        VNCPreferences.setClipboardRedirectionEnabled(shareClipboard, id: connection.id)
         connection.lastConnectedAt = Date()
-        try? connection.modelContext?.save()
+        _ = connection.modelContext?.saveReporting(operation: "Saving remote desktop connection")
         session.status = .connecting
     }
 }

@@ -26,6 +26,14 @@ final class SecureIdentity {
 
     init(role: ConnectedDeviceAppRole) {
         self.role = role
+        guard !ProcessInfo.processInfo.environment.keys.contains("XCTestConfigurationFilePath") else {
+            // Hosted test apps must not touch the developer's Keychain. Besides
+            // mutating real trust state, a locked Keychain can block test launch
+            // before XCTest has a chance to execute the bundle.
+            self.localPublicKey = nil
+            self.peerPublicKey = nil
+            return
+        }
         // Auto-generate (or load) our key, and recall any previously synced peer.
         self.localPublicKey = DeviceIdentity.publicKeyBase64()
         self.peerPublicKey = DeviceIdentity.peerPublicKeyBase64()

@@ -38,18 +38,28 @@ struct PilotApp: App {
         // Build the schema from the newest versioned schema so the store is
         // stamped with a version and `PilotMigrationPlan` governs upgrades.
         let schema = Schema(versionedSchema: PilotSchemaV1.self)
-        let storeURL = Self.persistentStoreURL()
-        // Safety net: copy the on-disk store aside BEFORE opening it, so a failed
-        // open or migration can never be the only thing standing between the user
-        // and their workspaces/notes. Runs before `makeModelContainer` on purpose.
-        Self.backUpStore(at: storeURL, fileManager: .default)
-        let configuration = ModelConfiguration(schema: schema, url: storeURL)
-        let container = Self.makeModelContainer(
-            schema: schema,
-            migrationPlan: PilotMigrationPlan.self,
-            configuration: configuration,
-            storeURL: storeURL
-        )
+        let container: ModelContainer
+        if ProcessInfo.processInfo.environment.keys.contains("XCTestConfigurationFilePath") {
+            // A hosted unit-test launch must never open, back up, migrate, or
+            // quarantine the developer's real Pilot store. It can also deadlock
+            // behind a normally running Pilot process. Keep the test host fully
+            // isolated and ephemeral.
+            let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+            container = try! ModelContainer(for: schema, configurations: configuration)
+        } else {
+            let storeURL = Self.persistentStoreURL()
+            // Safety net: copy the on-disk store aside BEFORE opening it, so a failed
+            // open or migration can never be the only thing standing between the user
+            // and their workspaces/notes. Runs before `makeModelContainer` on purpose.
+            Self.backUpStore(at: storeURL, fileManager: .default)
+            let configuration = ModelConfiguration(schema: schema, url: storeURL)
+            container = Self.makeModelContainer(
+                schema: schema,
+                migrationPlan: PilotMigrationPlan.self,
+                configuration: configuration,
+                storeURL: storeURL
+            )
+        }
         self.modelContainer = container
         let store = WorkspaceStore(modelContext: container.mainContext)
         // Demo mode (screenshots/UITests): launch arg pair ["-demoMode", "YES"]

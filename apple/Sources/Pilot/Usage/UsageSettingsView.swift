@@ -4,6 +4,9 @@ import SwiftUI
 /// from the `claude`, `codex`, and `grok` CLI sessions already on this Mac. This
 /// page shows whether each is signed in and how to sign in if not.
 struct UsageSettingsView: View {
+    @AppStorage(UsageConsent.claudeKey) private var claudeEnabled = false
+    @AppStorage(UsageConsent.codexKey) private var codexEnabled = false
+    @AppStorage(UsageConsent.grokKey) private var grokEnabled = false
     @State private var claudeSignedIn: Bool?
     @State private var codexSignedIn: Bool?
     @State private var grokSignedIn: Bool?
@@ -15,29 +18,32 @@ struct UsageSettingsView: View {
     var body: some View {
         Form {
             Section {
-                statusRow(signedIn: claudeSignedIn)
+                Toggle("Allow Pilot to read Claude Code credentials and usage", isOn: $claudeEnabled)
+                statusRow(enabled: claudeEnabled, signedIn: claudeSignedIn)
                 Link(destination: Self.claudeDocsURL) {
                     Label("Install & sign in to Claude Code", systemImage: "arrow.up.forward.app")
                 }
             } header: {
                 Text("Claude")
             } footer: {
-                Text("Run `claude` in a terminal to sign in. Usage is read from Claude Code's session — reading it from the Keychain may prompt you to Allow once.")
+                Text("When enabled, Pilot reads Claude Code's credential file or Keychain item and sends its bearer token only to Anthropic's usage endpoint. Keychain access may prompt once.")
             }
 
             Section {
-                statusRow(signedIn: codexSignedIn)
+                Toggle("Allow Pilot to read Codex credentials and usage", isOn: $codexEnabled)
+                statusRow(enabled: codexEnabled, signedIn: codexSignedIn)
                 Link(destination: Self.codexDocsURL) {
                     Label("Install & sign in to Codex", systemImage: "arrow.up.forward.app")
                 }
             } header: {
                 Text("Codex")
             } footer: {
-                Text("Run `codex` in a terminal to sign in. Usage is read from ~/.codex/auth.json.")
+                Text("When enabled, Pilot reads ~/.codex/auth.json and sends its bearer token only to ChatGPT's Codex usage endpoint.")
             }
 
             Section {
-                statusRow(signedIn: grokSignedIn)
+                Toggle("Allow Pilot to read Grok credentials and usage", isOn: $grokEnabled)
+                statusRow(enabled: grokEnabled, signedIn: grokSignedIn)
                 Link(destination: Self.grokDocsURL) {
                     Label("Install & sign in to Grok", systemImage: "arrow.up.forward.app")
                 }
@@ -45,44 +51,76 @@ struct UsageSettingsView: View {
                 Text("Grok")
             } footer: {
                 Text(
-                    "Run `grok login` in a terminal to sign in. Usage is read from "
-                        + "$GROK_HOME/auth.json (or ~/.grok/auth.json by default)."
+                    "When enabled, Pilot reads $GROK_HOME/auth.json (or ~/.grok/auth.json) "
+                        + "and sends its bearer token only to xAI's usage endpoint."
                 )
             }
 
             Section {
                 EmptyView()
             } footer: {
-                Text("Usage is read only, using your existing CLI logins — no keys are stored. It calls each provider's internal plan-usage endpoint, which is undocumented and may change.")
+                Text("All providers are disabled by default. Pilot does not read auth files, query Keychain, or make usage requests until you enable that provider. Tokens are never stored by Pilot.")
             }
         }
         .task { await detect() }
+        .onChange(of: claudeEnabled) { consentChanged() }
+        .onChange(of: codexEnabled) { consentChanged() }
+        .onChange(of: grokEnabled) { consentChanged() }
     }
 
     @ViewBuilder
-    private func statusRow(signedIn: Bool?) -> some View {
+    private func statusRow(enabled: Bool, signedIn: Bool?) -> some View {
         LabeledContent("Status") {
-            switch signedIn {
-            case .some(true):
-                Label("Signed in", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .labelStyle(.titleAndIcon)
-            case .some(false):
-                Label("Not signed in", systemImage: "xmark.circle")
+            if !enabled {
+                Label("Disabled", systemImage: "lock.fill")
                     .foregroundStyle(.secondary)
-                    .labelStyle(.titleAndIcon)
-            case .none:
-                ProgressView().controlSize(.small)
+            } else {
+                switch signedIn {
+                case .some(true):
+                    Label("Signed in", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .labelStyle(.titleAndIcon)
+                case .some(false):
+                    Label("Not signed in", systemImage: "xmark.circle")
+                        .foregroundStyle(.secondary)
+                        .labelStyle(.titleAndIcon)
+                case .none:
+                    ProgressView().controlSize(.small)
+                }
             }
         }
     }
 
     private func detect() async {
-        let claude = await Task.detached { UsageSessions.ClaudeSession.load() != nil }.value
-        let codex = await Task.detached { UsageSessions.CodexSession.load() != nil }.value
-        let grok = await Task.detached { UsageSessions.GrokSession.load() != nil }.value
-        claudeSignedIn = claude
-        codexSignedIn = codex
-        grokSignedIn = grok
+        claudeSignedIn = nil
+        codexSignedIn = nil
+        grokSignedIn = nil
+        async let claude = Self.detectClaude(enabled: claudeEnabled)
+        async let codex = Self.detectCodex(enabled: codexEnabled)
+        async let grok = Self.detectGrok(enabled: grokEnabled)
+        let values = await (claude, codex, grok)
+        claudeSignedIn = claudeEnabled ? values.0 : nil
+        codexSignedIn = codexEnabled ? values.1 : nil
+        grokSignedIn = grokEnabled ? values.2 : nil
+    }
+
+    private func consentChanged() {
+        NotificationCenter.default.post(name: UsageConsent.changedNotification, object: nil)
+        Task { await detect() }
+    }
+
+    private static func detectClaude(enabled: Bool) async -> Bool {
+        guard enabled else { return false }
+        return await Task.detached { UsageSessions.ClaudeSession.load() != nil }.value
+    }
+
+    private static func detectCodex(enabled: Bool) async -> Bool {
+        guard enabled else { return false }
+        return await Task.detached { UsageSessions.CodexSession.load() != nil }.value
+    }
+
+    private static func detectGrok(enabled: Bool) async -> Bool {
+        guard enabled else { return false }
+        return await Task.detached { UsageSessions.GrokSession.load() != nil }.value
     }
 }

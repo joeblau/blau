@@ -13,7 +13,9 @@ final class TranscriptionService: @unchecked Sendable {
     var finalText: String = ""
     var isTranscribing: Bool = false
     var isModelLoaded: Bool = false
+    var isModelLoading: Bool = false
     var modelLoadingProgress: String = ""
+    var modelErrorMessage: String?
 
     /// Model selection rationale: `base` runs at roughly 0.1× real-time on
     /// recent iPhones via the Neural Engine, with materially better
@@ -23,15 +25,23 @@ final class TranscriptionService: @unchecked Sendable {
     private static let modelName = "openai_whisper-base"
 
     private var whisperKit: WhisperKit?
+    private var modelLoadTask: Task<WhisperKit, Error>?
+    private var modelLoadGeneration = 0
     private var streamTranscriber: AudioStreamTranscriber?
     private var transcriptionGeneration = 0
 
-    func loadModel() async {
-        guard !isModelLoaded else { return }
-        modelLoadingProgress = "Loading model..."
+    @discardableResult
+    func loadModel() async -> Bool {
+        guard !isModelLoaded else { return true }
+        guard !isModelLoading else { return false }
+        isModelLoading = true
+        modelErrorMessage = nil
+        modelLoadingProgress = "Downloading speech model (about 150 MB)…"
+        modelLoadGeneration += 1
+        let generation = modelLoadGeneration
 
-        do {
-            let kit = try await WhisperKit(
+        let task = Task {
+            try await WhisperKit(
                 WhisperKitConfig(
                     model: Self.modelName,
                     verbose: false,
@@ -41,29 +51,51 @@ final class TranscriptionService: @unchecked Sendable {
                     download: true
                 )
             )
+        }
+        modelLoadTask = task
+        do {
+            let kit = try await task.value
+            guard modelLoadGeneration == generation, !Task.isCancelled else { return false }
             whisperKit = kit
             isModelLoaded = true
+            isModelLoading = false
+            modelLoadTask = nil
             modelLoadingProgress = ""
+            return true
         } catch {
-            modelLoadingProgress = "Model load failed: \(error.localizedDescription)"
+            guard modelLoadGeneration == generation else { return false }
+            isModelLoading = false
+            modelLoadTask = nil
+            modelLoadingProgress = ""
+            if error is CancellationError {
+                modelErrorMessage = "Speech model download was cancelled."
+            } else {
+                modelErrorMessage = "Speech model load failed: \(error.localizedDescription)"
+            }
+            return false
         }
     }
 
-    func start() async {
-        guard !isTranscribing else { return }
+    @discardableResult
+    func start() async -> Bool {
+        guard !isTranscribing else { return true }
+        transcriptionGeneration += 1
+        let generation = transcriptionGeneration
 
         if !isModelLoaded {
-            await loadModel()
+            guard await loadModel() else { return false }
         }
-        guard let kit = whisperKit else { return }
+        guard generation == transcriptionGeneration,
+              let kit = whisperKit else { return false }
+        guard let tokenizer = kit.tokenizer else {
+            modelErrorMessage = "The speech model is incomplete (tokenizer missing). Remove its cached download and try again."
+            return false
+        }
 
         // On iOS, the shared `AVAudioSession` must be in a category that
         // permits recording before WhisperKit's `AudioProcessor` opens
         // the input node. macOS doesn't use `AVAudioSession`.
         Self.activateRecordingAudioSession()
-
-        transcriptionGeneration += 1
-        let generation = transcriptionGeneration
 
         partialText = ""
         finalText = ""
@@ -106,7 +138,7 @@ final class TranscriptionService: @unchecked Sendable {
             featureExtractor: kit.featureExtractor,
             segmentSeeker: kit.segmentSeeker,
             textDecoder: kit.textDecoder,
-            tokenizer: kit.tokenizer!,
+            tokenizer: tokenizer,
             audioProcessor: kit.audioProcessor,
             decodingOptions: options,
             requiredSegmentsForConfirmation: 2,
@@ -120,16 +152,30 @@ final class TranscriptionService: @unchecked Sendable {
 
         do {
             try await transcriber.startStreamTranscription()
+            return true
         } catch {
             // Only clear state if no newer transcription has started.
             if transcriptionGeneration == generation {
                 isTranscribing = false
             }
+            modelErrorMessage = "Could not start transcription: \(error.localizedDescription)"
+            Self.deactivateRecordingAudioSession()
+            return false
         }
+    }
+
+    func cancelModelLoad() {
+        modelLoadGeneration += 1
+        modelLoadTask?.cancel()
+        modelLoadTask = nil
+        isModelLoading = false
+        modelLoadingProgress = ""
+        modelErrorMessage = "Speech model download was cancelled."
     }
 
     func stop() async {
         transcriptionGeneration += 1
+        if isModelLoading { cancelModelLoad() }
         await streamTranscriber?.stopStreamTranscription()
         streamTranscriber = nil
         isTranscribing = false

@@ -1,5 +1,30 @@
 import Foundation
 
+enum ActionRunFetchError: Error, Sendable {
+    case launchFailed(String)
+    case commandFailed(Int32)
+    case invalidJSON
+}
+
+struct ActionCompletionTracker {
+    private(set) var seenCompleted: Set<Int> = []
+    private(set) var hasBaseline = false
+
+    /// Returns the number of genuinely new completions to badge. A failed fetch
+    /// is not an empty snapshot: it leaves both baseline and history untouched.
+    mutating func ingest(_ result: Result<Set<Int>, ActionRunFetchError>, isSelected: Bool) -> Int {
+        guard case .success(let completed) = result else { return 0 }
+        guard hasBaseline else {
+            seenCompleted = completed
+            hasBaseline = true
+            return 0
+        }
+        let fresh = completed.subtracting(seenCompleted)
+        seenCompleted.formUnion(completed)
+        return isSelected ? 0 : fresh.count
+    }
+}
+
 /// Background poller that badges a workspace when a GitHub Action run completes
 /// for its repo while you're looking at a *different* workspace. Complements
 /// the terminal-bell badge (which already covers "a CLI finished"). The active
@@ -8,12 +33,9 @@ import Foundation
 final class WorkspaceActionWatcher {
     private weak var store: WorkspaceStore?
     private var timer: Timer?
-
-    /// Run IDs already counted as completed, per workspace. Seeded on the first
-    /// sweep so runs that were already finished at launch never badge.
-    private var seenCompleted: [UUID: Set<Int>] = [:]
-    /// Workspaces whose baseline has been recorded.
-    private var baselined: Set<UUID> = []
+    private var trackers: [UUID: ActionCompletionTracker] = [:]
+    private var fetchTasks: [UUID: Task<Void, Never>] = [:]
+    private var fetchGenerations: [UUID: Int] = [:]
 
     /// Gentle cadence — Actions change less often than commits, and this hits
     /// `gh` once per workspace per tick.
@@ -31,36 +53,36 @@ final class WorkspaceActionWatcher {
     func stop() {
         timer?.invalidate()
         timer = nil
+        fetchTasks.values.forEach { $0.cancel() }
+        fetchTasks.removeAll()
     }
 
     private func sweep() {
         guard let store else { return }
-        let selectedID = store.selectedWorkspaceID
         for workspace in store.workspaces {
             let dir = workspace.effectiveRootPath ?? ""
             guard !dir.isEmpty else { continue }
             let wsID = workspace.id
-            let isSelected = (wsID == selectedID)
-            let firstSweep = !baselined.contains(wsID)
-            Task.detached(priority: .utility) {
-                let completed = Self.completedRunIDs(in: dir)
+            fetchTasks[wsID]?.cancel()
+            let generation = (fetchGenerations[wsID] ?? 0) + 1
+            fetchGenerations[wsID] = generation
+            fetchTasks[wsID] = Task.detached(priority: .utility) { [weak self] in
+                let result = Self.completedRunIDs(in: dir)
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
-                    self.process(workspaceID: wsID, completed: completed, isSelected: isSelected, firstSweep: firstSweep)
+                    guard let self, self.fetchGenerations[wsID] == generation else { return }
+                    self.fetchTasks[wsID] = nil
+                    self.process(workspaceID: wsID, result: result)
                 }
             }
         }
     }
 
-    private func process(workspaceID: UUID, completed: Set<Int>, isSelected: Bool, firstSweep: Bool) {
-        let seen = seenCompleted[workspaceID] ?? []
-        let fresh = completed.subtracting(seen)
-        seenCompleted[workspaceID] = seen.union(completed)
-        baselined.insert(workspaceID)
-
-        // Baseline sweep just records state; never badge pre-existing runs.
-        // Don't badge the workspace you're already looking at.
-        guard !firstSweep, !isSelected, !fresh.isEmpty else { return }
-        for _ in fresh {
+    private func process(workspaceID: UUID, result: Result<Set<Int>, ActionRunFetchError>) {
+        var tracker = trackers[workspaceID] ?? ActionCompletionTracker()
+        let count = tracker.ingest(result, isSelected: store?.selectedWorkspaceID == workspaceID)
+        trackers[workspaceID] = tracker
+        for _ in 0..<count {
             store?.badgeActionCompletion(workspaceID: workspaceID)
         }
     }
@@ -69,20 +91,28 @@ final class WorkspaceActionWatcher {
 
     /// IDs of runs currently in the `completed` status for the repo at `dir`.
     /// Any newly-completed run (vs. the last sweep) is what we badge on.
-    private nonisolated static func completedRunIDs(in dir: String) -> Set<Int> {
-        let output = shell("gh", ["run", "list", "--limit", "30", "--json", "databaseId,status"], in: dir)
+    private nonisolated static func completedRunIDs(in dir: String) -> Result<Set<Int>, ActionRunFetchError> {
+        let output: String
+        switch shell("gh", ["run", "list", "--limit", "30", "--json", "databaseId,status"], in: dir) {
+        case .success(let value): output = value
+        case .failure(let error): return .failure(error)
+        }
         guard let data = output.data(using: .utf8),
               let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return []
+            return .failure(.invalidJSON)
         }
         var ids: Set<Int> = []
         for item in items where (item["status"] as? String) == "completed" {
             if let id = item["databaseId"] as? Int { ids.insert(id) }
         }
-        return ids
+        return .success(ids)
     }
 
-    private nonisolated static func shell(_ command: String, _ args: [String], in dir: String) -> String {
+    private nonisolated static func shell(
+        _ command: String,
+        _ args: [String],
+        in dir: String
+    ) -> Result<String, ActionRunFetchError> {
         let process = Process()
         let pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -95,11 +125,17 @@ final class WorkspaceActionWatcher {
         process.environment = env
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
-            return ""
+            return .failure(.launchFailed(error.localizedDescription))
         }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            return .failure(.commandFailed(process.terminationStatus))
+        }
+        guard let output = String(data: data, encoding: .utf8) else {
+            return .failure(.invalidJSON)
+        }
+        return .success(output.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }

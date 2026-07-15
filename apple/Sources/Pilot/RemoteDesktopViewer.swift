@@ -31,6 +31,7 @@ struct RemoteDesktopViewer: NSViewRepresentable {
     let port: Int
     let username: String
     let password: String
+    let isClipboardRedirectionEnabled: Bool
     let session: RemoteConnectionSession
 
     func makeNSView(context: Context) -> NSView {
@@ -40,7 +41,8 @@ struct RemoteDesktopViewer: NSViewRepresentable {
                                     host: host,
                                     port: port,
                                     username: username,
-                                    password: password)
+                                    password: password,
+                                    isClipboardRedirectionEnabled: isClipboardRedirectionEnabled)
         return container
     }
 
@@ -68,7 +70,14 @@ struct RemoteDesktopViewer: NSViewRepresentable {
         }
 
         @MainActor
-        func connect(in container: NSView, host: String, port: Int, username: String, password: String) {
+        func connect(
+            in container: NSView,
+            host: String,
+            port: Int,
+            username: String,
+            password: String,
+            isClipboardRedirectionEnabled: Bool
+        ) {
             self.container = container
             self.username = username
             self.password = password
@@ -81,7 +90,7 @@ struct RemoteDesktopViewer: NSViewRepresentable {
                 isScalingEnabled: true,
                 useDisplayLink: true,
                 inputMode: .forwardKeyboardShortcutsEvenIfInUseLocally,
-                isClipboardRedirectionEnabled: true,
+                isClipboardRedirectionEnabled: isClipboardRedirectionEnabled,
                 // 16-bit (thousands of colors) ~halves pixel bandwidth vs 24-bit
                 // for a noticeably smoother feed; the default encodings already
                 // include Tight/zlib/zrle compression.

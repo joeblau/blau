@@ -92,8 +92,8 @@ struct SecureMessagingView: View {
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
 
-            if let transport, !transport.state.isFailed, transport.state != .signaling {
-                Button("Disconnect", role: .destructive) {
+            if let transport, !transport.state.isFailed {
+                Button(transport.state == .signaling ? "Cancel connection" : "Disconnect", role: .destructive) {
                     transport.disconnect()
                     self.transport = nil
                 }
@@ -164,7 +164,7 @@ struct SecureMessagingView: View {
                 staticKey: identity,
                 peerStatic: peerKey
             )
-            transport = t
+            replaceActiveConnection(&transport, with: t) { $0.disconnect() }
             t.connect()
         } catch {
             errorMessage = "Could not load device identity: \(error.localizedDescription)"

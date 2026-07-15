@@ -501,7 +501,7 @@ struct EditorPaneView: View {
         // Persist the open-file path immediately so it survives relaunch even
         // before the container's next autosave tick, matching the explicit-save
         // idiom used elsewhere (e.g. Pane.setCurrentDirectory).
-        try? state.modelContext?.save()
+        _ = state.modelContext?.saveReporting(operation: "Saving editor file state")
         isDirty = false
         errorMessage = nil
         showFinder = false
@@ -519,7 +519,7 @@ struct EditorPaneView: View {
     private func handleLoadFailure(url: URL, error: Error) {
         if url == state.fileURL {
             state.filePath = ""
-            try? state.modelContext?.save()
+            _ = state.modelContext?.saveReporting(operation: "Saving editor file state")
         }
         presentFinder(error: "Couldn't open “\(url.lastPathComponent)”: \(error.localizedDescription)")
     }

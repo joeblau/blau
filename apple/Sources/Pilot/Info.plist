@@ -18,6 +18,8 @@
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Pilot listens for push-to-talk dictation from the Copilot app.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Pilot accesses an attached iPhone camera feed so its Device pane can preview, capture, and record the device screen.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Pilot connects to nearby Copilot and Plotter devices, and discovers Macs offering Screen Sharing, over the local network.</string>
 	<key>NSBonjourServices</key>

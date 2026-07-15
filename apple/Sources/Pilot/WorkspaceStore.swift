@@ -15,7 +15,7 @@ final class WorkspaceStore {
                 if let workspace = workspaces.first(where: { $0.id == id }),
                    workspace.actionBadgeCount != 0 {
                     workspace.resetActionBadge()
-                    try? modelContext.save()
+                    _ = modelContext.saveReporting()
                     changeCount += 1
                 }
             } else {
@@ -111,7 +111,7 @@ final class WorkspaceStore {
     func badgeActionCompletion(workspaceID: UUID) {
         guard let workspace = workspaces.first(where: { $0.id == workspaceID }) else { return }
         workspace.incrementActionBadge()
-        try? modelContext.save()
+        _ = modelContext.saveReporting(operation: "Saving workspace action badge")
         changeCount += 1
     }
 
@@ -130,7 +130,7 @@ final class WorkspaceStore {
         }
 
         normalizeWorkspaceSortOrder(pinned + unpinned)
-        try? modelContext.save()
+        _ = modelContext.saveReporting()
         changeCount += 1
     }
 
@@ -200,7 +200,7 @@ final class WorkspaceStore {
         let maxOrder = notes.map(\.sortOrder).max() ?? -1
         let note = Note(sortOrder: maxOrder + 1)
         modelContext.insert(note)
-        try? modelContext.save()
+        _ = modelContext.saveReporting()
         changeCount += 1
         selectedNoteID = note.id
         return note
@@ -213,7 +213,10 @@ final class WorkspaceStore {
         for (index, remainingNote) in remaining.enumerated() {
             remainingNote.sortOrder = index
         }
-        try? modelContext.save()
+        guard modelContext.saveReporting(operation: "Deleting note", rollbackOnFailure: true) else {
+            changeCount += 1
+            return
+        }
         changeCount += 1
         if wasSelected {
             selectedNoteID = remaining.first?.id
@@ -245,7 +248,7 @@ final class WorkspaceStore {
         for (index, note) in ordered.enumerated() {
             note.sortOrder = index
         }
-        try? modelContext.save()
+        _ = modelContext.saveReporting()
         changeCount += 1
     }
 
@@ -305,7 +308,7 @@ final class WorkspaceStore {
             host: host, port: port, nickname: nickname, username: username, sortOrder: maxOrder + 1
         )
         modelContext.insert(connection)
-        try? modelContext.save()
+        _ = modelContext.saveReporting()
         changeCount += 1
         selectedRemoteConnectionID = connection.id
         return connection
@@ -318,12 +321,16 @@ final class WorkspaceStore {
     func deleteRemoteConnection(_ connection: RemoteDesktopConnection) {
         let wasSelected = selectedRemoteConnectionID == connection.id
         let remaining = remoteConnections.filter { $0.id != connection.id }
-        VNCKeychain.delete(id: connection.id)
         modelContext.delete(connection)
         for (index, item) in remaining.enumerated() {
             item.sortOrder = index
         }
-        try? modelContext.save()
+        guard modelContext.saveReporting(operation: "Deleting remote desktop connection", rollbackOnFailure: true) else {
+            changeCount += 1
+            return
+        }
+        VNCKeychain.delete(id: connection.id)
+        VNCPreferences.remove(id: connection.id)
         changeCount += 1
         if wasSelected {
             selectedRemoteConnectionID = remaining.first?.id
@@ -351,7 +358,7 @@ final class WorkspaceStore {
         for (index, item) in ordered.enumerated() {
             item.sortOrder = index
         }
-        try? modelContext.save()
+        _ = modelContext.saveReporting(operation: "Reordering remote desktop connections")
         changeCount += 1
     }
 
@@ -429,7 +436,7 @@ final class WorkspaceStore {
             }
             modelContext.insert(workspace)
         }
-        try? modelContext.save()
+        _ = modelContext.saveReporting()
         changeCount += 1
         selectedWorkspaceID = workspaces.first?.id
     }
@@ -438,7 +445,7 @@ final class WorkspaceStore {
         let workspace = Workspace(name: "Workspace \(workspaces.count + 1)")
         workspace.workspaceSortOrder = workspaces.count
         modelContext.insert(workspace)
-        try? modelContext.save()
+        _ = modelContext.saveReporting()
         changeCount += 1
         selectedWorkspaceID = workspace.id
     }
@@ -446,11 +453,14 @@ final class WorkspaceStore {
     func deleteWorkspace(_ workspace: Workspace) {
         let wasSelected = selectedWorkspaceID == workspace.id
         for pane in workspace.panes {
-            PersistentTerminalSession.killSession(for: pane)
+            pane.tearDownRuntimeResources()
         }
         modelContext.delete(workspace)
         normalizeWorkspaceSortOrder(workspaces.filter { $0.id != workspace.id })
-        try? modelContext.save()
+        guard modelContext.saveReporting(operation: "Deleting workspace", rollbackOnFailure: true) else {
+            changeCount += 1
+            return
+        }
         changeCount += 1
         if wasSelected {
             selectedWorkspaceID = workspaces.first?.id
@@ -474,7 +484,7 @@ final class WorkspaceStore {
         }
 
         normalizeWorkspaceSortOrder(pinned + unpinned)
-        try? modelContext.save()
+        _ = modelContext.saveReporting()
         changeCount += 1
     }
 }
