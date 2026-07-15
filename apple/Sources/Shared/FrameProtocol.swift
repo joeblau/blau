@@ -88,6 +88,31 @@ public enum FrameProtocol {
         }
     }
 
+    /// Sender-side transport pressure sampled from the real per-client queue.
+    /// The encoder uses this alongside receiver loss/decode feedback to adapt
+    /// both bitrate and frame cadence before latency can accumulate.
+    public struct TransportMetrics: Sendable, Equatable {
+        public let queuedFrames: Int
+        public let queuedBytes: Int
+        public let droppedFrames: Int
+        public let sendLatencyMs: Double
+        public let rttMs: Double
+
+        public init(
+            queuedFrames: Int,
+            queuedBytes: Int,
+            droppedFrames: Int,
+            sendLatencyMs: Double,
+            rttMs: Double
+        ) {
+            self.queuedFrames = queuedFrames
+            self.queuedBytes = queuedBytes
+            self.droppedFrames = droppedFrames
+            self.sendLatencyMs = sendLatencyMs
+            self.rttMs = rttMs
+        }
+    }
+
     /// Every logical message that can travel over the authenticated TCP link.
     public enum Packet: Sendable, Equatable {
         /// HEVC parameter sets + geometry. Always sent over TCP.
@@ -107,6 +132,10 @@ public enum FrameProtocol {
         /// Sender -> client: Pilot's current appearance, so a connected Plotter
         /// can match the Mac's light/dark mode instead of its own.
         case appearance(isDark: Bool)
+        /// Sender-to-receiver liveness/RTT probe. The receiver immediately
+        /// returns the nonce in ``pong`` over the authenticated stream.
+        case ping(UInt64)
+        case pong(UInt64)
         /// Legacy JPEG frame. Decoded for backward compatibility only.
         case jpeg(Data)
     }
@@ -122,6 +151,8 @@ public enum FrameProtocol {
         case annotation = 6
         case annotationAck = 7
         case appearance = 8
+        case ping = 9
+        case pong = 10
         // Note: there is no tag for jpeg. A tagless / unknown-tag payload is
         // treated as a legacy raw JPEG by ``decode(_:)``.
     }
@@ -192,6 +223,14 @@ public enum FrameProtocol {
             return payload
         case .appearance(let isDark):
             return Data([Kind.appearance.rawValue, isDark ? 0x1 : 0x0])
+        case .ping(let nonce):
+            var payload = Data([Kind.ping.rawValue])
+            appendUInt64(nonce, to: &payload)
+            return payload
+        case .pong(let nonce):
+            var payload = Data([Kind.pong.rawValue])
+            appendUInt64(nonce, to: &payload)
+            return payload
         case .jpeg(let jpeg):
             return jpeg.count <= maxJPEGBytes ? jpeg : Data()
         }
@@ -275,6 +314,10 @@ public enum FrameProtocol {
         case .appearance:
             guard payload.count == 2, payload[payload.startIndex + 1] <= 1 else { return nil }
             return .appearance(isDark: payload[payload.startIndex + 1] != 0)
+        case .ping:
+            return payload.count == 9 ? .ping(readUInt64(from: payload, offset: 1)) : nil
+        case .pong:
+            return payload.count == 9 ? .pong(readUInt64(from: payload, offset: 1)) : nil
         }
     }
 
@@ -344,5 +387,144 @@ public enum FrameProtocol {
         data.dropFirst(offset).prefix(8).reduce(UInt64(0)) {
             ($0 << 8) | UInt64($1)
         }
+    }
+}
+
+/// A tiny, deterministic admission controller for asynchronous work. At most
+/// `maximumInFlight` elements may be processing; when saturated, only the
+/// newest pending element is retained. It is generic so VideoToolbox's pixel
+/// buffers can use it in production while integer fixtures prove the bound.
+struct LatestWorkCoalescer<Element> {
+    let maximumInFlight: Int
+    private(set) var inFlight = 0
+    private(set) var pending: Element?
+    private(set) var dropped = 0
+
+    init(maximumInFlight: Int) {
+        self.maximumInFlight = max(1, maximumInFlight)
+    }
+
+    mutating func offer(_ element: Element) -> Element? {
+        guard inFlight < maximumInFlight else {
+            if pending != nil { dropped += 1 }
+            pending = element
+            return nil
+        }
+        inFlight += 1
+        return element
+    }
+
+    mutating func complete() -> Element? {
+        if inFlight > 0 { inFlight -= 1 }
+        guard inFlight < maximumInFlight, let next = pending else { return nil }
+        pending = nil
+        inFlight += 1
+        return next
+    }
+}
+
+/// Bounded, stale-frame-aware queue used independently by every FrameLink
+/// client. Configuration and keyframes displace obsolete delta frames so a
+/// lagging client can recover; delta saturation always keeps the newest frame.
+struct FrameSendQueue {
+    enum Kind: Equatable {
+        case configuration
+        case keyFrame
+        case deltaFrame
+        case control
+
+        var isFrame: Bool {
+            self == .keyFrame || self == .deltaFrame
+        }
+    }
+
+    struct Item: Equatable {
+        let payload: Data
+        let kind: Kind
+        let enqueuedAt: TimeInterval
+    }
+
+    let maximumFrames: Int
+    let maximumBytes: Int
+    let maximumItems: Int
+    private(set) var items: [Item] = []
+    private(set) var queuedBytes = 0
+    private(set) var droppedFrames = 0
+
+    var queuedFrames: Int { items.count(where: { $0.kind.isFrame }) }
+
+    init(
+        maximumFrames: Int = 4,
+        maximumBytes: Int = 40 * 1_024 * 1_024,
+        maximumItems: Int = 64
+    ) {
+        self.maximumFrames = max(1, maximumFrames)
+        self.maximumBytes = max(1, maximumBytes)
+        self.maximumItems = max(1, maximumItems)
+    }
+
+    /// Returns false only when a non-droppable packet cannot fit. Callers
+    /// disconnect that persistently unhealthy client instead of growing memory.
+    @discardableResult
+    mutating func enqueue(_ payload: Data, kind: Kind, now: TimeInterval) -> Bool {
+        guard !payload.isEmpty, payload.count <= maximumBytes else {
+            if kind.isFrame { droppedFrames += 1 }
+            return kind == .deltaFrame
+        }
+
+        switch kind {
+        case .configuration:
+            removeAll(where: { $0.kind == .configuration })
+        case .keyFrame:
+            removeAll(where: { $0.kind == .deltaFrame || $0.kind == .keyFrame })
+        case .deltaFrame, .control:
+            break
+        }
+
+        while wouldExceedBudget(adding: payload.count, kind: kind),
+              let stale = items.firstIndex(where: { $0.kind == .deltaFrame }) {
+            remove(at: stale, countedAsDrop: true)
+        }
+
+        guard !wouldExceedBudget(adding: payload.count, kind: kind) else {
+            if kind.isFrame { droppedFrames += 1 }
+            // Dropping a fresh delta is expected under pressure. Configuration,
+            // keyframes, and control messages are recovery-critical.
+            return kind == .deltaFrame
+        }
+
+        items.append(Item(payload: payload, kind: kind, enqueuedAt: now))
+        queuedBytes += payload.count
+        return true
+    }
+
+    mutating func dequeue() -> Item? {
+        guard !items.isEmpty else { return nil }
+        let item = items.removeFirst()
+        queuedBytes -= item.payload.count
+        return item
+    }
+
+    mutating func removeAll() {
+        items.removeAll(keepingCapacity: true)
+        queuedBytes = 0
+    }
+
+    private func wouldExceedBudget(adding bytes: Int, kind: Kind) -> Bool {
+        queuedBytes > maximumBytes - bytes
+            || items.count >= maximumItems
+            || (kind.isFrame && queuedFrames >= maximumFrames)
+    }
+
+    private mutating func removeAll(where shouldRemove: (Item) -> Bool) {
+        for index in items.indices.reversed() where shouldRemove(items[index]) {
+            remove(at: index, countedAsDrop: items[index].kind.isFrame)
+        }
+    }
+
+    private mutating func remove(at index: Int, countedAsDrop: Bool) {
+        let item = items.remove(at: index)
+        queuedBytes -= item.payload.count
+        if countedAsDrop { droppedFrames += 1 }
     }
 }

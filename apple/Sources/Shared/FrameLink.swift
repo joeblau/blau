@@ -166,6 +166,9 @@ public final class FrameSender: @unchecked Sendable {
     public var onKeyframeRequested: (() -> Void)?
     /// Invoked when a client reports link quality, to drive adaptive bitrate.
     public var onLinkFeedback: ((FrameLink.LinkFeedback) -> Void)?
+    /// Real sender-side queue/drop/send/RTT measurements. The screen encoder
+    /// consumes these to reduce cadence before a slow link accumulates latency.
+    public var onTransportMetrics: ((FrameProtocol.TransportMetrics) -> Void)?
     /// Invoked when a client advertises its decode capabilities (handshake).
     public var onCapability: ((FrameLink.Capability) -> Void)?
 
@@ -238,7 +241,7 @@ public final class FrameSender: @unchecked Sendable {
         let packet = FrameLink.encode(.annotationAck(seq: seq))
         queue.async { [weak self] in
             guard let self else { return }
-            self.broadcastTCP(packet)
+            self.broadcastTCP(packet, kind: .control)
         }
     }
 
@@ -249,7 +252,7 @@ public final class FrameSender: @unchecked Sendable {
         let packet = FrameLink.encode(.annotation(seq: 0, message: message))
         queue.async { [weak self] in
             guard let self else { return }
-            self.broadcastTCP(packet)
+            self.broadcastTCP(packet, kind: .control)
         }
     }
 
@@ -257,29 +260,106 @@ public final class FrameSender: @unchecked Sendable {
 
     private func sendOverTCP(_ mediaPacket: FrameLink.Packet) {
         let packet = FrameLink.encode(mediaPacket)
+        let kind: FrameSendQueue.Kind
+        switch mediaPacket {
+        case .configuration:
+            kind = .configuration
+        case .sample(let sample):
+            kind = sample.isKeyFrame ? .keyFrame : .deltaFrame
+        case .jpeg:
+            kind = .deltaFrame
+        default:
+            kind = .control
+        }
         queue.async { [weak self] in
             guard let self else { return }
-            let delivered = self.broadcastTCP(packet)
-            if delivered {
-                self.countFrameSent()
-            }
+            self.broadcastTCP(packet, kind: kind)
         }
     }
 
     @discardableResult
-    private func broadcastTCP(_ packet: Data) -> Bool {
+    private func broadcastTCP(_ packet: Data, kind: FrameSendQueue.Kind) -> Bool {
         guard !packet.isEmpty else { return false }
         var delivered = false
-        for state in connections.values
+        for (id, state) in Array(connections)
             where state.connection.state == .ready && state.security.isAuthenticated {
-            guard let record = state.security.seal(packet) else { continue }
-            state.connection.send(
-                content: FrameLink.frame(record),
-                completion: .contentProcessed { _ in }
+            let accepted = state.outbound.enqueue(
+                packet,
+                kind: kind,
+                now: Date().timeIntervalSinceReferenceDate
             )
+            guard accepted else {
+                // Recovery/control traffic could not fit even after stale delta
+                // eviction. This client is irrecoverably behind; isolate it.
+                rejectConnection(id, state: state)
+                continue
+            }
             delivered = true
+            emitTransportMetrics(for: state)
+            pumpOutbound(for: id, state: state)
         }
         return delivered
+    }
+
+    private func pumpOutbound(for id: ObjectIdentifier, state: ConnectionState) {
+        guard connections[id] === state,
+              state.connection.state == .ready,
+              state.security.isAuthenticated,
+              !state.sendInFlight,
+              let item = state.outbound.dequeue() else { return }
+        guard let record = state.security.seal(item.payload) else {
+            rejectConnection(id, state: state)
+            return
+        }
+        let framed = FrameLink.frame(record)
+        guard !framed.isEmpty else {
+            rejectConnection(id, state: state)
+            return
+        }
+
+        state.sendInFlight = true
+        state.sendGeneration &+= 1
+        let generation = state.sendGeneration
+        let startedAt = Date().timeIntervalSinceReferenceDate
+        state.connection.send(content: framed, completion: .contentProcessed { [weak self, weak state] error in
+            guard let self, let state else { return }
+            self.queue.async {
+                guard self.connections[id] === state else { return }
+                state.sendInFlight = false
+                state.lastSendLatencyMs = max(
+                    0,
+                    (Date().timeIntervalSinceReferenceDate - startedAt) * 1_000
+                )
+                if error != nil {
+                    self.rejectConnection(id, state: state)
+                    return
+                }
+                if item.kind.isFrame { self.countFrameSent() }
+                self.emitTransportMetrics(for: state)
+                self.pumpOutbound(for: id, state: state)
+            }
+        })
+        // `contentProcessed` can otherwise remain pending indefinitely for a
+        // wedged peer. Two seconds is already far outside an interactive frame
+        // budget; isolate that client so it cannot pin the recovery queue.
+        queue.asyncAfter(deadline: .now() + 2) { [weak self, weak state] in
+            guard let self, let state,
+                  self.connections[id] === state,
+                  state.sendInFlight,
+                  state.sendGeneration == generation else { return }
+            frameLinkLog.error("FrameSender: disconnecting stalled client send")
+            self.rejectConnection(id, state: state)
+        }
+    }
+
+    private func emitTransportMetrics(for state: ConnectionState) {
+        onTransportMetrics?(FrameProtocol.TransportMetrics(
+            queuedFrames: state.outbound.queuedFrames,
+            queuedBytes: state.outbound.queuedBytes,
+            droppedFrames: state.outbound.droppedFrames,
+            sendLatencyMs: state.lastSendLatencyMs,
+            rttMs: state.smoothedRTTMs
+        ))
     }
 
     private func countFrameSent() {
@@ -439,12 +519,16 @@ public final class FrameSender: @unchecked Sendable {
                 didAuthenticateClient()
 
             case .plaintext(let payload):
-                processInboundPacket(payload)
+                processInboundPacket(payload, from: id, state: state)
             }
         }
     }
 
-    private func processInboundPacket(_ payload: Data) {
+    private func processInboundPacket(
+        _ payload: Data,
+        from id: ObjectIdentifier,
+        state: ConnectionState
+    ) {
         switch FrameLink.decodePayload(payload) {
             case .annotation(let seq, let message):
                 frameLinkLog.log("FrameSender: annotation packet received (seq \(seq, privacy: .public))")
@@ -452,9 +536,31 @@ public final class FrameSender: @unchecked Sendable {
             case .keyframeRequest:
                 onKeyframeRequested?()
             case .linkFeedback(let feedback):
-                onLinkFeedback?(feedback)
+                onLinkFeedback?(FrameProtocol.LinkFeedback(
+                    lossPct: feedback.lossPct,
+                    rttMs: max(feedback.rttMs, state.smoothedRTTMs),
+                    queueDepth: max(feedback.queueDepth, state.outbound.queuedFrames)
+                ))
             case .capability(let capability):
                 onCapability?(capability)
+            case .pong(let nonce):
+                if let startedAt = state.probes.removeValue(forKey: nonce) {
+                    let sample = max(
+                        0,
+                        (Date().timeIntervalSinceReferenceDate - startedAt) * 1_000
+                    )
+                    state.smoothedRTTMs = state.smoothedRTTMs == 0
+                        ? sample
+                        : (state.smoothedRTTMs * 0.8) + (sample * 0.2)
+                    emitTransportMetrics(for: state)
+                }
+            case .ping(let nonce):
+                _ = state.outbound.enqueue(
+                    FrameLink.encode(.pong(nonce)),
+                    kind: .control,
+                    now: Date().timeIntervalSinceReferenceDate
+                )
+                pumpOutbound(for: id, state: state)
             default:
                 recordInvalidPacket()
         }
@@ -490,6 +596,31 @@ public final class FrameSender: @unchecked Sendable {
         onClientCountChanged?(1)
         // A freshly authenticated client needs a keyframe to decode.
         onClientConnected?()
+        for (id, state) in connections where state.security.isAuthenticated {
+            scheduleProbe(for: id, state: state)
+        }
+    }
+
+    private func scheduleProbe(for id: ObjectIdentifier, state: ConnectionState) {
+        guard connections[id] === state, state.security.isAuthenticated else { return }
+        state.nextProbe &+= 1
+        let nonce = state.nextProbe
+        let now = Date().timeIntervalSinceReferenceDate
+        state.probes = state.probes.filter { now - $0.value < 5 }
+        state.probes[nonce] = now
+        guard state.outbound.enqueue(
+            FrameLink.encode(.ping(nonce)),
+            kind: .control,
+            now: now
+        ) else {
+            rejectConnection(id, state: state)
+            return
+        }
+        pumpOutbound(for: id, state: state)
+        queue.asyncAfter(deadline: .now() + 1) { [weak self, weak state] in
+            guard let self, let state else { return }
+            self.scheduleProbe(for: id, state: state)
+        }
     }
 
     private func rejectConnection(_ id: ObjectIdentifier, state: ConnectionState) {
@@ -509,10 +640,17 @@ public final class FrameSender: @unchecked Sendable {
         onInvalidPacketCountChanged?(invalidPacketCount)
     }
 
-    private final class ConnectionState {
+    private final class ConnectionState: @unchecked Sendable {
         let connection: NWConnection
         var decoder = FrameLink.StreamDecoder(maxPayloadBytes: FrameLink.maxSecureRecordBytes)
         var security: FrameLinkSecureSession
+        var outbound = FrameSendQueue()
+        var sendInFlight = false
+        var sendGeneration: UInt64 = 0
+        var lastSendLatencyMs: Double = 0
+        var smoothedRTTMs: Double = 0
+        var nextProbe: UInt64 = 0
+        var probes: [UInt64: TimeInterval] = [:]
 
         init(connection: NWConnection, security: FrameLinkSecureSession) {
             self.connection = connection
@@ -882,6 +1020,11 @@ public final class FrameReceiver: @unchecked Sendable {
                 // Sender -> client annotation commands (undo/clear). Forward to
                 // onPacket so the client can apply them to its source canvas.
                 break
+            case .ping(let nonce):
+                enqueueOutboundLocked(FrameLink.encode(.pong(nonce)))
+                continue
+            case .pong:
+                continue
             default:
                 break
             }

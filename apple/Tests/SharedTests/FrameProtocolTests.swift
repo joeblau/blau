@@ -99,6 +99,11 @@ final class FrameProtocolTests: XCTestCase {
         XCTAssertFalse(light)
     }
 
+    func testTransportProbeRoundtrips() {
+        XCTAssertEqual(roundtrip(.ping(0x0102_0304_0506_0708)), .ping(0x0102_0304_0506_0708))
+        XCTAssertEqual(roundtrip(.pong(UInt64.max)), .pong(UInt64.max))
+    }
+
     func testAnnotationRoundtrips() {
         let drawing = AnnotationDrawing(strokes: [
             AnnotationStroke(
@@ -197,6 +202,70 @@ final class FrameProtocolTests: XCTestCase {
             }
             XCTAssertLessThanOrEqual(decoder.buffer.count, decoder.maxBufferedBytes)
         }
+    }
+
+    func testEncodeAdmissionKeepsOnlyNewestFrameWhenSaturated() {
+        var gate = LatestWorkCoalescer<Int>(maximumInFlight: 2)
+        XCTAssertEqual(gate.offer(1), 1)
+        XCTAssertEqual(gate.offer(2), 2)
+        XCTAssertNil(gate.offer(3))
+        XCTAssertNil(gate.offer(4))
+        XCTAssertNil(gate.offer(5))
+        XCTAssertEqual(gate.inFlight, 2)
+        XCTAssertEqual(gate.pending, 5)
+        XCTAssertEqual(gate.dropped, 2)
+
+        XCTAssertEqual(gate.complete(), 5)
+        XCTAssertNil(gate.pending)
+        XCTAssertEqual(gate.inFlight, 2)
+        XCTAssertNil(gate.complete())
+        XCTAssertEqual(gate.inFlight, 1)
+        XCTAssertNil(gate.complete())
+        XCTAssertEqual(gate.inFlight, 0)
+    }
+
+    func testSlowClientQueueStaysBoundedAndKeepsNewestDelta() {
+        let maximumBytes = 2 * 1_024 * 1_024
+        var queue = FrameSendQueue(maximumFrames: 4, maximumBytes: maximumBytes)
+        let frameBytes = 256 * 1_024
+
+        for id in 0 ..< 10_000 {
+            var payload = Data()
+            appendUInt32(UInt32(id), to: &payload)
+            payload.append(Data(repeating: UInt8(truncatingIfNeeded: id), count: frameBytes - 4))
+            XCTAssertTrue(queue.enqueue(payload, kind: .deltaFrame, now: Double(id)))
+            XCTAssertLessThanOrEqual(queue.queuedFrames, 4)
+            XCTAssertLessThanOrEqual(queue.queuedBytes, maximumBytes)
+        }
+
+        XCTAssertGreaterThan(queue.droppedFrames, 9_000)
+        XCTAssertEqual(queue.items.first?.enqueuedAt, 9_996)
+        let newest = queue.items.last?.payload.prefix(4).reduce(UInt32(0)) {
+            ($0 << 8) | UInt32($1)
+        }
+        XCTAssertEqual(newest, 9_999)
+    }
+
+    func testKeyframeRecoveryEvictsStaleDeltasButKeepsConfiguration() {
+        var queue = FrameSendQueue(maximumFrames: 3, maximumBytes: 1_024)
+        XCTAssertTrue(queue.enqueue(data([1]), kind: .configuration, now: 0))
+        XCTAssertTrue(queue.enqueue(data([2]), kind: .deltaFrame, now: 1))
+        XCTAssertTrue(queue.enqueue(data([3]), kind: .deltaFrame, now: 2))
+        XCTAssertTrue(queue.enqueue(data([4]), kind: .keyFrame, now: 3))
+
+        XCTAssertEqual(queue.items.map(\.kind), [.configuration, .keyFrame])
+        XCTAssertEqual(queue.queuedFrames, 1)
+        XCTAssertEqual(queue.items.last?.payload, data([4]))
+    }
+
+    func testControlFloodCannotGrowClientQueueWithoutBound() {
+        var queue = FrameSendQueue(maximumFrames: 2, maximumBytes: 1_024, maximumItems: 3)
+        XCTAssertTrue(queue.enqueue(data([1]), kind: .control, now: 0))
+        XCTAssertTrue(queue.enqueue(data([2]), kind: .control, now: 1))
+        XCTAssertTrue(queue.enqueue(data([3]), kind: .control, now: 2))
+        XCTAssertFalse(queue.enqueue(data([4]), kind: .control, now: 3))
+        XCTAssertEqual(queue.items.count, 3)
+        XCTAssertLessThanOrEqual(queue.queuedBytes, 1_024)
     }
 
     private func appendUInt32(_ value: UInt32, to data: inout Data) {
