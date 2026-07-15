@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="0.63.1"
-ARCHIVE_SHA256="0e6369741b694b701e9bd4e4fe9b408a5946d4bb076b79ea6ec2bce428475739"
+VERSION="0.65.0"
+ARCHIVE_SHA256="d6cb0aa7a2f5f1ef306fc9e37bcb54dc9a26facc8f7784ac0c3dd3eccf5c6ba6"
 CACHE_ROOT="${XDG_CACHE_HOME:-${HOME}/Library/Caches}/blau/swiftlint/${VERSION}"
 SWIFTLINT="${CACHE_ROOT}/swiftlint"
 BASELINE="apple/.swiftlint-baseline.json"

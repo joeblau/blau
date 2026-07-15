@@ -16,9 +16,6 @@ enum DeviceIdentity {
 
     /// Keychain generic-password account used to store the raw private key.
     private static let account = "app.blau.securechannel.identity"
-    /// Account for the paired peer's public key (base64), auto-synced over the
-    /// encrypted Multipeer channel (issue #51).
-    private static let peerAccount = "app.blau.securechannel.peer"
     /// Service scopes the item to this app family.
     private static let service = "app.blau.securechannel"
 
@@ -70,16 +67,13 @@ enum DeviceIdentity {
     /// Persist the paired peer's public key (base64), trusting it for the
     /// handshake. Overwrites any previously trusted peer.
     static func storePeerPublicKey(_ base64: String) {
-        guard parsePeerPublicKey(base64) != nil,
-              let data = base64.data(using: .utf8) else { return }
-        try? writeKeychain(data, account: peerAccount)
+        guard parsePeerPublicKey(base64) != nil else { return }
+        try? SecurePairingStore().setPeerPublicKey(base64)
     }
 
     /// The trusted peer's public key (base64), if one has been synced.
     static func peerPublicKeyBase64() -> String? {
-        guard let data = try? readKeychain(account: peerAccount),
-              let value = String(data: data, encoding: .utf8) else { return nil }
-        return value
+        try? SecurePairingStore().loadMigratingLegacy().peerPublicKey
     }
 
     /// Parse a peer's shared base64 public key back into a CryptoKit key, or

@@ -3,13 +3,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "start": "wrangler dev",
+    "check": "tsc --noEmit",
+    "dev": "wrangler dev --var ENVIRONMENT:development",
+    "lint": "eslint .",
+    "start": "wrangler dev --var ENVIRONMENT:development",
+    "test": "vitest run",
     "deploy": "wrangler deploy",
+    "deploy:list": "wrangler deployments list",
+    "rollback": "wrangler rollback",
     "types": "wrangler types"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260101.0",
-    "wrangler": "^4.63.0"
+    "@cloudflare/vitest-pool-workers": "0.18.4",
+    "@cloudflare/workers-types": "4.20260702.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10",
+    "wrangler": "4.110.0"
   }
 }

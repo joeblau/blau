@@ -13,5 +13,14 @@ const png = await sharp(svg, { density: 144 })
   .png({ quality: 90 })
   .toBuffer();
 
-await writeFile(here + '../public/og.png', png);
-console.log(`og.png written — ${(png.length / 1024).toFixed(1)} KB`);
+const output = here + '../public/og.png';
+if (process.argv.includes('--check')) {
+  const committed = await readFile(output);
+  if (!committed.equals(png)) {
+    throw new Error('public/og.png is stale; run `bun run og` and commit it');
+  }
+  console.log(`og.png is deterministic and current — ${(png.length / 1024).toFixed(1)} KB`);
+} else {
+  await writeFile(output, png);
+  console.log(`og.png written — ${(png.length / 1024).toFixed(1)} KB`);
+}

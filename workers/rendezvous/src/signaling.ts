@@ -40,16 +40,20 @@ const MAX_PEERS_PER_TOKEN = 2;
 
 const STORAGE_KEY = "peers";
 
+export type RegistrationResult =
+  | { status: "registered"; peer: Peer | null }
+  | { status: "full" };
+
 export class SignalingRoom extends DurableObject<unknown> {
   /**
-   * Register (or refresh) a peer under this token. Returns the stored peer, or
-   * `null` if the pair is already full with two *other* distinct keys.
+   * Register (or refresh) a peer under this token. On success, returns the
+   * OTHER peer if it is already present. A third distinct key is rejected.
    */
   async register(input: {
     publicKey: string;
     ip: string;
     port: number;
-  }): Promise<Peer | null> {
+  }): Promise<RegistrationResult> {
     const now = Date.now();
     const peers = await this.load(now);
 
@@ -58,7 +62,7 @@ export class SignalingRoom extends DurableObject<unknown> {
     // cap.
     const existing = peers[input.publicKey];
     if (!existing && Object.keys(peers).length >= MAX_PEERS_PER_TOKEN) {
-      return null;
+      return { status: "full" };
     }
 
     const peer: Peer = {
@@ -72,7 +76,10 @@ export class SignalingRoom extends DurableObject<unknown> {
     // Bound the lifetime of this DO's storage with an alarm so abandoned
     // tokens self-clean instead of lingering forever.
     await this.ctx.storage.setAlarm(now + PEER_TTL_MS);
-    return peer;
+    const other = Object.entries(peers).find(
+      ([publicKey]) => publicKey !== input.publicKey,
+    )?.[1];
+    return { status: "registered", peer: other ?? null };
   }
 
   /**
