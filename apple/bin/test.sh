@@ -15,6 +15,7 @@ pilot() {
     -derivedDataPath "$DERIVED_ROOT/pilot" \
     -clonedSourcePackagesDirPath "$PACKAGES" \
     -onlyUsePackageVersionsFromResolvedFile \
+    -skipPackagePluginValidation \
     CODE_SIGNING_ALLOWED=NO
 }
 
@@ -36,6 +37,7 @@ shared() {
     -derivedDataPath "$DERIVED_ROOT/shared" \
     -clonedSourcePackagesDirPath "$PACKAGES" \
     -onlyUsePackageVersionsFromResolvedFile \
+    -skipPackagePluginValidation \
     CODE_SIGNING_ALLOWED=NO
 }
 

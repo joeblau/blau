@@ -16,6 +16,7 @@ build() {
     -derivedDataPath "$DERIVED_ROOT/$scheme" \
     -clonedSourcePackagesDirPath "$PACKAGES" \
     -onlyUsePackageVersionsFromResolvedFile \
+    -skipPackagePluginValidation \
     CODE_SIGNING_ALLOWED=NO
 }
 
