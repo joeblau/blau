@@ -146,6 +146,17 @@ final class WorkspaceStore {
         workspaces.first { $0.id == selectedWorkspaceID }
     }
 
+    /// Make a workspace the active global surface. Both Pilot windows use this
+    /// entry point so selecting a workspace in either one also brings the main
+    /// window out of a full-detail Notes or Remote Desktop mode.
+    func selectWorkspace(_ workspaceID: UUID) {
+        if isNotesMode { isNotesMode = false }
+        if isRemoteDesktopMode { isRemoteDesktopMode = false }
+        if selectedWorkspaceID != workspaceID {
+            selectedWorkspaceID = workspaceID
+        }
+    }
+
     var notes: [Note] {
         let version = changeCount // access to establish observation dependency
         if let cached = fetchedNotes, notesFetchVersion == version {
@@ -438,7 +449,9 @@ final class WorkspaceStore {
         }
         _ = modelContext.saveReporting()
         changeCount += 1
-        selectedWorkspaceID = workspaces.first?.id
+        if let workspaceID = workspaces.first?.id {
+            selectWorkspace(workspaceID)
+        }
     }
 
     func addWorkspace() {
@@ -447,7 +460,7 @@ final class WorkspaceStore {
         modelContext.insert(workspace)
         _ = modelContext.saveReporting()
         changeCount += 1
-        selectedWorkspaceID = workspace.id
+        selectWorkspace(workspace.id)
     }
 
     func deleteWorkspace(_ workspace: Workspace) {

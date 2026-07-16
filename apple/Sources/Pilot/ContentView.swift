@@ -285,9 +285,7 @@ struct ContentView: View {
                 ForEach(1...9, id: \.self) { index in
                     Button("") {
                         guard index - 1 < workspaceShortcutIDs.count else { return }
-                        store.isNotesMode = false
-                        store.isRemoteDesktopMode = false
-                        store.selectedWorkspaceID = workspaceShortcutIDs[index - 1]
+                        store.selectWorkspace(workspaceShortcutIDs[index - 1])
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
                     .hidden()
@@ -373,9 +371,7 @@ struct ContentView: View {
                 case .remoteDesktop:
                     store.enterRemoteDesktopMode()
                 case .workspace(let id):
-                    store.isNotesMode = false
-                    store.isRemoteDesktopMode = false
-                    store.selectedWorkspaceID = id
+                    store.selectWorkspace(id)
                 case nil:
                     break
                 }

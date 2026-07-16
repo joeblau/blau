@@ -6,6 +6,50 @@ import CoreMedia
 import CoreVideo
 import VideoToolbox
 
+struct ScreenMirrorWindowCandidate: Equatable {
+    let windowID: CGWindowID
+    let bundleIdentifier: String?
+    let isOnScreen: Bool
+    let width: CGFloat
+    let height: CGFloat
+    let hasTitle: Bool
+    let windowLayer: Int
+
+    fileprivate var area: CGFloat { width * height }
+}
+
+/// Pure window-selection policy kept separate from ScreenCaptureKit so the
+/// multi-window behavior can be covered by a fast unit test.
+enum ScreenMirrorWindowSelectionPolicy {
+    static func pickWindowID(
+        from candidates: [ScreenMirrorWindowCandidate],
+        bundleIdentifier: String?,
+        preferredWindowID: CGWindowID?
+    ) -> CGWindowID? {
+        let ownWindows = candidates.filter { candidate in
+            candidate.isOnScreen
+                && candidate.width > 1
+                && candidate.height > 1
+                && candidate.bundleIdentifier == bundleIdentifier
+        }
+
+        if let preferredWindowID,
+           ownWindows.contains(where: { $0.windowID == preferredWindowID }) {
+            return preferredWindowID
+        }
+
+        // Preserve the pre-extension fallback for app launch and restoration,
+        // before SwiftUI has attached the main-window reader.
+        if let titled = ownWindows
+            .filter({ $0.hasTitle && $0.windowLayer == 0 })
+            .max(by: { $0.area < $1.area }) {
+            return titled.windowID
+        }
+
+        return ownWindows.max(by: { $0.area < $1.area })?.windowID
+    }
+}
+
 /// Captures Pilot's own main window with ScreenCaptureKit, encodes each frame
 /// to HEVC off the main thread, and hands it to a ``FrameSender`` for delivery
 /// to the Plotter (iPad) app.
@@ -26,6 +70,10 @@ final class ScreenMirror {
 
     private let sender: FrameSender
     private var stream: SCStream?
+    /// AppKit window number for the live Pilot workspace surface. A companion
+    /// extension window belongs to the same process, so bundle/size heuristics
+    /// alone are no longer enough to identify the intended capture target.
+    private var mainWindowID: CGWindowID?
     /// Non-isolated handler that owns the SCStream delegate + output callbacks,
     /// which the framework requires to run off the main actor.
     private let output: StreamOutput
@@ -96,6 +144,10 @@ final class ScreenMirror {
         Task {
             try? await stream?.stopCapture()
         }
+    }
+
+    func setMainWindowID(_ windowID: CGWindowID?) {
+        mainWindowID = windowID
     }
 
     // MARK: - Capture setup
@@ -192,26 +244,28 @@ final class ScreenMirror {
         }
     }
 
-    /// Picks the SCWindow belonging to Pilot itself. Prefers an exact bundle
-    /// identifier match; falls back to the app's frontmost on-screen window.
+    /// Picks the exact registered main Pilot window. During early launch, before
+    /// the AppKit reader is attached, it falls back to the largest normal Pilot
+    /// window to preserve the prior behavior.
     private func pickPilotWindow(from windows: [SCWindow]) -> SCWindow? {
         let bundleID = Bundle.main.bundleIdentifier
-
-        let ownWindows = windows.filter { window in
-            guard window.isOnScreen, window.frame.width > 1, window.frame.height > 1 else {
-                return false
-            }
-            return window.owningApplication?.bundleIdentifier == bundleID
+        let candidates = windows.map { window in
+            ScreenMirrorWindowCandidate(
+                windowID: window.windowID,
+                bundleIdentifier: window.owningApplication?.bundleIdentifier,
+                isOnScreen: window.isOnScreen,
+                width: window.frame.width,
+                height: window.frame.height,
+                hasTitle: window.title?.isEmpty == false,
+                windowLayer: window.windowLayer
+            )
         }
-
-        // Prefer a titled, layer-0 (normal) window; otherwise the largest one.
-        if let titled = ownWindows
-            .filter({ ($0.title?.isEmpty == false) && $0.windowLayer == 0 })
-            .max(by: { $0.frame.area < $1.frame.area }) {
-            return titled
-        }
-
-        return ownWindows.max(by: { $0.frame.area < $1.frame.area })
+        guard let selectedID = ScreenMirrorWindowSelectionPolicy.pickWindowID(
+            from: candidates,
+            bundleIdentifier: bundleID,
+            preferredWindowID: mainWindowID
+        ) else { return nil }
+        return windows.first { $0.windowID == selectedID }
     }
 }
 
