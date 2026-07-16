@@ -397,6 +397,11 @@ struct PilotApp: App {
                     Text("Verify this fingerprint on Plotter before approving:\n\n\(plotterPairingRequest?.fingerprint ?? "")")
                 }
                 .environment(secureIdentity)
+                .background {
+                    PilotMainWindowReader { windowID in
+                        screenMirror.setMainWindowID(windowID)
+                    }
+                }
                 .onReceive(NotificationCenter.default.publisher(for: .pilotSendIssuePrompt)) { note in
                     // Issues inspector / Browser Annotate → paste a prompt into
                     // the intended terminal and submit it so the agent starts
@@ -425,6 +430,8 @@ struct PilotApp: App {
         // applies to a fresh window; a restored window keeps its saved frame.
         .defaultSize(width: 1440, height: 920)
         .commands {
+            PilotExtensionCommands()
+
             // New Terminal / New Browser as real main-menu commands. As toolbar
             // ControlGroup button shortcuts they were swallowed by a focused
             // WKWebView; menu key-equivalents take precedence over the web view.
@@ -539,6 +546,15 @@ struct PilotApp: App {
             }
         }
 
+        Window("Extension", id: PilotWindowID.extension) {
+            ExtensionWindowView(store: store)
+                .environment(\.uiZoom, uiZoom)
+                .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        }
+        .modelContainer(modelContainer)
+        .defaultSize(width: 820, height: 760)
+        .defaultLaunchBehavior(.presented)
+
         // Standard macOS Settings window (⌘,). A thin, extensible shell; the
         // first real use is peer key sharing (#51), which drops into the
         // shared Identity & Keys section.
@@ -642,9 +658,7 @@ struct PilotApp: App {
         syncService.onReceive = { (message: SyncMessage) in
             switch message {
             case .selectWorkspace(let sel):
-                store.isNotesMode = false
-                store.isRemoteDesktopMode = false
-                store.selectedWorkspaceID = sel.workspaceID
+                store.selectWorkspace(sel.workspaceID)
                 // Ensure the workspace's terminal is selected and focused
                 if let workspace = store.workspaces.first(where: { $0.id == sel.workspaceID }),
                    let terminalPane = workspace.frontmostTerminalPane {
@@ -656,9 +670,7 @@ struct PilotApp: App {
             case .selectTab(let sel):
                 // Copilot tab selector picked a pane: focus that workspace and
                 // make the chosen pane its active tab.
-                store.isNotesMode = false
-                store.isRemoteDesktopMode = false
-                store.selectedWorkspaceID = sel.workspaceID
+                store.selectWorkspace(sel.workspaceID)
                 if let workspace = store.workspaces.first(where: { $0.id == sel.workspaceID }) {
                     workspace.selectedPaneID = sel.tabID
                     // Only terminal panes are focusable in the Ghostty registry;
@@ -685,7 +697,7 @@ struct PilotApp: App {
                 case .start:
                     let targetWorkspaceID = command.workspaceID ?? store.selectedWorkspaceID
                     if let targetWorkspaceID {
-                        store.selectedWorkspaceID = targetWorkspaceID
+                        store.selectWorkspace(targetWorkspaceID)
                     }
                     recordingTargetPaneID = activeTerminalPane(in: targetWorkspaceID)?.id
                     isPeerRecording = true

@@ -1,8 +1,43 @@
+import CoreGraphics
 import Testing
 @testable import Pilot
 
 @Suite("Screen-mirroring bitrate policy")
 struct ScreenMirrorBitrateTests {
+    @Test("Registered main window wins even when the extension is larger")
+    func registeredMainWindowWinsOverLargerExtension() {
+        let bundleID = "app.blau.pilot"
+        let mainWindowID: CGWindowID = 10
+        let candidates = [
+            ScreenMirrorWindowCandidate(
+                windowID: mainWindowID,
+                bundleIdentifier: bundleID,
+                isOnScreen: true,
+                width: 1_000,
+                height: 700,
+                hasTitle: true,
+                windowLayer: 0
+            ),
+            ScreenMirrorWindowCandidate(
+                windowID: 20,
+                bundleIdentifier: bundleID,
+                isOnScreen: true,
+                width: 1_600,
+                height: 1_200,
+                hasTitle: true,
+                windowLayer: 0
+            )
+        ]
+
+        let selectedID = ScreenMirrorWindowSelectionPolicy.pickWindowID(
+            from: candidates,
+            bundleIdentifier: bundleID,
+            preferredWindowID: mainWindowID
+        )
+
+        #expect(selectedID == mainWindowID)
+    }
+
     @Test("First congestion report never raises the initial bitrate")
     func firstCongestionReportDoesNotIncreaseBitrate() {
         let initial = StreamBitratePolicy.initial
