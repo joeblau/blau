@@ -1,9 +1,28 @@
+import CoreTransferable
 import SwiftUI
 import UniformTypeIdentifiers
 @preconcurrency import WebKit
 
-// Use plainText for drag type since custom UTTypes require Info.plist registration
-private let paneTabDragType = UTType.plainText
+extension UTType {
+    static let pilotPane = UTType(exportedAs: "app.blau.pilot.pane")
+}
+
+enum WorkspacePaneSurface: String, Codable, Hashable {
+    case main
+    case `extension`
+}
+
+struct WorkspacePaneDragPayload: Codable, Hashable, Transferable {
+    let paneID: UUID
+    let sourceWorkspaceID: UUID
+    let projectID: UUID
+    let sourceSurface: WorkspacePaneSurface
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .pilotPane)
+    }
+}
+
 private enum PaneLayoutMetrics {
     static let dividerLineThickness: CGFloat = 1
     static let dividerHitThickness: CGFloat = 6
@@ -18,8 +37,11 @@ private struct PaneLayoutPlan {
 struct WorkspaceView: View {
     @Bindable var workspace: Workspace
     let isActive: Bool
-    @State private var draggingPaneID: UUID?
+    let projectID: UUID
+    let surface: WorkspacePaneSurface
+    let onPaneDrop: (WorkspacePaneDragPayload, Pane) -> Bool
     @State private var hoveredPaneID: UUID?
+    @State private var dropTargetPaneID: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,7 +94,9 @@ struct WorkspaceView: View {
             isSelected: isSelected,
             isHovering: hoveredPaneID == pane.id,
             isWorkspaceActive: isActive,
-            canClose: workspace.sortedPanes.count > 1,
+            // The extension surface may close its last pane (its empty state
+            // invites re-adding); the main window always keeps one.
+            canClose: workspace.sortedPanes.count > 1 || surface == .extension,
             onClose: { workspace.removePane(pane) },
             onHide: { workspace.collapsePane(pane) },
             onUnhide: { workspace.expandPane(pane) }
@@ -80,7 +104,18 @@ struct WorkspaceView: View {
         .padding(.horizontal, pane.isCollapsed ? 0 : 14)
         .frame(maxWidth: .infinity)
         .frame(height: 28)
-        .background(isSelected ? .white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .background(
+            dropTargetPaneID == pane.id
+                ? Color.accentColor.opacity(0.22)
+                : (isSelected ? .white.opacity(0.1) : .clear),
+            in: RoundedRectangle(cornerRadius: 6)
+        )
+        .overlay {
+            if dropTargetPaneID == pane.id {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.accentColor.opacity(0.8), lineWidth: 1)
+            }
+        }
         .contentShape(RoundedRectangle(cornerRadius: 6))
         .onHover { isHovering in
             if isHovering {
@@ -96,10 +131,14 @@ struct WorkspaceView: View {
                 workspace.selectedPaneID = pane.id
             }
         }
-        .onDrag {
-            draggingPaneID = pane.id
-            return NSItemProvider(object: pane.id.uuidString as NSString)
-        } preview: {
+        .draggable(
+            WorkspacePaneDragPayload(
+                paneID: pane.id,
+                sourceWorkspaceID: workspace.id,
+                projectID: projectID,
+                sourceSurface: surface
+            )
+        ) {
             HStack(spacing: 6) {
                 Image(systemName: pane.kind.systemImageName)
                     .scaledFont(size: 11)
@@ -110,14 +149,13 @@ struct WorkspaceView: View {
             .padding(.vertical, 6)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
         }
-        .onDrop(
-            of: [paneTabDragType],
-            delegate: PaneTabDropDelegate(
-                targetPane: pane,
-                workspace: workspace,
-                draggingPaneID: $draggingPaneID
-            )
-        )
+        .dropDestination(for: WorkspacePaneDragPayload.self) { payloads, _ in
+            guard let payload = payloads.first else { return false }
+            defer { dropTargetPaneID = nil }
+            return onPaneDrop(payload, pane)
+        } isTargeted: { isTargeted in
+            dropTargetPaneID = isTargeted ? pane.id : nil
+        }
         .contextMenu {
             if pane.isCollapsed {
                 Button("Unhide") {
@@ -134,7 +172,7 @@ struct WorkspaceView: View {
             Button("Close", role: .destructive) {
                 workspace.removePane(pane)
             }
-            .disabled(workspace.sortedPanes.count <= 1)
+            .disabled(workspace.sortedPanes.count <= 1 && surface != .extension)
 
             if workspace.sortedPanes.count > 1 {
                 Divider()
@@ -152,6 +190,52 @@ struct WorkspaceView: View {
         let isVertical = workspace.axis == .vertical
         let sorted = workspace.sortedPanes
 
+        if sorted.isEmpty {
+            emptyPanesView
+        } else {
+            filledPanesContent(isVertical: isVertical, sorted: sorted)
+        }
+    }
+
+    /// Reached when the last pane is closed (the extension surface allows
+    /// that): an explicit invitation to add panes, mirroring the toolbar
+    /// launcher's options.
+    private var emptyPanesView: some View {
+        VStack(spacing: 16) {
+            ContentUnavailableView(
+                "No Panes",
+                systemImage: "rectangle.dashed",
+                description: Text("Add a pane to get started.")
+            )
+            .frame(maxHeight: 220)
+
+            HStack(spacing: 8) {
+                addPaneButton(.terminal)
+                addPaneButton(.browser)
+                addPaneButton(.device)
+                addPaneButton(.simulator)
+                addPaneButton(.android)
+                addPaneButton(.editor)
+                    .disabled(workspace.effectiveRootPath == nil)
+                    .help(workspace.effectiveRootPath == nil
+                        ? "Set a workspace root path to open the editor"
+                        : "Open a file editor with fuzzy file search")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func addPaneButton(_ kind: PaneKind) -> some View {
+        Button {
+            workspace.addPane(kind: kind, side: .right)
+        } label: {
+            Label(kind.displayName, systemImage: kind.systemImageName)
+        }
+        .buttonStyle(.bordered)
+    }
+
+    @ViewBuilder
+    private func filledPanesContent(isVertical: Bool, sorted: [Pane]) -> some View {
         GeometryReader { geometry in
             let totalSize = isVertical ? geometry.size.width : geometry.size.height
             let dividerThickness = PaneLayoutMetrics.dividerHitThickness
@@ -185,6 +269,10 @@ struct WorkspaceView: View {
                             width: isVertical ? max(0, paneSize) : nil,
                             height: isVertical ? nil : max(0, paneSize)
                         )
+                        // AppKit-backed panes can retain a document width larger
+                        // than their SwiftUI allocation while a divider moves.
+                        // Keep every surface inside the pane it was assigned.
+                        .clipped()
                         .simultaneousGesture(
                             TapGesture().onEnded {
                                 if pane.isCollapsed {
@@ -375,54 +463,6 @@ private struct PaneResizeHandle: View {
 
     private var resizeCursor: NSCursor {
         isVertical ? .resizeLeftRight : .resizeUpDown
-    }
-}
-
-private struct PaneTabDropDelegate: DropDelegate {
-    let targetPane: Pane
-    let workspace: Workspace
-    @Binding var draggingPaneID: UUID?
-
-    func dropEntered(info: DropInfo) {
-        _ = reorderDraggingPane()
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        let didReorder = reorderDraggingPane()
-        draggingPaneID = nil
-        return didReorder
-    }
-
-    func dropExited(info: DropInfo) {
-        if !info.hasItemsConforming(to: [paneTabDragType]) {
-            draggingPaneID = nil
-        }
-    }
-
-    private func reorderDraggingPane() -> Bool {
-        guard let draggingPaneID,
-              draggingPaneID != targetPane.id,
-              let fromIndex = workspace.sortedPanes.firstIndex(where: { $0.id == draggingPaneID }),
-              let toIndex = workspace.sortedPanes.firstIndex(where: { $0.id == targetPane.id }),
-              fromIndex != toIndex else { return false }
-
-        var reorderedPanes = workspace.sortedPanes
-        let movedPane = reorderedPanes.remove(at: fromIndex)
-        reorderedPanes.insert(movedPane, at: toIndex)
-
-        for (index, pane) in reorderedPanes.enumerated() where pane.sortOrder != index {
-            pane.sortOrder = index
-        }
-
-        workspace.syncDefaultRootPathIfNeeded()
-        if !movedPane.isCollapsed {
-            workspace.selectedPaneID = draggingPaneID
-        }
-        return true
     }
 }
 
@@ -633,9 +673,21 @@ struct PaneView: View {
                 )
             }
         case .device:
-            DevicePaneView(paneID: pane.id, isActive: isWorkspaceActive, isSelected: isSelected)
+            DevicePaneView(
+                paneID: pane.id,
+                isActive: isWorkspaceActive,
+                isSelected: isSelected,
+                isCollapsed: pane.isCollapsed
+            )
         case .simulator:
             SimulatorPaneView(paneID: pane.id, isActive: isWorkspaceActive, isSelected: isSelected)
+        case .android:
+            AndroidPaneView(
+                paneID: pane.id,
+                isActive: isWorkspaceActive,
+                isSelected: isSelected,
+                isCollapsed: pane.isCollapsed
+            )
         case .editor:
             if let editorState = pane.editorState {
                 EditorPaneView(state: editorState,

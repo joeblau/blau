@@ -1,19 +1,22 @@
 import SwiftUI
 
 /// Settings section for AI usage. There are **no keys to enter** — usage is read
-/// from the `claude`, `codex`, and `grok` CLI sessions already on this Mac. This
-/// page shows whether each is signed in and how to sign in if not.
+/// from the `claude`, `codex`, `grok`, and `kimi` CLI sessions already on this
+/// Mac. This page shows whether each is signed in and how to sign in if not.
 struct UsageSettingsView: View {
     @AppStorage(UsageConsent.claudeKey) private var claudeEnabled = false
     @AppStorage(UsageConsent.codexKey) private var codexEnabled = false
     @AppStorage(UsageConsent.grokKey) private var grokEnabled = false
+    @AppStorage(UsageConsent.kimiKey) private var kimiEnabled = false
     @State private var claudeSignedIn: Bool?
     @State private var codexSignedIn: Bool?
     @State private var grokSignedIn: Bool?
+    @State private var kimiSignedIn: Bool?
 
     private static let claudeDocsURL = URL(string: "https://code.claude.com/docs/en/overview")!
     private static let codexDocsURL = URL(string: "https://developers.openai.com/codex/cli")!
     private static let grokDocsURL = URL(string: "https://docs.x.ai/build/overview")!
+    private static let kimiDocsURL = URL(string: "https://www.kimi.com/code/docs/en/")!
 
     var body: some View {
         Form {
@@ -42,6 +45,22 @@ struct UsageSettingsView: View {
             }
 
             Section {
+                Toggle("Allow Pilot to read Kimi Code credentials and usage", isOn: $kimiEnabled)
+                statusRow(enabled: kimiEnabled, signedIn: kimiSignedIn)
+                Link(destination: Self.kimiDocsURL) {
+                    Label("Install & sign in to Kimi Code", systemImage: "arrow.up.forward.app")
+                }
+            } header: {
+                Text("Kimi")
+            } footer: {
+                Text(
+                    "When enabled, Pilot reads Kimi Code's credential file under "
+                        + "$KIMI_CODE_HOME (or ~/.kimi-code), with legacy ~/.kimi fallback, "
+                        + "and sends its bearer token only to api.kimi.com/coding/v1/usages."
+                )
+            }
+
+            Section {
                 Toggle("Allow Pilot to read Grok credentials and usage", isOn: $grokEnabled)
                 statusRow(enabled: grokEnabled, signedIn: grokSignedIn)
                 Link(destination: Self.grokDocsURL) {
@@ -66,6 +85,7 @@ struct UsageSettingsView: View {
         .onChange(of: claudeEnabled) { consentChanged() }
         .onChange(of: codexEnabled) { consentChanged() }
         .onChange(of: grokEnabled) { consentChanged() }
+        .onChange(of: kimiEnabled) { consentChanged() }
     }
 
     @ViewBuilder
@@ -95,13 +115,16 @@ struct UsageSettingsView: View {
         claudeSignedIn = nil
         codexSignedIn = nil
         grokSignedIn = nil
+        kimiSignedIn = nil
         async let claude = Self.detectClaude(enabled: claudeEnabled)
         async let codex = Self.detectCodex(enabled: codexEnabled)
         async let grok = Self.detectGrok(enabled: grokEnabled)
-        let values = await (claude, codex, grok)
+        async let kimi = Self.detectKimi(enabled: kimiEnabled)
+        let values = await (claude, codex, grok, kimi)
         claudeSignedIn = claudeEnabled ? values.0 : nil
         codexSignedIn = codexEnabled ? values.1 : nil
         grokSignedIn = grokEnabled ? values.2 : nil
+        kimiSignedIn = kimiEnabled ? values.3 : nil
     }
 
     private func consentChanged() {
@@ -122,5 +145,13 @@ struct UsageSettingsView: View {
     private static func detectGrok(enabled: Bool) async -> Bool {
         guard enabled else { return false }
         return await Task.detached { UsageSessions.GrokSession.load() != nil }.value
+    }
+
+    private static func detectKimi(enabled: Bool) async -> Bool {
+        guard enabled else { return false }
+        return await Task.detached {
+            guard let session = UsageSessions.KimiSession.load() else { return false }
+            return !session.isExpired
+        }.value
     }
 }

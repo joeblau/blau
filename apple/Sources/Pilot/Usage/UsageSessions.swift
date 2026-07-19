@@ -1,6 +1,6 @@
 import Foundation
 
-/// Reads the OAuth sessions that the `codex`, `claude`, and `grok` CLIs already
+/// Reads the OAuth sessions that the `codex`, `claude`, `grok`, and `kimi` CLIs already
 /// store on this Mac, so we can query each provider's plan-usage endpoint
 /// **without asking the user to log in again** (the approach popularized by
 /// CodexBar).
@@ -11,8 +11,8 @@ import Foundation
 /// anyone else's state.
 ///
 /// ⚠️ These endpoints (`chatgpt.com/backend-api/wham/usage`,
-/// `api.anthropic.com/api/oauth/usage`, and Grok's CLI billing endpoint) are the
-/// internal endpoints the CLIs call.
+/// `api.anthropic.com/api/oauth/usage`, Grok's CLI billing endpoint, and Kimi
+/// Code's `/usages` endpoint) are the internal endpoints the CLIs call.
 /// They are undocumented and can change without notice.
 enum UsageSessions {
 
@@ -38,6 +38,87 @@ enum UsageSessions {
                   let access = tokens["access_token"] as? String,
                   !access.isEmpty else { return nil }
             return CodexSession(accessToken: access, accountId: tokens["account_id"] as? String)
+        }
+    }
+
+    // MARK: - Kimi (Moonshot AI)
+
+    /// Kimi Code's OAuth session, read without refreshing or rewriting it.
+    ///
+    /// Current Kimi Code stores credentials below `$KIMI_CODE_HOME` (default
+    /// `~/.kimi-code`). The former Python CLI used `$KIMI_SHARE_DIR` (default
+    /// `~/.kimi`), so that location remains a read-only fallback for users who
+    /// have not migrated yet.
+    struct KimiSession: Sendable {
+        let accessToken: String
+        let expiresAt: Date?
+
+        var isExpired: Bool { isExpired(at: Date()) }
+
+        func isExpired(at date: Date) -> Bool {
+            guard let expiresAt else { return false }
+            return expiresAt <= date
+        }
+
+        /// Load the current credential file first, then the legacy file.
+        static func load() -> KimiSession? {
+            for url in credentialURLs() {
+                guard FileManager.default.fileExists(atPath: url.path) else { continue }
+                guard let data = try? Data(contentsOf: url) else { return nil }
+                // A present current credential owns account selection. Do not
+                // silently fall back to a legacy account if it is malformed;
+                // an expired token is surfaced separately by the usage store.
+                return parse(data: data)
+            }
+            return nil
+        }
+
+        /// Parse the CLI's snake-case token wire format. Internal so tests can
+        /// validate it without ever reading a developer's real credentials.
+        static func parse(data: Data) -> KimiSession? {
+            guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let accessToken = nonemptyString(root["access_token"])
+            else { return nil }
+
+            let expiresAt = parseDate(root["expires_at"])
+            return KimiSession(accessToken: accessToken, expiresAt: expiresAt)
+        }
+
+        private static func credentialURLs() -> [URL] {
+            let environment = ProcessInfo.processInfo.environment
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            let currentHome = environment["KIMI_CODE_HOME"].flatMap(nonemptyString)
+                .map(expandedFileURL)
+                ?? home.appendingPathComponent(".kimi-code")
+            let legacyHome = environment["KIMI_SHARE_DIR"].flatMap(nonemptyString)
+                .map(expandedFileURL)
+                ?? home.appendingPathComponent(".kimi")
+
+            var seen = Set<String>()
+            return [currentHome, legacyHome].compactMap { root in
+                let url = root.appendingPathComponent("credentials/kimi-code.json")
+                return seen.insert(url.standardizedFileURL.path).inserted ? url : nil
+            }
+        }
+
+        private static func expandedFileURL(_ path: String) -> URL {
+            URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        }
+
+        private static func nonemptyString(_ value: Any?) -> String? {
+            guard let value = value as? String else { return nil }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+
+        private static func parseDate(_ value: Any?) -> Date? {
+            if let number = value as? NSNumber {
+                return Date(timeIntervalSince1970: number.doubleValue)
+            }
+            guard let string = nonemptyString(value), let seconds = Double(string) else {
+                return nil
+            }
+            return Date(timeIntervalSince1970: seconds)
         }
     }
 

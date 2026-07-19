@@ -7,10 +7,67 @@ import OSLog
 import Observation
 
 enum DeviceConnectionStatus: Sendable, Equatable {
-    case waiting
+    case picking
     case connecting
     case streaming
     case failed(String)
+}
+
+struct IOSCaptureDevice: Identifiable, Sendable, Equatable {
+    let id: String
+    let name: String
+    let modelID: String
+
+    var detail: String? {
+        let trimmedModel = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty,
+              trimmedModel.localizedCaseInsensitiveCompare(name) != .orderedSame else { return nil }
+        return trimmedModel
+    }
+}
+
+/// Conservative admission policy for the CMIO sources shown in the iOS
+/// picker. AVFoundation does not expose a public "this is an iOS screen"
+/// flag, so explicit iPhone/iPad identity metadata is the strongest signal.
+/// A generic muxed source is admitted only when AVFoundation identifies its
+/// manufacturer as Apple and its transport as USB; this keeps ordinary capture
+/// cards and webcams out without dropping a renamed tethered iPhone whose
+/// display/model name is generic.
+enum IOSCaptureDiscoveryPolicy {
+    /// `kIOAudioDeviceTransportTypeUSB` (`'usb '`). `AVCaptureDevice` exposes
+    /// the value but AVFoundation does not provide a Swift-native enum for it.
+    private static let usbTransportType = Int32(bitPattern: 0x7573_6220)
+
+    static func includes(
+        name: String,
+        modelID: String,
+        manufacturer: String,
+        isMuxed: Bool,
+        transportType: Int32
+    ) -> Bool {
+        let identity = "\(name) \(modelID)"
+        let identityWords = identity.components(separatedBy: CharacterSet.alphanumerics.inverted)
+        let hasIOSIdentity = identity.localizedCaseInsensitiveContains("iphone")
+            || identity.localizedCaseInsensitiveContains("ipad")
+            || identityWords.contains {
+                $0.localizedCaseInsensitiveCompare("ios") == .orderedSame
+            }
+        if hasIOSIdentity { return true }
+
+        let normalizedManufacturer = manufacturer.trimmingCharacters(in: .whitespacesAndNewlines)
+        return isMuxed
+            && normalizedManufacturer.localizedCaseInsensitiveCompare("Apple Inc.") == .orderedSame
+            && transportType == usbTransportType
+    }
+}
+
+enum IOSCaptureAudioPairingPolicy {
+    /// AVFoundation exposes no public relationship between separate video and
+    /// audio capture devices. Only identical unique IDs are authoritative;
+    /// names and model IDs are not unique when two phones are connected.
+    static func matches(videoUniqueID: String, audioUniqueID: String) -> Bool {
+        videoUniqueID == audioUniqueID
+    }
 }
 
 enum CaptureFrameError: LocalizedError, Equatable {
@@ -49,9 +106,14 @@ enum CaptureFrameError: LocalizedError, Equatable {
 final class DeviceCaptureSession: NSObject {
     @ObservationIgnored let session = AVCaptureSession()
 
-    var status: DeviceConnectionStatus = .waiting
+    var status: DeviceConnectionStatus = .picking
+    var devices: [IOSCaptureDevice] = []
+    var isRefreshing: Bool = false
     var deviceUniqueID: String?
     var deviceName: String?
+    private(set) var preferredDeviceUniqueID: String?
+    private(set) var preferredDeviceName: String?
+    private(set) var isCameraPermissionDenied: Bool = false
     var isRecording: Bool = false
     var lastError: String?
     /// Increments on every successful clipboard write. UI binds `.onChange`
@@ -74,10 +136,23 @@ final class DeviceCaptureSession: NSObject {
     @ObservationIgnored private let audioDataOutput = AVCaptureAudioDataOutput()
     @ObservationIgnored private let frameQueue = DispatchQueue(label: "app.blau.pilot.device.frame")
     @ObservationIgnored private let sessionQueue = DispatchQueue(label: "app.blau.pilot.device.capture")
+    @ObservationIgnored private let selectionDefaults: UserDefaults
+    @ObservationIgnored private let selectionPreferenceKey: String
+    @ObservationIgnored private let selectionPreferenceNameKey: String
     /// Drives the bounded rescan that catches an already-connected iPhone the
     /// one-shot discovery races against (see `scheduleRescan`).
     @ObservationIgnored private var rescanAttemptsRemaining = 0
     @ObservationIgnored private var rescanActive = false
+    /// Invalidates camera-permission callbacks when a pane stops or the user
+    /// deliberately returns to the picker. Without this, a late TCC callback
+    /// can resurrect a capture after teardown.
+    @ObservationIgnored private var lifecycleGeneration = 0
+    @ObservationIgnored private var isStarted = false
+    /// Invalidates the completion of queued session transactions. All
+    /// `AVCaptureSession` configuration and start/stop calls run on
+    /// `sessionQueue`; this token prevents an older attach from publishing
+    /// `.streaming` after a newer detach has already reset the UI state.
+    @ObservationIgnored private var sessionTransactionGeneration = 0
 
     /// Persistent, slow rescan that runs while `status == .failed`. A
     /// media-services reset can republish the capture device *without* firing
@@ -150,10 +225,14 @@ final class DeviceCaptureSession: NSObject {
     /// device's real aspect ratio (issue #56).
     @ObservationIgnored private let coordinator = CaptureCoordinator()
 
-    override init() {
+    init(paneID: UUID, defaults: UserDefaults = .standard) {
+        selectionDefaults = defaults
+        selectionPreferenceKey = Self.preferenceKey(for: paneID)
+        selectionPreferenceNameKey = Self.preferenceNameKey(for: paneID)
+        preferredDeviceUniqueID = defaults.string(forKey: selectionPreferenceKey)
+        preferredDeviceName = defaults.string(forKey: selectionPreferenceNameKey)
         super.init()
         Self.enableScreenCaptureDevices()
-        useDeviceNativeFormat()
         audioPreview.volume = 1.0
         videoDataOutput.alwaysDiscardsLateVideoFrames = true
         videoDataOutput.setSampleBufferDelegate(coordinator, queue: frameQueue)
@@ -167,12 +246,30 @@ final class DeviceCaptureSession: NSObject {
         observeSessionRuntime()
     }
 
+    override convenience init() {
+        self.init(paneID: UUID())
+    }
+
     deinit {
         NotificationCenter.default.removeObserver(self)
         coordinator.shutdown()
     }
 
     func start() {
+        guard !isStarted else { return }
+        isStarted = true
+        requestCaptureAccess()
+    }
+
+    func retry() {
+        isStarted = true
+        cancelRecovery()
+        requestCaptureAccess()
+    }
+
+    private func requestCaptureAccess() {
+        lifecycleGeneration &+= 1
+        let generation = lifecycleGeneration
         // The CMIO `AllowScreenCaptureDevices` flag is the toggle that makes
         // QuickTime's iPhone source appear; it's also what surfaces the
         // device list under the camera TCC bucket. We need camera permission
@@ -180,24 +277,106 @@ final class DeviceCaptureSession: NSObject {
         AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let self else { return }
+                    guard let self, self.isStarted,
+                          generation == self.lifecycleGeneration else { return }
                     guard granted else {
+                        self.isCameraPermissionDenied = true
                         self.status = .failed("Pilot needs camera permission to mirror the iPhone screen.")
                         return
                     }
-                    self.attachIfAvailable()
+                    self.isCameraPermissionDenied = false
+                    self.refreshDevices()
                 }
             }
         }
     }
 
     func stop() {
+        isStarted = false
+        lifecycleGeneration &+= 1
         cancelRecovery()
         coordinator.cancelPendingFrames(reason: .sessionStopped)
         if isRecording {
             coordinator.stopRecording()
         }
         detach()
+    }
+
+    // MARK: - Device list
+
+    static func preferenceKey(for paneID: UUID) -> String {
+        "Pilot.DeviceCapture.preferredDevice.\(paneID.uuidString.lowercased())"
+    }
+
+    static func preferenceNameKey(for paneID: UUID) -> String {
+        "Pilot.DeviceCapture.preferredDeviceName.\(paneID.uuidString.lowercased())"
+    }
+
+    /// Refresh the capture-source picker. A previously chosen device may
+    /// reconnect automatically, but an unconfigured pane never grabs an
+    /// arbitrary `AVCaptureDevice` just because it happens to sort first.
+    func refreshDevices() {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        let attached = Self.attachedScreenCaptureDevices()
+        devices = Self.sortedOptions(from: attached)
+        isRefreshing = false
+        lastError = nil
+
+        guard deviceUniqueID == nil, isStarted else { return }
+        guard let preferredDeviceUniqueID else {
+            status = .picking
+            return
+        }
+        if let preferred = attached.first(where: { $0.uniqueID == preferredDeviceUniqueID }) {
+            attach(preferred)
+        } else {
+            status = .picking
+            scheduleRescan()
+        }
+    }
+
+    func connect(_ option: IOSCaptureDevice) {
+        guard let device = Self.attachedScreenCaptureDevices().first(where: { $0.uniqueID == option.id }) else {
+            status = .picking
+            refreshDevices()
+            lastError = "That device is no longer available. Reconnect it, then refresh the list."
+            return
+        }
+
+        isStarted = true
+        lifecycleGeneration &+= 1
+        cancelRecovery()
+        preferredDeviceUniqueID = option.id
+        preferredDeviceName = option.name
+        selectionDefaults.set(option.id, forKey: selectionPreferenceKey)
+        selectionDefaults.set(option.name, forKey: selectionPreferenceNameKey)
+        lastError = nil
+        attach(device)
+    }
+
+    func chooseAnotherDevice() {
+        guard !isCameraPermissionDenied else { return }
+        lifecycleGeneration &+= 1
+        cancelRecovery()
+        if isRecording {
+            coordinator.stopRecording()
+            isRecording = false
+        }
+        detach()
+        preferredDeviceUniqueID = nil
+        preferredDeviceName = nil
+        selectionDefaults.removeObject(forKey: selectionPreferenceKey)
+        selectionDefaults.removeObject(forKey: selectionPreferenceNameKey)
+        status = .picking
+        refreshDevices()
+    }
+
+    func openCameraPrivacySettings() {
+        guard let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
+        ) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     // MARK: - Recording
@@ -347,25 +526,14 @@ final class DeviceCaptureSession: NSObject {
         )
     }
 
-    private func attachIfAvailable() {
-        // A manual retry (or fresh start) supersedes the passive self-heal poll,
-        // so it doesn't run in parallel with the bounded startup rescan below.
-        stopFailedRescan()
-        if let device = Self.firstAttachedScreenCaptureDevice() {
-            attach(device)
-        } else {
-            status = .waiting
-            scheduleRescan()
-        }
-    }
-
     /// An iPhone that's already plugged in when the pane opens never fires
     /// `wasConnectedNotification`, and the OS needs a beat to publish the
     /// screen-capture device after the CMIO flag flips and camera access is
-    /// granted — so the single discovery in `attachIfAvailable()` can miss it
-    /// and leave the pane stuck on `.waiting`. Poll a few times so the common
-    /// "phone already connected" case attaches on its own, no unplug/replug.
+    /// granted — so the first exact-ID lookup can miss it. Poll a few times so
+    /// a previously selected phone already on the cable reconnects without an
+    /// unplug/replug, while never falling back to another attached device.
     private func scheduleRescan() {
+        guard preferredDeviceUniqueID != nil else { return }
         rescanAttemptsRemaining = 10  // ~5s at a 0.5s cadence
         guard !rescanActive else { return }  // a poll chain is already running
         rescanActive = true
@@ -389,7 +557,7 @@ final class DeviceCaptureSession: NSObject {
                     self?.rescanActive = false
                     return
                 }
-                if let device = Self.firstAttachedScreenCaptureDevice() {
+                if let device = self.preferredAttachedScreenCaptureDevice() {
                     self.attach(device)
                 } else {
                     self.rescanTick()
@@ -409,7 +577,7 @@ final class DeviceCaptureSession: NSObject {
     /// `.failed`. Idempotent; superseded cleanly by `stopFailedRescan` (which
     /// `attach`/`detach` call), so exactly one chain is ever live.
     private func startFailedRescan() {
-        guard !failedRescanActive else { return }
+        guard preferredDeviceUniqueID != nil, !failedRescanActive else { return }
         failedRescanActive = true
         failedRescanGeneration &+= 1
         failedRescanTick(generation: failedRescanGeneration)
@@ -425,7 +593,7 @@ final class DeviceCaptureSession: NSObject {
             MainActor.assumeIsolated {
                 guard let self, self.failedRescanActive,
                       generation == self.failedRescanGeneration else { return }
-                if let device = Self.firstAttachedScreenCaptureDevice() {
+                if let device = self.preferredAttachedScreenCaptureDevice() {
                     // The device is discoverable again. Treat this like a physical
                     // replug: clear the thrash count so the reconnect gets a real
                     // chance instead of instantly re-tripping the quick-failure cap
@@ -439,25 +607,18 @@ final class DeviceCaptureSession: NSObject {
         }
     }
 
-    private static func firstAttachedScreenCaptureDevice() -> AVCaptureDevice? {
+    private static func attachedScreenCaptureDevices() -> [AVCaptureDevice] {
         // The CMIO screen-capture pathway publishes the iPhone as an
-        // `.external` device that delivers `.muxed` video+audio — that's
-        // the only flavor we want. Continuity Camera (which streams the
-        // iPhone's actual camera, not the screen) reports as
-        // `.continuityCamera` with `.video`, so filtering by `.external` +
-        // `.muxed` excludes it cleanly.
+        // `.external` device that normally delivers `.muxed` video+audio.
+        // Continuity Camera (which streams the phone's camera, not its screen)
+        // reports as `.continuityCamera` and is always rejected. Some OS/device
+        // combinations publish a video-only representation too, so query both
+        // media types and apply the same conservative iOS identity policy.
         let muxed = AVCaptureDevice.DiscoverySession(
             deviceTypes: [.external],
             mediaType: .muxed,
             position: .unspecified
         ).devices
-
-        if let phone = muxed.first(where: { Self.looksLikeIOSDevice($0) }) {
-            return phone
-        }
-        if let any = muxed.first {
-            return any
-        }
 
         let video = AVCaptureDevice.DiscoverySession(
             deviceTypes: [.external],
@@ -465,17 +626,48 @@ final class DeviceCaptureSession: NSObject {
             position: .unspecified
         ).devices
 
-        return video.first { device in
-            device.deviceType != .continuityCamera && Self.looksLikeIOSDevice(device)
+        // A source can be published in both sessions under the same unique ID.
+        // Insert video first and let the muxed representation win so recordings
+        // retain the device audio track. Importantly, muxed is not sufficient
+        // evidence by itself: third-party HDMI/USB capture cards are muxed too.
+        // AVFoundation exposes no signed iOS-device identity, so metadata can be
+        // incomplete or spoofed; explicit iPhone/iPad names/models and generic
+        // Apple-manufactured USB muxed devices are the most reliable public signals.
+        var byUniqueID: [String: AVCaptureDevice] = [:]
+        for device in video where Self.isEligibleIOSScreenCaptureDevice(device) {
+            byUniqueID[device.uniqueID] = device
+        }
+        for device in muxed where Self.isEligibleIOSScreenCaptureDevice(device) {
+            byUniqueID[device.uniqueID] = device
+        }
+        return Array(byUniqueID.values)
+    }
+
+    private static func captureDeviceOption(_ device: AVCaptureDevice) -> IOSCaptureDevice {
+        IOSCaptureDevice(id: device.uniqueID, name: device.localizedName, modelID: device.modelID)
+    }
+
+    private static func sortedOptions(from devices: [AVCaptureDevice]) -> [IOSCaptureDevice] {
+        devices.map(Self.captureDeviceOption).sorted {
+            let nameOrder = $0.name.localizedCaseInsensitiveCompare($1.name)
+            return nameOrder == .orderedSame ? $0.id < $1.id : nameOrder == .orderedAscending
         }
     }
 
-    private static func looksLikeIOSDevice(_ device: AVCaptureDevice) -> Bool {
-        device.localizedName.localizedCaseInsensitiveContains("iphone")
-            || device.localizedName.localizedCaseInsensitiveContains("ipad")
-            || device.modelID.localizedCaseInsensitiveContains("iphone")
-            || device.modelID.localizedCaseInsensitiveContains("ipad")
-            || device.modelID.contains("iOS")
+    private func preferredAttachedScreenCaptureDevice() -> AVCaptureDevice? {
+        guard let preferredDeviceUniqueID else { return nil }
+        return Self.attachedScreenCaptureDevices().first { $0.uniqueID == preferredDeviceUniqueID }
+    }
+
+    private static func isEligibleIOSScreenCaptureDevice(_ device: AVCaptureDevice) -> Bool {
+        guard device.deviceType != .continuityCamera else { return false }
+        return IOSCaptureDiscoveryPolicy.includes(
+            name: device.localizedName,
+            modelID: device.modelID,
+            manufacturer: device.manufacturer,
+            isMuxed: device.hasMediaType(.muxed),
+            transportType: device.transportType
+        )
     }
 
     // MARK: - Hot-plug
@@ -496,29 +688,41 @@ final class DeviceCaptureSession: NSObject {
         )
     }
 
-    @objc private func handleDeviceConnected() {
-        MainActor.assumeIsolated {
-            guard deviceUniqueID == nil,
-                  let device = Self.firstAttachedScreenCaptureDevice() else { return }
-            // Only a genuine physical replug (not a re-enumeration mid-recovery)
-            // is a clean slate — clearing strikes while recovering would let a
-            // device that dies-and-re-enumerates every cycle dodge the thrash cap
-            // forever. Check before `cancelRecovery()` flips the flag.
-            if !recovering {
-                consecutiveQuickFailures = 0
+    @objc nonisolated private func handleDeviceConnected() {
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.isStarted, self.deviceUniqueID == nil,
+                      !self.isCameraPermissionDenied else { return }
+                let attached = Self.attachedScreenCaptureDevices()
+                self.devices = Self.sortedOptions(from: attached)
+                guard let preferredDeviceUniqueID = self.preferredDeviceUniqueID,
+                      let device = attached.first(where: { $0.uniqueID == preferredDeviceUniqueID }) else {
+                    self.status = .picking
+                    return
+                }
+                // Only a genuine physical replug (not a re-enumeration mid-recovery)
+                // is a clean slate — clearing strikes while recovering would let a
+                // device that dies-and-re-enumerates every cycle dodge the thrash cap
+                // forever. Check before `cancelRecovery()` flips the flag.
+                if !self.recovering {
+                    self.consecutiveQuickFailures = 0
+                }
+                // Supersede any in-flight recovery re-attach so it can't fire a
+                // second, redundant attach() on the stream we're about to build.
+                self.cancelRecovery()
+                self.attach(device)
             }
-            // Supersede any in-flight recovery re-attach so it can't fire a
-            // second, redundant attach() on the stream we're about to build.
-            cancelRecovery()
-            attach(device)
         }
     }
 
-    @objc private func handleDeviceDisconnected(_ note: Notification) {
+    @objc nonisolated private func handleDeviceDisconnected(_ note: Notification) {
         let lostID = (note.object as? AVCaptureDevice)?.uniqueID
-        MainActor.assumeIsolated {
-            guard let lostID, lostID == deviceUniqueID else { return }
-            detach()
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, let lostID, lostID == self.deviceUniqueID else { return }
+                self.detach()
+                self.refreshDevices()
+            }
         }
     }
 
@@ -528,9 +732,8 @@ final class DeviceCaptureSession: NSObject {
     /// session itself fails — most often a media-services reset — which stops it
     /// without firing a device-disconnect. AVFoundation reports that through the
     /// session's runtime-error notification, so observe it and rebuild on the
-    /// spot. It posts on an arbitrary queue, so the handler hops to the main
-    /// actor (unlike the device notifications, which the existing handlers assume
-    /// are already on main).
+    /// spot. AVFoundation notifications may arrive on arbitrary queues, so all
+    /// selector handlers explicitly hop to the main actor before touching state.
     private func observeSessionRuntime() {
         NotificationCenter.default.addObserver(
             self,
@@ -540,7 +743,7 @@ final class DeviceCaptureSession: NSObject {
         )
     }
 
-    @objc private func handleSessionRuntimeError(_ note: Notification) {
+    @objc nonisolated private func handleSessionRuntimeError(_ note: Notification) {
         let description = (note.userInfo?[AVCaptureSessionErrorKey] as? NSError)?
             .localizedDescription ?? "unknown"
         DispatchQueue.main.async { [weak self] in
@@ -587,8 +790,17 @@ final class DeviceCaptureSession: NSObject {
     private func checkStreamHealth() {
         guard status == .streaming, !recovering, let since = streamingSince,
               ProcessInfo.processInfo.systemUptime - since > Self.recoveryStartupGrace else { return }
-        if !session.isRunning {
-            recover(reason: "session stopped running")
+        let generation = sessionTransactionGeneration
+        nonisolated(unsafe) let captureSession = session
+        sessionQueue.async { [weak self] in
+            guard !captureSession.isRunning else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, self.status == .streaming, !self.recovering,
+                          generation == self.sessionTransactionGeneration else { return }
+                    self.recover(reason: "session stopped running")
+                }
+            }
         }
     }
 
@@ -638,7 +850,7 @@ final class DeviceCaptureSession: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.reattachDelay) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.recovering, generation == self.recoveryGeneration else { return }
-                if let device = Self.firstAttachedScreenCaptureDevice() {
+                if let device = self.preferredAttachedScreenCaptureDevice() {
                     self.recovering = false
                     self.attach(device)
                 } else if attempt >= Self.maxReattachAttempts {
@@ -671,80 +883,70 @@ final class DeviceCaptureSession: NSObject {
 
     // MARK: - Session wiring
 
+    private enum SessionAttachResult: Sendable {
+        case success(hasAudioInput: Bool, warnings: [String])
+        case failure(String)
+    }
+
     private func attach(_ device: AVCaptureDevice) {
+        guard device.uniqueID == preferredDeviceUniqueID else {
+            logger.error("refusing to attach an unselected iOS device")
+            status = .picking
+            return
+        }
         cancelRescan()
         stopFailedRescan()
         status = .connecting
-        session.beginConfiguration()
-        defer { session.commitConfiguration() }
-
-        for input in session.inputs { session.removeInput(input) }
-        for output in session.outputs { session.removeOutput(output) }
         hasAudioInput = false
+        sessionTransactionGeneration &+= 1
+        let generation = sessionTransactionGeneration
+        let selectedID = device.uniqueID
+        let selectedName = device.localizedName
+        nonisolated(unsafe) let captureSession = session
+        nonisolated(unsafe) let captureDevice = device
+        nonisolated(unsafe) let captureVideoOutput = videoDataOutput
+        nonisolated(unsafe) let captureAudioOutput = audioDataOutput
+        nonisolated(unsafe) let captureAudioPreview = audioPreview
 
-        useDeviceNativeFormat()
-
-        do {
-            let videoInput = try AVCaptureDeviceInput(device: device)
-            if session.canAddInput(videoInput) {
-                session.addInput(videoInput)
-            }
-            // Pin the device to its highest-res native format only after the
-            // input is live, so the `.inputPriority` session keeps the device's
-            // real aspect ratio instead of having it overridden when the input
-            // is added.
-            configureHighestResolutionFormat(for: device)
-        } catch {
-            logger.error("video input failed: \(error.localizedDescription)")
-            status = .failed(error.localizedDescription)
-            // Same dead-end as recovery giving up: keep watching so a device that
-            // recovers (or is replugged) reconnects without a relaunch.
-            startFailedRescan()
-            return
-        }
-
-        // Audio. The iPhone screen-capture device is `.muxed`, so its single
-        // input already carries audio alongside video — the audio data output
-        // taps that input's audio port directly, with no separate audio device.
-        // (The old code only wired audio when it found a *separate* external
-        // audio device, which a muxed iPhone doesn't expose, so every recording
-        // came out silent.) A non-muxed, video-only device still needs a paired
-        // external audio input.
-        if device.hasMediaType(.muxed) {
-            hasAudioInput = true
-        } else if let audioDevice = pairedAudioDevice(forVideo: device) {
-            do {
-                let audioInput = try AVCaptureDeviceInput(device: audioDevice)
-                if session.canAddInput(audioInput) {
-                    session.addInput(audioInput)
-                    hasAudioInput = true
+        sessionQueue.async { [weak self] in
+            let result = Self.configureAndStart(
+                captureSession,
+                device: captureDevice,
+                videoOutput: captureVideoOutput,
+                audioOutput: captureAudioOutput,
+                audioPreview: captureAudioPreview
+            )
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, generation == self.sessionTransactionGeneration else { return }
+                    switch result {
+                    case let .success(hasAudioInput, warnings):
+                        guard self.isStarted, self.preferredDeviceUniqueID == selectedID else { return }
+                        for warning in warnings {
+                            self.logger.warning("\(warning)")
+                        }
+                        self.hasAudioInput = hasAudioInput
+                        self.deviceUniqueID = selectedID
+                        self.deviceName = selectedName
+                        self.preferredDeviceName = selectedName
+                        self.selectionDefaults.set(selectedName, forKey: self.selectionPreferenceNameKey)
+                        self.status = .streaming
+                        self.streamingSince = ProcessInfo.processInfo.systemUptime
+                        self.startWatchdog()
+                    case let .failure(message):
+                        self.logger.error("iOS capture attach failed: \(message)")
+                        self.hasAudioInput = false
+                        self.deviceUniqueID = nil
+                        self.deviceName = nil
+                        self.streamingSince = nil
+                        self.status = .failed(message)
+                        // A media-services reset may make this same exact device
+                        // usable again, so retain the selection and self-heal.
+                        self.startFailedRescan()
+                    }
                 }
-            } catch {
-                logger.warning("audio input failed: \(error.localizedDescription)")
             }
         }
-
-        if hasAudioInput {
-            // Live monitor (so you hear the device, like QuickTime does) plus the
-            // data output the recording writer pulls audio sample buffers from.
-            if session.canAddOutput(audioPreview) {
-                session.addOutput(audioPreview)
-            }
-            if session.canAddOutput(audioDataOutput) {
-                session.addOutput(audioDataOutput)
-            }
-        }
-
-        if session.canAddOutput(videoDataOutput) {
-            session.addOutput(videoDataOutput)
-        }
-
-        deviceUniqueID = device.uniqueID
-        deviceName = device.localizedName
-        status = .streaming
-        streamingSince = ProcessInfo.processInfo.systemUptime
-        startWatchdog()
-        run(.start)
     }
 
     private func detach() {
@@ -759,46 +961,142 @@ final class DeviceCaptureSession: NSObject {
             coordinator.stopRecording(reason: "Recording stopped because the capture device disconnected.")
         }
         hasAudioInput = false
-        session.beginConfiguration()
-        for input in session.inputs { session.removeInput(input) }
-        for output in session.outputs { session.removeOutput(output) }
-        session.commitConfiguration()
-
-        run(.stop)
+        sessionTransactionGeneration &+= 1
+        nonisolated(unsafe) let captureSession = session
+        sessionQueue.async {
+            Self.stopAndClear(captureSession)
+        }
 
         deviceUniqueID = nil
         deviceName = nil
         isRecording = false
         streamingSince = nil
-        status = .waiting
+        status = .picking
     }
 
-    private enum Lifecycle { case start, stop }
+    /// Configure and start as one indivisible serial-queue transaction. Apple
+    /// explicitly forbids `startRunning()` between `beginConfiguration()` and
+    /// `commitConfiguration()`; keeping stop/configure/start here also prevents
+    /// a MainActor detach from racing a slow, blocking start.
+    nonisolated private static func configureAndStart(
+        _ session: AVCaptureSession,
+        device: AVCaptureDevice,
+        videoOutput: AVCaptureVideoDataOutput,
+        audioOutput: AVCaptureAudioDataOutput,
+        audioPreview: AVCaptureAudioPreviewOutput
+    ) -> SessionAttachResult {
+        if session.isRunning { session.stopRunning() }
 
-    private func run(_ lifecycle: Lifecycle) {
-        nonisolated(unsafe) let session = self.session
-        sessionQueue.async {
-            switch lifecycle {
-            case .start: if !session.isRunning { session.startRunning() }
-            case .stop: if session.isRunning { session.stopRunning() }
+        var failure: String?
+        var warnings: [String] = []
+        var hasAudioSource = device.hasMediaType(.muxed)
+        var hasUsableAudioOutput = false
+
+        session.beginConfiguration()
+        for input in session.inputs { session.removeInput(input) }
+        for output in session.outputs { session.removeOutput(output) }
+        if session.canSetSessionPreset(.high) {
+            session.sessionPreset = .high
+        }
+
+        do {
+            let videoInput = try AVCaptureDeviceInput(device: device)
+            if session.canAddInput(videoInput) {
+                session.addInput(videoInput)
+                if let formatWarning = configureHighestResolutionFormat(for: device) {
+                    warnings.append(formatWarning)
+                }
+            } else {
+                failure = "Pilot couldn't add the selected iOS device as a video input."
+            }
+        } catch {
+            failure = "Pilot couldn't open the selected iOS device: \(error.localizedDescription)"
+        }
+
+        if failure == nil {
+            guard session.canAddOutput(videoOutput) else {
+                Self.abortConfiguration(session)
+                return .failure("Pilot couldn't add the required iOS video output.")
+            }
+            session.addOutput(videoOutput)
+
+            // A muxed iPhone carries audio on its video input. A video-only
+            // representation may expose a separate audio device; AVFoundation
+            // provides no public pairing identifier beyond exact unique-ID
+            // equality, so never guess by model or display name (which can
+            // silently take audio from a different attached phone).
+            if !hasAudioSource, let pairedAudio = pairedAudioDevice(forVideo: device) {
+                do {
+                    let audioInput = try AVCaptureDeviceInput(device: pairedAudio)
+                    if session.canAddInput(audioInput) {
+                        session.addInput(audioInput)
+                        hasAudioSource = true
+                    } else {
+                        warnings.append("The exactly paired iOS audio input could not be added; recording video only.")
+                    }
+                } catch {
+                    warnings.append("The exactly paired iOS audio input failed: \(error.localizedDescription)")
+                }
+            }
+
+            if hasAudioSource {
+                // Recording audio is useful only when its data output is live.
+                // Preview monitoring is optional and must not make video fail.
+                if session.canAddOutput(audioOutput) {
+                    session.addOutput(audioOutput)
+                    hasUsableAudioOutput = true
+                } else {
+                    warnings.append("The iOS audio data output could not be added; recording video only.")
+                }
+                if session.canAddOutput(audioPreview) {
+                    session.addOutput(audioPreview)
+                } else {
+                    warnings.append("The iOS live audio monitor could not be added.")
+                }
             }
         }
+
+        if let failure {
+            Self.abortConfiguration(session)
+            return .failure(failure)
+        }
+        session.commitConfiguration()
+
+        if !session.isRunning { session.startRunning() }
+        guard session.isRunning else {
+            Self.stopAndClear(session)
+            return .failure("Pilot configured the selected iOS device, but capture did not start.")
+        }
+        return .success(hasAudioInput: hasUsableAudioOutput, warnings: warnings)
     }
 
-    private func pairedAudioDevice(forVideo video: AVCaptureDevice) -> AVCaptureDevice? {
+    nonisolated private static func abortConfiguration(_ session: AVCaptureSession) {
+        for input in session.inputs { session.removeInput(input) }
+        for output in session.outputs { session.removeOutput(output) }
+        session.commitConfiguration()
+    }
+
+    nonisolated private static func stopAndClear(_ session: AVCaptureSession) {
+        if session.isRunning { session.stopRunning() }
+        session.beginConfiguration()
+        for input in session.inputs { session.removeInput(input) }
+        for output in session.outputs { session.removeOutput(output) }
+        session.commitConfiguration()
+    }
+
+    nonisolated private static func pairedAudioDevice(forVideo video: AVCaptureDevice) -> AVCaptureDevice? {
         let candidates = AVCaptureDevice.DiscoverySession(
             deviceTypes: [.external],
             mediaType: .audio,
             position: .unspecified
         ).devices
 
-        if let exact = candidates.first(where: { $0.uniqueID == video.uniqueID }) {
-            return exact
+        return candidates.first {
+            IOSCaptureAudioPairingPolicy.matches(
+                videoUniqueID: video.uniqueID,
+                audioUniqueID: $0.uniqueID
+            )
         }
-        if let modelMatch = candidates.first(where: { $0.modelID == video.modelID }) {
-            return modelMatch
-        }
-        return candidates.first { $0.localizedName == video.localizedName }
     }
 
     /// Use the input device's own format instead of a fixed preset. A fixed
@@ -807,13 +1105,7 @@ final class DeviceCaptureSession: NSObject {
     /// but is iOS-only.) `.high` adapts to the device's native format, and we
     /// then pin `activeFormat` via `configureHighestResolutionFormat`, so we
     /// record at the device's real resolution and aspect ratio.
-    private func useDeviceNativeFormat() {
-        if session.canSetSessionPreset(.high) {
-            session.sessionPreset = .high
-        }
-    }
-
-    private func configureHighestResolutionFormat(for device: AVCaptureDevice) {
+    nonisolated private static func configureHighestResolutionFormat(for device: AVCaptureDevice) -> String? {
         let bestFormat = device.formats.max { lhs, rhs in
             let lhsSize = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
             let rhsSize = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
@@ -826,13 +1118,14 @@ final class DeviceCaptureSession: NSObject {
                 < rhs.videoSupportedFrameRateRanges.bestFrameRate
         }
 
-        guard let bestFormat else { return }
+        guard let bestFormat else { return nil }
         do {
             try device.lockForConfiguration()
             device.activeFormat = bestFormat
             device.unlockForConfiguration()
+            return nil
         } catch {
-            logger.warning("screen capture format selection failed: \(error.localizedDescription)")
+            return "Screen capture format selection failed: \(error.localizedDescription)"
         }
     }
 
@@ -978,18 +1271,27 @@ final class CaptureCoordinator: NSObject,
         lock.unlock()
 
         writer.finishWriting { [weak self] in
-            let message = writer.status == .failed ? writer.error?.localizedDescription : nil
-            callback?(url, message)
-            guard let self else { return }
-            self.lock.lock()
-            self.writer = nil
-            self.videoInput = nil
-            self.audioInput = nil
-            self.recordingURL = nil
-            self.armed = false
-            self.finishing = false
-            self.lock.unlock()
+            self?.recordingWriterDidFinish(url: url, callback: callback)
         }
+    }
+
+    /// `AVAssetWriter` is explicitly non-Sendable. Keep it behind this
+    /// coordinator's lock instead of capturing it in `finishWriting`'s
+    /// `@Sendable` callback.
+    private func recordingWriterDidFinish(
+        url: URL,
+        callback: (@Sendable (URL, String?) -> Void)?
+    ) {
+        lock.lock()
+        let message = writer?.status == .failed ? writer?.error?.localizedDescription : nil
+        writer = nil
+        videoInput = nil
+        audioInput = nil
+        recordingURL = nil
+        armed = false
+        finishing = false
+        lock.unlock()
+        callback?(url, message)
     }
 
     // MARK: Sample delegate

@@ -2,11 +2,97 @@ import AppKit
 import SwiftData
 import SwiftUI
 
+/// Scene-local browser selection used by menu commands. Revealing a browser
+/// preserves focused-pane mode by moving that focus to the browser instead of
+/// leaving `focusedPaneID` attached to a hidden pane.
+@MainActor
+enum BrowserCommandSelection {
+    static func selectedState(in workspace: Workspace?) -> BrowserState? {
+        BrowserToolbarSelection.state(for: workspace?.selectedPane)
+    }
+
+    static func hasBrowser(in workspace: Workspace?) -> Bool {
+        workspace?.panes.contains { $0.kind == .browser } ?? false
+    }
+
+    @discardableResult
+    static func revealBrowser(in workspace: Workspace?) -> BrowserState? {
+        guard let workspace else { return nil }
+
+        let browser: Pane
+        if let selectedPane = workspace.selectedPane,
+           selectedPane.kind == .browser {
+            browser = selectedPane
+        } else if let firstBrowser = workspace.sortedPanes.first(where: { $0.kind == .browser }) {
+            browser = firstBrowser
+        } else {
+            return nil
+        }
+
+        if let focusedPaneID = workspace.focusedPaneID,
+           focusedPaneID != browser.id {
+            workspace.focusPane(browser)
+        } else {
+            workspace.expandPane(browser)
+            workspace.selectedPaneID = browser.id
+        }
+        return BrowserToolbarSelection.state(for: browser)
+    }
+}
+
+/// Browser menu commands follow the key scene's focused Workspace. Main and
+/// Extension publish their own workspace with `focusedSceneValue`, preventing
+/// shortcuts in one window from reloading, annotating, or selecting a browser
+/// in the other.
+struct PilotBrowserCommands: Commands {
+    @FocusedValue(Workspace.self) private var workspace
+    let isMobileDeviceConnected: Bool
+
+    var body: some Commands {
+        CommandMenu("Browser") {
+            Button("Reload") {
+                selectedBrowserState?.requestNavigationCommand("blau://reload")
+            }
+            .keyboardShortcut("r", modifiers: .command)
+            .disabled(selectedBrowserState == nil)
+
+            Button("Focus Address Bar") {
+                BrowserCommandSelection.revealBrowser(in: workspace)?.requestAddressFocus()
+            }
+            .keyboardShortcut("l", modifiers: .command)
+            .disabled(!hasBrowserPane)
+
+            Button(selectedBrowserState?.annotateMode == true ? "Turn Off Lasso" : "Turn On Lasso") {
+                selectedBrowserState?.toggleAnnotateMode()
+            }
+            .keyboardShortcut("a", modifiers: [.command, .shift])
+            .disabled(selectedBrowserState == nil)
+
+            Divider()
+
+            Button("Debug Mobile App in Browser") {
+                SafariWebInspector.open()
+            }
+            .keyboardShortcut("d", modifiers: [.command, .option])
+            .disabled(!isMobileDeviceConnected)
+        }
+    }
+
+    private var selectedBrowserState: BrowserState? {
+        BrowserCommandSelection.selectedState(in: workspace)
+    }
+
+    private var hasBrowserPane: Bool {
+        BrowserCommandSelection.hasBrowser(in: workspace)
+    }
+}
+
 @main
 struct PilotApp: App {
     let modelContainer: ModelContainer
 
     @State private var store: WorkspaceStore
+    @State private var extensionWorkspaceController: ExtensionWorkspaceController
     @State private var peerDeviceStatus = DeviceStatus()
     @State private var headphoneDetector = HeadphoneDetector()
     @State private var syncService = PeerSyncService(
@@ -37,7 +123,7 @@ struct PilotApp: App {
     init() {
         // Build the schema from the newest versioned schema so the store is
         // stamped with a version and `PilotMigrationPlan` governs upgrades.
-        let schema = Schema(versionedSchema: PilotSchemaV1.self)
+        let schema = Schema(versionedSchema: PilotSchemaV2.self)
         let container: ModelContainer
         if ProcessInfo.processInfo.environment.keys.contains("XCTestConfigurationFilePath") {
             // A hosted unit-test launch must never open, back up, migrate, or
@@ -47,6 +133,13 @@ struct PilotApp: App {
             let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
             container = try! ModelContainer(for: schema, configurations: configuration)
         } else {
+            // Two live Pilot processes must never share the SwiftData store:
+            // a second instance reading while the first checkpoints the WAL
+            // fatals deep inside model getters (PersistentModel.getValue).
+            // Finder launches are single-instance via LaunchServices, but
+            // direct executable launches (Xcode debug runs, CLI) bypass that
+            // — enforce it here, before the store is ever opened.
+            Self.yieldToExistingInstanceIfNeeded()
             let storeURL = Self.persistentStoreURL()
             // Safety net: copy the on-disk store aside BEFORE opening it, so a failed
             // open or migration can never be the only thing standing between the user
@@ -71,9 +164,31 @@ struct PilotApp: App {
             store.seedDemoWorkspacesIfNeeded()
         }
         self._store = State(initialValue: store)
+        self._extensionWorkspaceController = State(
+            initialValue: ExtensionWorkspaceController(
+                modelContext: container.mainContext,
+                onMembershipChange: { store.extensionWorkspaceMembershipDidChange() }
+            )
+        )
         let sender = FrameSender()
         self._frameSender = State(initialValue: sender)
         self._screenMirror = State(initialValue: ScreenMirror(sender: sender))
+    }
+
+    /// If another Pilot process is already running, bring it forward and exit
+    /// quietly instead of racing it for the store. Opt out for deliberate
+    /// multi-instance development with the launch args
+    /// `-allowMultipleInstances YES` (each instance then needs its own store
+    /// via a distinct $HOME or it will still corrupt reads).
+    private static func yieldToExistingInstanceIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: "allowMultipleInstances") else { return }
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let existing = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            .first { $0.processIdentifier != currentPID && !$0.isTerminated }
+        guard let existing else { return }
+        existing.activate()
+        exit(0)
     }
 
     /// Pilot runs unsandboxed (so Ghostty can launch real shell processes), so
@@ -275,7 +390,7 @@ struct PilotApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        Window("Pilot", id: PilotWindowID.main) {
             ContentView(
                 store: store,
                 syncService: syncService,
@@ -307,17 +422,17 @@ struct PilotApp: App {
                     headphoneDetector.start()
                     setupSync()
                     actionWatcher.start(store: store)
-                    frameSender.onClientCountChanged = { count in
+                    frameSender.onClientCountChanged = { clientCount in
                         Task { @MainActor in
                             let wasConnected = plotterClientCount > 0
-                            plotterClientCount = count
+                            plotterClientCount = clientCount
                             // Only capture the screen — which lights up the macOS
                             // "your screen is being shared" indicator — while a
                             // Plotter is actually connected. Start on the first
                             // client, stop when the last one disconnects.
-                            if count > 0 && !wasConnected {
+                            if clientCount > 0 && !wasConnected {
                                 screenMirror.start()
-                            } else if count == 0 && wasConnected {
+                            } else if clientCount == 0 && wasConnected {
                                 screenMirror.stop()
                             }
                         }
@@ -429,8 +544,9 @@ struct PilotApp: App {
         // A roomier default for the sidebar + panes + inspector layout. Only
         // applies to a fresh window; a restored window keeps its saved frame.
         .defaultSize(width: 1440, height: 920)
+        .defaultLaunchBehavior(PilotWindowLaunchPolicy.defaultBehavior(for: PilotWindowID.main))
         .commands {
-            PilotExtensionCommands()
+            PilotWindowCommands()
 
             // New Terminal / New Browser as real main-menu commands. As toolbar
             // ControlGroup button shortcuts they were swallowed by a focused
@@ -513,47 +629,23 @@ struct PilotApp: App {
                 }
                 .keyboardShortcut("0", modifiers: [.command, .option])
             }
-            CommandMenu("Browser") {
-                Button("Reload") {
-                    selectedBrowserState?.requestNavigationCommand("blau://reload")
-                }
-                .keyboardShortcut("r", modifiers: .command)
-                .disabled(selectedBrowserState == nil)
-
-                Button("Focus Address Bar") {
-                    selectFirstBrowserPaneIfNeeded()
-                    NotificationCenter.default.post(name: .pilotFocusBrowserAddressBar, object: nil)
-                }
-                .keyboardShortcut("l", modifiers: .command)
-                .disabled(!hasBrowserPaneInActiveWorkspace)
-
-                Button(selectedBrowserState?.annotateMode == true ? "Turn Off Lasso" : "Turn On Lasso") {
-                    selectedBrowserState?.toggleAnnotateMode()
-                }
-                .keyboardShortcut("a", modifiers: [.command, .shift])
-                .disabled(selectedBrowserState == nil)
-
-                Divider()
-
-                // One-click jump to web debugging for the mobile app (#75).
-                // Enabled only while an iPhone peer is connected; activates
-                // Safari, where iOS remote Web Inspector lives.
-                Button("Debug Mobile App in Browser") {
-                    SafariWebInspector.open()
-                }
-                .keyboardShortcut("d", modifiers: [.command, .option])
-                .disabled(!syncService.isConnected)
-            }
+            PilotBrowserCommands(isMobileDeviceConnected: syncService.isConnected)
         }
 
         Window("Extension", id: PilotWindowID.extension) {
-            ExtensionWindowView(store: store)
+            ExtensionWindowView(store: store, controller: extensionWorkspaceController)
                 .environment(\.uiZoom, uiZoom)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         }
         .modelContainer(modelContainer)
         .defaultSize(width: 820, height: 760)
-        .defaultLaunchBehavior(.presented)
+        .defaultLaunchBehavior(PilotWindowLaunchPolicy.defaultBehavior(for: PilotWindowID.extension))
+        .commands {
+            // PilotWindowCommands is registered on the main scene only —
+            // scene commands merge into one menu bar, and registering them
+            // here too duplicated the Window-menu entries.
+            PilotExtensionWorkspaceCommands(store: store)
+        }
 
         // Standard macOS Settings window (⌘,). A thin, extensible shell; the
         // first real use is peer key sharing (#51), which drops into the
@@ -585,28 +677,6 @@ struct PilotApp: App {
         return terminalView(for: pane.id)
     }
 
-    private var selectedBrowserState: BrowserState? {
-        guard let pane = store.selectedWorkspace?.selectedPane,
-              pane.kind == .browser else { return nil }
-        return pane.browserState
-    }
-
-    private var hasBrowserPaneInActiveWorkspace: Bool {
-        store.selectedWorkspace?.panes.contains { $0.kind == .browser } ?? false
-    }
-
-    /// If the currently selected pane isn't a browser, hand selection to the
-    /// first browser pane in the workspace so ⌘L (and the rest of the
-    /// browser toolbar) has something to operate on. This makes ⌘L work
-    /// even when the user just clicked into another pane.
-    private func selectFirstBrowserPaneIfNeeded() {
-        guard let workspace = store.selectedWorkspace else { return }
-        if let selected = workspace.selectedPane, selected.kind == .browser { return }
-        if let firstBrowser = workspace.sortedPanes.first(where: { $0.kind == .browser }) {
-            workspace.selectedPaneID = firstBrowser.id
-        }
-    }
-
     private func copyOrCaptureScreenshot() {
         // If a text editor (sheet field, address bar, etc.) is the
         // first responder, let it handle the standard copy.
@@ -625,6 +695,13 @@ struct PilotApp: App {
             return
         }
 
+        if let pane = store.selectedWorkspace?.selectedPane,
+           pane.kind == .android {
+            AndroidDeviceRegistry.shared.session(for: pane.id)
+                .copyScreenshotToClipboard()
+            return
+        }
+
         sendStandardEditAction(#selector(NSText.copy(_:)))
     }
 
@@ -635,6 +712,16 @@ struct PilotApp: App {
         if let responder = NSApp.keyWindow?.firstResponder,
            responder is NSText {
             sendStandardEditAction(#selector(NSText.paste(_:)))
+            return
+        }
+
+        // In an Android pane: ⌘V types the clipboard on the device. Must be
+        // handled here — the menu command owns the key equivalent, so the
+        // pane's host view never sees the keystroke.
+        if let pane = store.selectedWorkspace?.selectedPane,
+           pane.kind == .android {
+            AndroidDeviceRegistry.shared.session(for: pane.id)
+                .pasteFromClipboard()
             return
         }
 
@@ -862,6 +949,15 @@ private struct PilotSettingsView: View {
 ///   4. Point `PilotApp`'s `Schema(versionedSchema:)` at the newest version.
 /// Never edit a shipped version's `models` in place — that is exactly what
 /// breaks upgrades and risks data loss.
+/// V1 is a FROZEN SNAPSHOT of the shipped model shapes — nested copies, not
+/// the live classes (rule 1 above). Pointing V1 at the live types crashes
+/// every store upgrade with "Duplicate version checksums detected.":
+/// `ExtensionWorkspaceLink.workspace` injects an implicit inverse into the
+/// live `Workspace` entity, so a live-class V1 would hash identically to V2
+/// and CoreData's staged migration aborts with an uncaught NSException.
+/// Nested types keep the entity names ("Workspace", not the qualified name),
+/// which is what makes the snapshot's checksum match the stamp already in
+/// users' stores. Never edit these snapshot classes.
 enum PilotSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
 
@@ -875,12 +971,131 @@ enum PilotSchemaV1: VersionedSchema {
             RemoteDesktopConnection.self,
         ]
     }
+
+    @Model
+    final class Workspace {
+        #Unique([\Workspace.id])
+
+        var id: UUID = UUID()
+        var name: String = ""
+        var selectedPaneID: UUID?
+        var frontmostTerminalPaneID: UUID?
+        var axisRaw: String = "vertical"
+        var isInspectorPresented: Bool = false
+        var inspectorTabRaw: String = "Actions"
+        var focusedPaneID: UUID?
+        var isPinned: Bool = false
+        var workspaceSortOrder: Int = 0
+        var rootPath: String = ""
+        var rootPathSourceRaw: String? = "automatic"
+        var actionBadgeCount: Int = 0
+
+        @Relationship(deleteRule: .cascade, inverse: \Pane.workspace)
+        var panes: [Pane] = []
+
+        init() {}
+    }
+
+    @Model
+    final class Pane {
+        #Unique([\Pane.id])
+
+        var id: UUID = UUID()
+        var kindRaw: String = "terminal"
+        var sortOrder: Int = 0
+        var currentDirectory: String = ""
+        var bellCount: Int = 0
+        var sizeFraction: Double = 0
+        var isCollapsed: Bool = false
+        var restoredSizeFraction: Double = 0
+        var wasCollapsedBeforeFocus: Bool = false
+
+        @Relationship(deleteRule: .cascade)
+        var browserState: BrowserState?
+
+        @Relationship(deleteRule: .cascade)
+        var editorState: EditorState?
+
+        var workspace: Workspace?
+
+        init() {}
+    }
+
+    @Model
+    final class BrowserState {
+        var urlText: String = ""
+        var appearanceModeRaw: String = "System"
+        var navigationRequestID: Int = 0
+        var inspectorToggleRequestID: Int = 0
+
+        init() {}
+    }
+
+    @Model
+    final class EditorState {
+        var filePath: String = ""
+
+        init() {}
+    }
+
+    @Model
+    final class Note {
+        #Unique([\Note.id])
+
+        var id: UUID = UUID()
+        var body: String = ""
+        var sortOrder: Int = 0
+        var createdAt: Date = Date()
+
+        init() {}
+    }
+
+    @Model
+    final class RemoteDesktopConnection {
+        #Unique([\RemoteDesktopConnection.id])
+
+        var id: UUID = UUID()
+        var host: String = ""
+        var port: Int = 5900
+        var nickname: String = ""
+        var username: String = ""
+        var sortOrder: Int = 0
+        var createdAt: Date = Date()
+        var lastConnectedAt: Date?
+
+        init() {}
+    }
+}
+
+/// Adds only the Extension ownership/link model. The shipped V1 model shapes
+/// remain unchanged, making this a safe additive migration while allowing
+/// linked companion Workspace/Pane graphs to persist normally. V2 is the
+/// CURRENT version, so it points at the live classes; when a V3 arrives,
+/// these entries must be snapshotted the same way V1 was.
+enum PilotSchemaV2: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
+
+    static var models: [any PersistentModel.Type] {
+        [
+            Workspace.self,
+            Pane.self,
+            BrowserState.self,
+            EditorState.self,
+            Note.self,
+            RemoteDesktopConnection.self,
+            ExtensionWorkspaceLink.self,
+        ]
+    }
 }
 
 enum PilotMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [PilotSchemaV1.self] }
+    static var schemas: [any VersionedSchema.Type] { [PilotSchemaV1.self, PilotSchemaV2.self] }
 
-    /// One stage per version-to-version upgrade. Empty today (only V1 exists);
-    /// append a stage whenever a new `PilotSchemaV*` is added above.
-    static var stages: [MigrationStage] { [] }
+    /// One stage per version-to-version upgrade; append a stage whenever a
+    /// new `PilotSchemaV*` is added above.
+    static var stages: [MigrationStage] {
+        [
+            .lightweight(fromVersion: PilotSchemaV1.self, toVersion: PilotSchemaV2.self),
+        ]
+    }
 }

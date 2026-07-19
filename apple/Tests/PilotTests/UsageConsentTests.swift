@@ -33,6 +33,7 @@ struct UsageConsentTests {
         #expect(!UsageConsent.isClaudeEnabled(defaults: defaults))
         #expect(!UsageConsent.isCodexEnabled(defaults: defaults))
         #expect(!UsageConsent.isGrokEnabled(defaults: defaults))
+        #expect(!UsageConsent.isKimiEnabled(defaults: defaults))
     }
 
     @Test("Reload performs zero provider access before opt-in")
@@ -45,7 +46,8 @@ struct UsageConsentTests {
             fetchers: .init(
                 claude: { await probe.record("Claude") },
                 codex: { await probe.record("Codex") },
-                grok: { await probe.record("Grok") }
+                grok: { await probe.record("Grok") },
+                kimi: { await probe.record("Kimi") }
             )
         )
 
@@ -56,6 +58,7 @@ struct UsageConsentTests {
         #expect(store.anthropic == .disabled)
         #expect(store.openAI == .disabled)
         #expect(store.xAI == .disabled)
+        #expect(store.moonshot == .disabled)
     }
 
     @Test("Only an opted-in provider may reach its credential and network boundary")
@@ -69,7 +72,8 @@ struct UsageConsentTests {
             fetchers: .init(
                 claude: { await probe.record("Claude") },
                 codex: { await probe.record("Codex") },
-                grok: { await probe.record("Grok") }
+                grok: { await probe.record("Grok") },
+                kimi: { await probe.record("Kimi") }
             )
         )
 
@@ -81,5 +85,31 @@ struct UsageConsentTests {
         store.reload()
         await store.waitForCurrentLoad()
         #expect(store.openAI == .disabled)
+    }
+
+    @Test("Kimi credential access is independently opted in and revocable")
+    func kimiConsentIsIndependentAndRevocable() async throws {
+        let (defaults, suiteName) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(true, forKey: UsageConsent.kimiKey)
+        let probe = FetchProbe()
+        let store = UsageStore(
+            defaults: defaults,
+            fetchers: .init(
+                claude: { await probe.record("Claude") },
+                codex: { await probe.record("Codex") },
+                grok: { await probe.record("Grok") },
+                kimi: { await probe.record("Kimi") }
+            )
+        )
+
+        store.reload()
+        await store.waitForCurrentLoad()
+
+        #expect(await probe.recordedProviders() == ["Kimi"])
+        defaults.set(false, forKey: UsageConsent.kimiKey)
+        store.reload()
+        await store.waitForCurrentLoad()
+        #expect(store.moonshot == .disabled)
     }
 }

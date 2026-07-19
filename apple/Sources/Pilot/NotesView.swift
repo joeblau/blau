@@ -239,7 +239,7 @@ private struct NoteTextView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     @MainActor
-    final class Coordinator: NSObject, @preconcurrency NSTextViewDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate {
         private let parent: NoteTextView
         let styler: MarkdownStyler
         let maskController = EnvMaskController()
@@ -572,6 +572,14 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
     private var cachedFencedBlocks: [(range: NSRange, content: String)]?
     private var cachedColorChipMatches: [ColorChip.Match]?
     private var cachedMarkdownImageMatches: [MarkdownImage.Match]?
+
+    /// Keep the editable storage plaintext while exposing the controller's
+    /// redacted presentation to assistive technologies. Calling
+    /// `setAccessibilityValue` on NSTextView edits the document and emits
+    /// `textDidChange`, so masking must be implemented as a getter only.
+    override func accessibilityValue() -> String? {
+        maskController?.accessibilityText ?? super.accessibilityValue()
+    }
 
     private func invalidateTextScanCaches() {
         cachedFencedBlocks = nil

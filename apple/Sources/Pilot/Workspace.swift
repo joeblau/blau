@@ -6,6 +6,7 @@ enum PaneKind: String, Codable, CaseIterable {
     case browser
     case device
     case simulator
+    case android
     case editor
 
     var displayName: String {
@@ -14,6 +15,7 @@ enum PaneKind: String, Codable, CaseIterable {
         case .browser: "Browser"
         case .device: "Device"
         case .simulator: "Simulator"
+        case .android: "Android"
         case .editor: "Editor"
         }
     }
@@ -24,6 +26,7 @@ enum PaneKind: String, Codable, CaseIterable {
         case .browser: "safari"
         case .device: "apps.iphone"
         case .simulator: "ipad.landscape.and.ipod"
+        case .android: "smartphone"
         case .editor: "curlybraces"
         }
     }
@@ -133,6 +136,8 @@ final class BrowserState {
     /// Browser Annotate mode — runtime only, off after relaunch.
     @Transient var annotateMode: Bool = false
     @Transient var annotateToggleRequestID: Int = 0
+    /// Set by ⌘L and consumed when this browser's address field is mounted.
+    @Transient var needsAddressFocus: Bool = false
 
     var appearanceMode: AppearanceMode {
         get { AppearanceMode(rawValue: appearanceModeRaw) ?? .system }
@@ -165,6 +170,10 @@ final class BrowserState {
 
     func toggleAnnotateMode() {
         setAnnotateMode(!annotateMode)
+    }
+
+    func requestAddressFocus() {
+        needsAddressFocus = true
     }
 
     /// Set lasso mode explicitly. The request ID is the WebView update trigger,
@@ -229,6 +238,8 @@ final class Pane {
             break
         case .simulator:
             break
+        case .android:
+            break
         case .editor:
             self.editorState = EditorState()
         }
@@ -287,19 +298,40 @@ final class Pane {
         }
     }
 
-    /// Stops every runtime-only resource owned by this pane. Model deletion and
-    /// individual pane closing must share this path so a new runtime pane kind
-    /// cannot be cleaned up in one flow but leaked in another.
-    func tearDownRuntimeResources() {
+    /// Stops every runtime-only resource owned by this pane. During a
+    /// transactional deletion, iOS capture is deliberately left alive until
+    /// the save succeeds: a rollback can keep presenting the same SwiftUI view,
+    /// so stopping it early would leave the restored pane dormant. The caller
+    /// clears its preference and evicts/stops the session immediately after a
+    /// successful save.
+    func tearDownRuntimeResources(preservingDevicePreference: Bool = false) {
         PersistentTerminalSession.killSession(for: self)
+        if preservingDevicePreference, kind == .device { return }
+        stopRuntimeResources(isDestructive: true)
+    }
+
+    /// Stops window-bound capture sessions without killing a terminal's tmux
+    /// identity. Persisted Extension panes use this when their window closes so
+    /// reopening can restore the same terminal session and pane configuration.
+    func suspendRuntimeResources() {
+        stopRuntimeResources(isDestructive: false)
+    }
+
+    private func stopRuntimeResources(isDestructive: Bool) {
         let paneID = id
         let paneKind = kind
         MainActor.assumeIsolated {
             switch paneKind {
             case .device:
-                DeviceCaptureRegistry.shared.remove(paneID: paneID)
+                if isDestructive {
+                    DeviceCaptureRegistry.shared.remove(paneID: paneID)
+                } else {
+                    DeviceCaptureRegistry.shared.suspend(paneID: paneID)
+                }
             case .simulator:
                 SimulatorRegistry.shared.remove(paneID: paneID)
+            case .android:
+                AndroidDeviceRegistry.shared.remove(paneID: paneID)
             case .terminal, .browser, .editor:
                 break
             }
@@ -453,10 +485,18 @@ final class Workspace {
             frontmostTerminalPaneID = pane.id
         }
         syncDefaultRootPathIfNeeded()
+        _ = modelContext?.saveReporting(operation: "Adding pane")
     }
 
-    func removePane(_ pane: Pane) {
-        pane.tearDownRuntimeResources()
+    @discardableResult
+    func removePane(
+        _ pane: Pane,
+        performSave: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        guard panes.count > 1 else { return false }
+        let context = modelContext
+        let deletedDevicePaneID = pane.kind == .device ? pane.id : nil
+        pane.tearDownRuntimeResources(preservingDevicePreference: true)
         panes.removeAll { $0.id == pane.id }
         if selectedPaneID == pane.id {
             selectedPaneID = sortedPanes.first(where: { !$0.isCollapsed })?.id ?? sortedPanes.first?.id
@@ -465,7 +505,25 @@ final class Workspace {
             frontmostTerminalPaneID = sortedPanes.first(where: { $0.kind == .terminal && !$0.isCollapsed })?.id
                 ?? sortedPanes.first(where: { $0.kind == .terminal })?.id
         }
-        syncDefaultRootPathIfNeeded()
+        syncDefaultRootPathForPaneTransfer()
+        guard let context else {
+            clearDeletedDevicePreference(paneID: deletedDevicePaneID)
+            return true
+        }
+        guard context.saveReporting(
+            operation: "Removing pane",
+            rollbackOnFailure: true,
+            performSave: performSave
+        ) else { return false }
+        clearDeletedDevicePreference(paneID: deletedDevicePaneID)
+        return true
+    }
+
+    private func clearDeletedDevicePreference(paneID: UUID?) {
+        guard let paneID else { return }
+        MainActor.assumeIsolated {
+            DeviceCaptureRegistry.shared.clearPreference(paneID: paneID)
+        }
     }
 
     func setFrontmostTerminalPaneID(_ paneID: UUID?) {
@@ -692,12 +750,24 @@ final class Workspace {
     }
 
     func syncDefaultRootPathIfNeeded(using pane: Pane? = nil) {
+        syncDefaultRootPathIfNeeded(using: pane, save: true)
+    }
+
+    /// Re-evaluates an automatic root as part of a larger pane-transfer
+    /// transaction. The caller owns the single save/rollback for the move.
+    func syncDefaultRootPathForPaneTransfer() {
+        syncDefaultRootPathIfNeeded(using: nil, save: false)
+    }
+
+    private func syncDefaultRootPathIfNeeded(using pane: Pane?, save: Bool) {
         guard rootPathSource == .automatic else { return }
 
         guard let rootTrackingTerminalPane else {
             if !rootPath.isEmpty {
                 rootPath = ""
-                _ = modelContext?.saveReporting()
+                if save {
+                    _ = modelContext?.saveReporting()
+                }
             }
             return
         }
@@ -716,7 +786,9 @@ final class Workspace {
 
         guard rootPath != nextRootPath else { return }
         rootPath = nextRootPath
-        _ = modelContext?.saveReporting()
+        if save {
+            _ = modelContext?.saveReporting()
+        }
     }
 
     func setRootPath(_ path: String) {
@@ -784,7 +856,11 @@ final class Workspace {
         return Dictionary(uniqueKeysWithValues: weights.map { ($0.0, $0.1 / totalWeight) })
     }
 
-    private func restoreFocusedPane() {
+    func prepareForPaneTransfer() {
+        restoreFocusedPane(save: false)
+    }
+
+    private func restoreFocusedPane(save: Bool = true) {
         guard focusedPaneID != nil else { return }
 
         let fallbackFraction = 1.0 / Double(max(panes.count, 1))
@@ -814,7 +890,9 @@ final class Workspace {
                 ?? sortedPanes.first(where: { $0.kind == .terminal })?.id
         }
 
-        _ = modelContext?.saveReporting()
+        if save {
+            _ = modelContext?.saveReporting()
+        }
     }
 
     private func resizePanePair(leadingID: UUID, trailingID: UUID) -> (Pane, Pane)? {

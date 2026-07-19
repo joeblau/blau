@@ -4,6 +4,67 @@ import XCTest
 @testable import Pilot
 
 final class DeviceCaptureLifecycleTests: XCTestCase {
+    func testIOSDiscoveryRejectsGenericThirdPartyMuxedCaptureDevice() {
+        XCTAssertFalse(IOSCaptureDiscoveryPolicy.includes(
+            name: "USB Video",
+            modelID: "Cam Link 4K",
+            manufacturer: "Elgato",
+            isMuxed: true,
+            transportType: Int32(bitPattern: 0x7573_6220)
+        ))
+    }
+
+    func testIOSDiscoveryKeepsRenamedAppleUSBMuxedDevice() {
+        XCTAssertTrue(IOSCaptureDiscoveryPolicy.includes(
+            name: "Joe's Phone",
+            modelID: "Mobile Device",
+            manufacturer: "Apple Inc.",
+            isMuxed: true,
+            transportType: Int32(bitPattern: 0x7573_6220)
+        ))
+    }
+
+    func testIOSDiscoveryRejectsGenericAppleVirtualDevice() {
+        XCTAssertFalse(IOSCaptureDiscoveryPolicy.includes(
+            name: "Virtual Camera",
+            modelID: "Virtual Camera",
+            manufacturer: "Apple Inc.",
+            isMuxed: true,
+            transportType: Int32(bitPattern: 0x7669_7274)
+        ))
+    }
+
+    func testIOSDiscoveryKeepsExplicitIPadVideoRepresentation() {
+        XCTAssertTrue(IOSCaptureDiscoveryPolicy.includes(
+            name: "Design iPad",
+            modelID: "iPad14,6",
+            manufacturer: "",
+            isMuxed: false,
+            transportType: 0
+        ))
+    }
+
+    func testIOSDiscoveryDoesNotTreatBIOSAsIOSIdentity() {
+        XCTAssertFalse(IOSCaptureDiscoveryPolicy.includes(
+            name: "BIOS Capture",
+            modelID: "Video",
+            manufacturer: "",
+            isMuxed: true,
+            transportType: Int32(bitPattern: 0x7573_6220)
+        ))
+    }
+
+    func testIOSAudioPairingRequiresExactUniqueID() {
+        XCTAssertTrue(IOSCaptureAudioPairingPolicy.matches(
+            videoUniqueID: "phone-a",
+            audioUniqueID: "phone-a"
+        ))
+        XCTAssertFalse(IOSCaptureAudioPairingPolicy.matches(
+            videoUniqueID: "phone-a",
+            audioUniqueID: "phone-b"
+        ))
+    }
+
     func testScreenshotTimesOutWithRecoverableError() async {
         let coordinator = CaptureCoordinator()
         do {
@@ -106,6 +167,122 @@ final class DeviceCaptureLifecycleTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: atomic) }
         try Data([1]).write(to: atomic, options: .withoutOverwriting)
         XCTAssertThrowsError(try Data([2]).write(to: atomic, options: .withoutOverwriting))
+    }
+
+    @MainActor
+    func testDevicePreferencesAreScopedToPaneID() throws {
+        let suiteName = "app.blau.pilot.tests.device-preferences.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let firstPaneID = UUID()
+        let secondPaneID = UUID()
+        defaults.set("first-device", forKey: DeviceCaptureSession.preferenceKey(for: firstPaneID))
+        defaults.set("First iPhone", forKey: DeviceCaptureSession.preferenceNameKey(for: firstPaneID))
+        defaults.set("second-device", forKey: DeviceCaptureSession.preferenceKey(for: secondPaneID))
+        defaults.set("Second iPhone", forKey: DeviceCaptureSession.preferenceNameKey(for: secondPaneID))
+
+        let firstSession = DeviceCaptureSession(paneID: firstPaneID, defaults: defaults)
+        let secondSession = DeviceCaptureSession(paneID: secondPaneID, defaults: defaults)
+
+        XCTAssertEqual(firstSession.preferredDeviceUniqueID, "first-device")
+        XCTAssertEqual(firstSession.preferredDeviceName, "First iPhone")
+        XCTAssertEqual(secondSession.preferredDeviceUniqueID, "second-device")
+        XCTAssertEqual(secondSession.preferredDeviceName, "Second iPhone")
+    }
+
+    @MainActor
+    func testSessionRestoresPersistedDevicePreference() throws {
+        let suiteName = "app.blau.pilot.tests.device-preference-restore.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let paneID = UUID()
+        let preferenceKey = DeviceCaptureSession.preferenceKey(for: paneID)
+        let preferenceNameKey = DeviceCaptureSession.preferenceNameKey(for: paneID)
+        defaults.set("saved-device-id", forKey: preferenceKey)
+        defaults.set("Joe's iPhone", forKey: preferenceNameKey)
+
+        let session = DeviceCaptureSession(paneID: paneID, defaults: defaults)
+
+        XCTAssertEqual(session.preferredDeviceUniqueID, "saved-device-id")
+        XCTAssertEqual(session.preferredDeviceName, "Joe's iPhone")
+    }
+
+    @MainActor
+    func testChooseAnotherDeviceClearsPersistedPreference() throws {
+        let suiteName = "app.blau.pilot.tests.device-preference-clear.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let paneID = UUID()
+        let preferenceKey = DeviceCaptureSession.preferenceKey(for: paneID)
+        let preferenceNameKey = DeviceCaptureSession.preferenceNameKey(for: paneID)
+        defaults.set("old-device-id", forKey: preferenceKey)
+        defaults.set("Old iPhone", forKey: preferenceNameKey)
+        let session = DeviceCaptureSession(paneID: paneID, defaults: defaults)
+
+        session.chooseAnotherDevice()
+
+        XCTAssertNil(session.preferredDeviceUniqueID)
+        XCTAssertNil(session.preferredDeviceName)
+        XCTAssertNil(defaults.object(forKey: preferenceKey))
+        XCTAssertNil(defaults.object(forKey: preferenceNameKey))
+        XCTAssertEqual(session.status, .picking)
+    }
+
+    @MainActor
+    func testRegistryDestructiveRemoveClearsStandardDevicePreference() {
+        let paneID = UUID()
+        let preferenceKey = DeviceCaptureSession.preferenceKey(for: paneID)
+        let preferenceNameKey = DeviceCaptureSession.preferenceNameKey(for: paneID)
+        let defaults = UserDefaults.standard
+        let registry = DeviceCaptureRegistry.shared
+        defer {
+            registry.remove(paneID: paneID)
+            defaults.removeObject(forKey: preferenceKey)
+            defaults.removeObject(forKey: preferenceNameKey)
+        }
+
+        defaults.set("removed-device-id", forKey: preferenceKey)
+        defaults.set("Removed iPhone", forKey: preferenceNameKey)
+        let session = registry.session(for: paneID)
+        XCTAssertEqual(session.preferredDeviceUniqueID, "removed-device-id")
+        XCTAssertEqual(session.preferredDeviceName, "Removed iPhone")
+
+        registry.remove(paneID: paneID)
+
+        XCTAssertNil(defaults.object(forKey: preferenceKey))
+        XCTAssertNil(defaults.object(forKey: preferenceNameKey))
+        XCTAssertNil(registry.existingSession(for: paneID))
+    }
+
+    @MainActor
+    func testRegistrySuspendPreservesStandardDevicePreference() {
+        let paneID = UUID()
+        let preferenceKey = DeviceCaptureSession.preferenceKey(for: paneID)
+        let preferenceNameKey = DeviceCaptureSession.preferenceNameKey(for: paneID)
+        let defaults = UserDefaults.standard
+        let registry = DeviceCaptureRegistry.shared
+        defer {
+            registry.remove(paneID: paneID)
+            defaults.removeObject(forKey: preferenceKey)
+            defaults.removeObject(forKey: preferenceNameKey)
+        }
+
+        defaults.set("suspended-device-id", forKey: preferenceKey)
+        defaults.set("Suspended iPhone", forKey: preferenceNameKey)
+        let original = registry.session(for: paneID)
+
+        registry.suspend(paneID: paneID)
+
+        XCTAssertEqual(defaults.string(forKey: preferenceKey), "suspended-device-id")
+        XCTAssertEqual(defaults.string(forKey: preferenceNameKey), "Suspended iPhone")
+        XCTAssertTrue(registry.existingSession(for: paneID) === original)
+        let restored = registry.session(for: paneID)
+        XCTAssertTrue(restored === original)
+        XCTAssertEqual(restored.preferredDeviceUniqueID, "suspended-device-id")
+        XCTAssertEqual(restored.preferredDeviceName, "Suspended iPhone")
     }
 
     private func assertFrameError(

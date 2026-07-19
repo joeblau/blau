@@ -50,6 +50,21 @@ struct FileFinderTests {
         #expect(results.first?.name == "EditorPaneView.swift")
     }
 
+    /// Typing the semantic filename without its extension should beat a longer
+    /// prefix match, just as quick-open does in full IDEs.
+    @Test("An exact filename stem outranks a longer filename prefix")
+    func exactFilenameStemOutranksLongerPrefix() {
+        let files = [
+            item("Sources/Production.generated.swift"),
+            item(".github/workflows/production.yml"),
+            item("docs/production-notes.md"),
+        ]
+
+        let results = FileFinder.filter(items: files, query: "production")
+
+        #expect(results.first?.relativePath == ".github/workflows/production.yml")
+    }
+
     /// A query containing "/" matches against the full relative path.
     @Test("A slash query matches the full path")
     func slashQueryMatchesPath() {
@@ -156,5 +171,49 @@ struct FileFinderTests {
         #expect(indexed.contains {
             $0.relativePath == "Sources/Features/Search/NestedResult.swift"
         }, "Indexed paths: \(indexed.map(\.relativePath))")
+    }
+
+    /// The fast Git-backed path must be just as recursive as the filesystem
+    /// fallback and must include both tracked and new, untracked project files.
+    @Test("A Git workspace indexes tracked and untracked nested files recursively")
+    func indexesNestedGitWorkspace() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("BlauGitFileFinderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        try runGit(["init", "--quiet"], at: root)
+
+        let tracked = root.appendingPathComponent("Sources/App/Tracked.swift")
+        let untracked = root.appendingPathComponent("Tests/Deep/UntrackedSpec.swift")
+        try fileManager.createDirectory(
+            at: tracked.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
+            at: untracked.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "struct Tracked {}\n".write(to: tracked, atomically: true, encoding: .utf8)
+        try "struct UntrackedSpec {}\n".write(to: untracked, atomically: true, encoding: .utf8)
+        try runGit(["add", "Sources/App/Tracked.swift"], at: root)
+
+        let indexed = FileFinder.buildIndex(root: root.path)
+        let paths = Set(indexed.map(\.relativePath))
+
+        #expect(paths.contains("Sources/App/Tracked.swift"))
+        #expect(paths.contains("Tests/Deep/UntrackedSpec.swift"))
+    }
+
+    private func runGit(_ arguments: [String], at root: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", root.path] + arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
     }
 }

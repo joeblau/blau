@@ -9,7 +9,8 @@ enum SettingsTab {
 }
 
 /// Inspector "Usage" tab. Provider cards show plan usage windows (utilization + reset
-/// countdown) and credits, read from local `claude`, `codex`, and `grok` CLI sessions.
+/// countdown) and credits, read from local `claude`, `codex`, `grok`, and `kimi`
+/// CLI sessions.
 /// A not-signed-in card links to the Usage settings section for setup help.
 struct UsageListView: View {
     let store: UsageStore
@@ -37,6 +38,14 @@ struct UsageListView: View {
                         tint: .green,
                         cli: "codex",
                         state: store.openAI,
+                        openSetup: openSetup
+                    )
+                    ProviderCard(
+                        title: "Kimi",
+                        systemImage: "moon.stars.fill",
+                        tint: .blue,
+                        cli: "kimi login",
+                        state: store.moonshot,
                         openSetup: openSetup
                     )
                     ProviderCard(
@@ -198,32 +207,62 @@ private struct ProviderCard: View {
     }
 
     private func creditsRow(_ credits: CreditInfo) -> some View {
-        HStack {
-            Text("Credits")
-                .scaledFont(size: 11, weight: .medium)
-                .foregroundStyle(.secondary)
-            Spacer()
+        let hasMonthlyAllowance = credits.unlimited || credits.used != nil
+            || credits.limit != nil || credits.utilization != nil
+        return VStack(spacing: 4) {
+            if let balance = credits.balance {
+                creditLine(
+                    label: hasMonthlyAllowance ? "Balance" : "Credits",
+                    value: creditAmount(balance, unit: credits.unit)
+                )
+            }
             if credits.unlimited {
-                Text("Unlimited")
-                    .scaledFont(size: 11, weight: .semibold)
+                if let used = credits.used {
+                    creditLine(
+                        label: "Used this month",
+                        value: creditAmount(used, unit: credits.unit)
+                    )
+                }
+                creditLine(
+                    label: credits.balance == nil && credits.used == nil
+                        ? "Credits"
+                        : "Monthly limit",
+                    value: "Unlimited"
+                )
             } else if let used = credits.used, let limit = credits.limit {
                 let usedText = creditAmount(used, unit: credits.unit)
                 let limitText = creditAmount(limit, unit: credits.unit)
-                Text("\(usedText) / \(limitText) used")
-                    .scaledFont(size: 11, design: .monospaced)
-            } else if let balance = credits.balance {
-                Text(creditAmount(balance, unit: credits.unit))
-                    .scaledFont(size: 11, design: .monospaced)
+                creditLine(
+                    label: credits.balance == nil ? "Credits" : "Monthly",
+                    value: "\(usedText) / \(limitText) used"
+                )
             } else if let utilization = credits.utilization {
-                Text("\(Int((utilization * 100).rounded()))% used")
-                    .scaledFont(size: 11, design: .monospaced)
+                creditLine(
+                    label: credits.balance == nil ? "Credits" : "Monthly",
+                    value: "\(Int((utilization * 100).rounded()))% used"
+                )
             } else if let used = credits.used {
-                Text("\(creditAmount(used, unit: credits.unit)) used")
-                    .scaledFont(size: 11, design: .monospaced)
+                creditLine(
+                    label: credits.balance == nil ? "Credits" : "Monthly",
+                    value: "\(creditAmount(used, unit: credits.unit)) used"
+                )
             } else if let limit = credits.limit {
-                Text("\(creditAmount(limit, unit: credits.unit)) limit")
-                    .scaledFont(size: 11, design: .monospaced)
+                creditLine(
+                    label: credits.balance == nil ? "Credits" : "Monthly",
+                    value: "\(creditAmount(limit, unit: credits.unit)) limit"
+                )
             }
+        }
+    }
+
+    private func creditLine(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .scaledFont(size: 11, weight: .medium)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .scaledFont(size: 11, design: .monospaced)
         }
     }
 

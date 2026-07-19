@@ -63,14 +63,31 @@ private final class TranscriptionReadiness: @unchecked Sendable {
 private final class TranscriptionStopRelay: @unchecked Sendable {
     private let lock = NSLock()
     private var operation: (@Sendable () async -> Void)?
+    private var completion: TranscriptionStopCompletion?
 
     func install(_ operation: @escaping @Sendable () async -> Void) {
         lock.withLock { self.operation = operation }
     }
 
     func stop() async {
-        let operation: (@Sendable () async -> Void)? = lock.withLock { self.operation }
-        await operation?()
+        let request = lock.withLock { () -> (
+            operation: (@Sendable () async -> Void)?,
+            completion: TranscriptionStopCompletion?
+        ) in
+            if let completion { return (nil, completion) }
+            guard let operation else { return (nil, nil) }
+            let completion = TranscriptionStopCompletion()
+            self.operation = nil
+            self.completion = completion
+            return (operation, completion)
+        }
+
+        if let operation = request.operation {
+            await operation()
+            request.completion?.resolve()
+        } else {
+            await request.completion?.wait()
+        }
     }
 }
 
@@ -138,7 +155,7 @@ final class TranscriptionService: @unchecked Sendable {
     private var modelCancellationRequested = false
     private var modelCancellationMessage: String?
 
-    private var streamHandle: TranscriptionStreamHandle?
+    private var streamStopRelay: TranscriptionStopRelay?
     private var streamTask: Task<Void, Never>?
     private var streamReadiness: TranscriptionReadiness?
     private var transcriptionGeneration = 0
@@ -402,7 +419,7 @@ final class TranscriptionService: @unchecked Sendable {
             return false
         }
         stopRelay.install(handle.stop)
-        streamHandle = handle
+        streamStopRelay = stopRelay
         streamReadiness = readiness
 
         let task = Task { [weak self] in
@@ -457,7 +474,7 @@ final class TranscriptionService: @unchecked Sendable {
     ) {
         guard generation == transcriptionGeneration, streamReadiness === readiness else { return }
         let wasReady = readiness.currentOutcome == .ready
-        streamHandle = nil
+        streamStopRelay = nil
         streamTask = nil
         streamReadiness = nil
         isTranscribing = false
@@ -508,14 +525,14 @@ final class TranscriptionService: @unchecked Sendable {
         }
 
         let readiness = streamReadiness
-        let handle = streamHandle
+        let stopRelay = streamStopRelay
         let task = streamTask
         streamReadiness = nil
-        streamHandle = nil
+        streamStopRelay = nil
         streamTask = nil
         readiness?.resolve(.cancelled)
         task?.cancel()
-        await handle?.stop()
+        await stopRelay?.stop()
         if let task { await task.value }
         if stopGeneration == transcriptionGeneration {
             deactivateAudioSessionIfOwned(by: stoppedGeneration)

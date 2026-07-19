@@ -89,6 +89,9 @@ final class EnvMaskController: NSObject, @preconcurrency NSLayoutManagerDelegate
             revealedKeys.insert(key)
         }
         refresh()
+        if let textView {
+            NSAccessibility.post(element: textView, notification: .valueChanged)
+        }
     }
 
     /// The secret whose value sits on the same line as `charIndex`, if any.
@@ -115,10 +118,6 @@ final class EnvMaskController: NSObject, @preconcurrency NSLayoutManagerDelegate
         let newMasked = matches
             .filter { !revealedKeys.contains($0.key) }
             .map(\.valueRange)
-
-        // NSLayoutManager only substitutes displayed glyphs; NSTextView would
-        // otherwise expose its plaintext storage through AppKit accessibility.
-        textView.setAccessibilityValue(EnvSecret.redacted(string, revealing: revealedKeys))
 
         // Affordance rects (lock/tooltip) may move even when the masked set is
         // unchanged, so refresh them before the early-out.

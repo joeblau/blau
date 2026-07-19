@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 @testable import Pilot
 
@@ -35,12 +36,21 @@ struct PaneInitRegressionTests {
         #expect(pane.kind == .terminal)
     }
 
+    // R7: Android init has no persistent per-kind state; runtime state is
+    // owned by AndroidDeviceRegistry.
+    @Test
+    func androidKindInitHasNoPerKindState() {
+        let pane = Pane(kind: .android)
+        #expect(pane.kind == .android)
+        #expect(pane.browserState == nil)
+    }
+
     // R5: PaneKind cases remain stable. Adding a new kind requires updating this
     // list and adding an initialization-invariant test above.
     @Test
     func paneKindCaseCount() {
-        #expect(PaneKind.allCases.count == 5)
-        #expect(Set(PaneKind.allCases) == Set([.terminal, .browser, .device, .simulator, .editor]))
+        #expect(PaneKind.allCases.count == 6)
+        #expect(Set(PaneKind.allCases) == Set([.terminal, .browser, .device, .simulator, .android, .editor]))
     }
 
     // R6: PaneKind raw values are stable (SwiftData persistence compat)
@@ -50,6 +60,17 @@ struct PaneInitRegressionTests {
         #expect(PaneKind.browser.rawValue == "browser")
         #expect(PaneKind.device.rawValue == "device")
         #expect(PaneKind.simulator.rawValue == "simulator")
+        #expect(PaneKind.android.rawValue == "android")
         #expect(PaneKind.editor.rawValue == "editor")
+    }
+
+    @Test("Wrapped editors remove horizontal displacement and preserve vertical scroll")
+    func wrappedEditorNormalizesScrollPosition() {
+        let normalized = EditorViewportPolicy.normalizedWrappedScrollPosition(
+            CGPoint(x: 84, y: 512)
+        )
+
+        #expect(normalized == CGPoint(x: 0, y: 512))
+        #expect(EditorViewportPolicy.normalizedWrappedScrollPosition(nil) == nil)
     }
 }

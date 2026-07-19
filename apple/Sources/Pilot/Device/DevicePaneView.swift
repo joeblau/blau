@@ -2,23 +2,86 @@ import AVFoundation
 import AppKit
 import SwiftUI
 
+/// Tracks live SwiftUI presentations separately from the capture registry.
+/// During a cross-window pane drop, SwiftUI can mount the destination before
+/// unmounting the source (or vice versa); the short handoff delay prevents the
+/// departing presentation from stopping the session now owned by the arrival.
+@MainActor
+private final class DevicePanePresentationCoordinator {
+    static let shared = DevicePanePresentationCoordinator()
+
+    private var presentationIDsByPane: [UUID: Set<UUID>] = [:]
+    private var pendingSuspensions: [UUID: Task<Void, Never>] = [:]
+
+    func activate(paneID: UUID, presentationID: UUID) {
+        pendingSuspensions.removeValue(forKey: paneID)?.cancel()
+        presentationIDsByPane[paneID, default: []].insert(presentationID)
+    }
+
+    func deactivate(paneID: UUID, presentationID: UUID) {
+        presentationIDsByPane[paneID]?.remove(presentationID)
+        if presentationIDsByPane[paneID]?.isEmpty == true {
+            presentationIDsByPane.removeValue(forKey: paneID)
+        }
+        guard presentationIDsByPane[paneID] == nil else { return }
+
+        pendingSuspensions.removeValue(forKey: paneID)?.cancel()
+        pendingSuspensions[paneID] = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled,
+                  let self,
+                  self.presentationIDsByPane[paneID] == nil else { return }
+            self.pendingSuspensions.removeValue(forKey: paneID)
+            DeviceCaptureRegistry.shared.suspend(paneID: paneID)
+        }
+    }
+}
+
 struct DevicePaneView: View {
     let paneID: UUID
     let isActive: Bool
     let isSelected: Bool
+    var isCollapsed: Bool = false
 
     @State private var toast: DeviceToast?
     @State private var toastDismissWorkItem: DispatchWorkItem?
+    @State private var presentationID = UUID()
 
     var body: some View {
+        Group {
+            if isPresentationActive {
+                activeContent
+            } else {
+                PreviewCanvasBackground()
+            }
+        }
+        .onAppear {
+            updatePresentation(isActive: isPresentationActive)
+        }
+        .onChange(of: isPresentationActive) { _, isPresented in
+            updatePresentation(isActive: isPresented)
+        }
+        .onDisappear {
+            DevicePanePresentationCoordinator.shared.deactivate(
+                paneID: paneID,
+                presentationID: presentationID
+            )
+            toastDismissWorkItem?.cancel()
+        }
+    }
+
+    private var activeContent: some View {
         let session = DeviceCaptureRegistry.shared.session(for: paneID)
-        ZStack {
+        return ZStack {
             PreviewCanvasBackground()
-            DeviceCaptureContainerView(session: session)
-            DeviceStatusOverlay(session: session)
-                .opacity(session.status == .streaming ? 0 : 1)
-                .allowsHitTesting(session.status != .streaming)
-                .animation(.easeInOut(duration: 0.2), value: session.status)
+            switch session.status {
+            case .streaming:
+                DeviceCaptureContainerView(session: session)
+            case .picking:
+                IOSDevicePickerView(session: session, isPolling: isActive && !isCollapsed)
+            case .connecting, .failed:
+                DeviceStatusOverlay(session: session)
+            }
 
             if let toast {
                 DeviceToastView(toast: toast)
@@ -40,6 +103,27 @@ struct DevicePaneView: View {
         }
     }
 
+    private var isPresentationActive: Bool {
+        isActive && !isCollapsed
+    }
+
+    private func updatePresentation(isActive: Bool) {
+        if isActive {
+            DevicePanePresentationCoordinator.shared.activate(
+                paneID: paneID,
+                presentationID: presentationID
+            )
+            DeviceCaptureRegistry.shared.session(for: paneID).start()
+        } else {
+            DevicePanePresentationCoordinator.shared.deactivate(
+                paneID: paneID,
+                presentationID: presentationID
+            )
+            toastDismissWorkItem?.cancel()
+            toast = nil
+        }
+    }
+
     private func flash(_ content: DeviceToast, duration: TimeInterval = 1.0) {
         toastDismissWorkItem?.cancel()
         withAnimation(.snappy(duration: 0.18)) {
@@ -52,6 +136,178 @@ struct DevicePaneView: View {
         }
         toastDismissWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
+    }
+}
+
+/// Shared iPhone/iPad capture controls used by both Pilot windows.
+struct DeviceToolbarControls: View {
+    let paneID: UUID
+
+    var body: some View {
+        let session = DeviceCaptureRegistry.shared.session(for: paneID)
+        let isStreaming = session.status == .streaming
+
+        Button {
+            session.toggleRecording()
+        } label: {
+            Label(
+                session.isRecording ? "Stop Recording" : "Record Screen",
+                systemImage: session.isRecording ? "stop.circle.fill" : "record.circle"
+            )
+            .foregroundStyle(session.isRecording ? .red : .primary)
+        }
+        .disabled(!isStreaming)
+        .help(session.isRecording ? "Stop recording" : "Record the iPhone screen")
+
+        Button {
+            session.takeScreenshot()
+        } label: {
+            Label("Take Screenshot", systemImage: "camera")
+        }
+        .disabled(!isStreaming)
+        .help("Save a screenshot of the iPhone screen to the Desktop")
+
+        Button {
+            session.copyScreenshotToClipboard()
+        } label: {
+            Label("Copy Screenshot", systemImage: "doc.on.clipboard")
+        }
+        .disabled(!isStreaming)
+        .help("Copy a screenshot of the iPhone screen to the clipboard")
+
+        Button {
+            session.chooseAnotherDevice()
+        } label: {
+            Label("Choose Device", systemImage: "list.bullet")
+        }
+        .disabled(session.isCameraPermissionDenied)
+        .help("Pick a different iPhone or iPad")
+
+        Button {
+            SafariWebInspector.open()
+        } label: {
+            Label("Developer Tools", systemImage: "hammer")
+        }
+        .help("Open Safari Web Inspector to debug this device")
+    }
+}
+
+// MARK: - Picker
+
+private struct IOSDevicePickerView: View {
+    let session: DeviceCaptureSession
+    let isPolling: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Label("iOS Device", systemImage: "apps.iphone")
+                    .font(.headline)
+                Spacer()
+                if session.isRefreshing {
+                    ProgressView().controlSize(.small)
+                }
+                Button {
+                    session.refreshDevices()
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .disabled(session.isRefreshing)
+                .help("Re-scan connected iPhones and iPads")
+            }
+            .padding(12)
+            Divider()
+
+            if let preferredName = session.preferredDeviceName {
+                Label("Waiting for \(preferredName)", systemImage: "cable.connector")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                Divider()
+            }
+
+            if session.devices.isEmpty {
+                emptyState
+            } else {
+                List {
+                    ForEach(session.devices) { device in
+                        Button {
+                            session.connect(device)
+                        } label: {
+                            deviceRow(device)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .listStyle(.inset)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .task(id: isPolling) {
+            guard isPolling else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard session.status == .picking, !session.isRefreshing else { continue }
+                session.refreshDevices()
+            }
+        }
+    }
+
+    private func deviceRow(_ device: IOSCaptureDevice) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "apps.iphone")
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(device.name)
+                if let detail = device.detail {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 3)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            if session.isRefreshing {
+                ProgressView()
+                Text("Looking for devices…")
+                    .foregroundStyle(.secondary)
+            } else if let error = session.lastError {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 34))
+                    .foregroundStyle(.secondary)
+                Text("Couldn't list devices").font(.headline)
+                Text(error)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            } else {
+                Image(systemName: "apps.iphone")
+                    .font(.system(size: 34))
+                    .foregroundStyle(.secondary)
+                Text("No iOS devices found").font(.headline)
+                Text("Connect an iPhone or iPad over USB, trust this Mac, and keep its screen awake.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -82,12 +338,8 @@ private struct DeviceStatusOverlay: View {
     var body: some View {
         Group {
             switch session.status {
-            case .waiting:
-                statusBlock(
-                    icon: "apps.iphone",
-                    title: "Connect an iPhone",
-                    detail: "Plug in an iPhone via USB and trust this Mac. The screen will mirror here, like QuickTime."
-                )
+            case .picking:
+                EmptyView()
             case .connecting:
                 statusBlock(
                     icon: "arrow.triangle.2.circlepath",
@@ -97,24 +349,57 @@ private struct DeviceStatusOverlay: View {
             case .streaming:
                 Color.clear
             case .failed(let message):
-                statusBlock(
-                    icon: "exclamationmark.triangle",
-                    title: "Capture failed",
-                    detail: message,
-                    // Self-heal polls in the background, but give the user an
-                    // immediate way out too — start() re-requests access and
-                    // re-attaches without waiting for the next poll tick.
-                    retry: { session.start() }
-                )
+                if session.isCameraPermissionDenied {
+                    permissionDeniedBlock(message: message)
+                } else {
+                    statusBlock(
+                        icon: "exclamationmark.triangle",
+                        title: "Capture failed",
+                        detail: message,
+                        // Self-heal polls in the background, but give the user
+                        // an immediate exact-device retry too.
+                        retry: { session.retry() },
+                        chooseAnother: { session.chooseAnotherDevice() }
+                    )
+                }
             }
         }
+    }
+
+    private func permissionDeniedBlock(message: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: "video.slash")
+                .scaledFont(size: 36)
+                .foregroundStyle(.secondary)
+            Text("Camera access required")
+                .font(.headline)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            HStack {
+                Button("Open Camera Settings") {
+                    session.openCameraPrivacySettings()
+                }
+                .buttonStyle(.borderedProminent)
+                Button("Check Again") {
+                    session.retry()
+                }
+            }
+            .padding(.top, 8)
+        }
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(PreviewCanvasBackground())
     }
 
     private func statusBlock(
         icon: String,
         title: String,
         detail: String?,
-        retry: (() -> Void)? = nil
+        retry: (() -> Void)? = nil,
+        chooseAnother: (() -> Void)? = nil
     ) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
@@ -129,10 +414,17 @@ private struct DeviceStatusOverlay: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
             }
-            if let retry {
-                Button("Retry", action: retry)
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 8)
+            if retry != nil || chooseAnother != nil {
+                HStack {
+                    if let retry {
+                        Button("Retry", action: retry)
+                            .buttonStyle(.borderedProminent)
+                    }
+                    if let chooseAnother {
+                        Button("Back to Devices", action: chooseAnother)
+                    }
+                }
+                .padding(.top, 8)
             }
         }
         .foregroundStyle(.white)
