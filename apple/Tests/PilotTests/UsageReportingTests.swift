@@ -171,6 +171,193 @@ struct UsageReportingTests {
         #expect(session.teamId == "team-1")
     }
 
+    @Test("Kimi accepts its current OAuth credential and identifies expired tokens")
+    func kimiOAuthCredential() throws {
+        let currentData = try #require("""
+        {
+          "access_token": "kimi-access-token",
+          "refresh_token": "kimi-refresh-token",
+          "expires_at": 1800000060,
+          "scope": "openid profile",
+          "token_type": "Bearer"
+        }
+        """.data(using: .utf8))
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+        let session = try #require(UsageSessions.KimiSession.parse(data: currentData))
+
+        #expect(session.accessToken == "kimi-access-token")
+        #expect(session.expiresAt == Date(timeIntervalSince1970: 1_800_000_060))
+        #expect(!session.isExpired(at: now))
+
+        let expiredData = try #require("""
+        {
+          "access_token": "expired-kimi-token",
+          "refresh_token": "expired-refresh-token",
+          "expires_at": 1799999999,
+          "token_type": "Bearer"
+        }
+        """.data(using: .utf8))
+        let expired = try #require(UsageSessions.KimiSession.parse(data: expiredData))
+        #expect(expired.isExpired(at: now))
+    }
+
+    @Test("Kimi maps weekly and detailed limits with absolute and relative resets")
+    func kimiUsageWindows() throws {
+        let receivedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let usage = UsageStore.parseKimiUsage([
+            "user": [
+                "membership": ["level": "LEVEL_STANDARD"],
+            ],
+            "usage": [
+                "used": "25",
+                "limit": 100,
+                "resetAt": 1_800_604_800,
+            ],
+            "limits": [
+                [
+                    "name": "Fast models",
+                    "detail": [
+                        "remaining": "60",
+                        "limit": "100",
+                        "resetIn": "3600",
+                    ],
+                ],
+                [
+                    "window": ["duration": 300, "timeUnit": "MINUTE"],
+                    "detail": [
+                        "used": 80,
+                        "limit": 200,
+                        "reset_time": "2027-01-16T08:00:00Z",
+                    ],
+                ],
+            ],
+        ], receivedAt: receivedAt)
+
+        #expect(usage.planLabel == "Moderato")
+        #expect(usage.windows.count == 3)
+        let weekly = try #require(usage.windows.first { $0.name == "Weekly limit" })
+        #expect(abs(weekly.utilization - 0.25) < 0.000_001)
+        #expect(weekly.resetsAt == Date(timeIntervalSince1970: 1_800_604_800))
+
+        let fast = try #require(usage.windows.first { $0.name == "Fast models" })
+        #expect(abs(fast.utilization - 0.4) < 0.000_001)
+        #expect(fast.resetsAt == receivedAt.addingTimeInterval(3_600))
+
+        let fiveHour = try #require(usage.windows.first { $0.name == "5h limit" })
+        #expect(abs(fiveHour.utilization - 0.4) < 0.000_001)
+        #expect(fiveHour.resetsAt == UsageStore.date("2027-01-16T08:00:00Z"))
+    }
+
+    @Test(
+        "Kimi maps membership levels to public plan names",
+        arguments: [
+            ("LEVEL_FREE", "Adagio"),
+            ("LEVEL_STANDARD", "Moderato"),
+            ("LEVEL_PLUS", "Allegretto"),
+            ("LEVEL_PREMIUM", "Allegro"),
+            ("LEVEL_ELITE", "Vivace"),
+        ]
+    )
+    func kimiMembershipPlan(level: String, expected: String) {
+        let usage = UsageStore.parseKimiUsage([
+            "user": [
+                "membership": ["level": level],
+            ],
+        ])
+
+        #expect(usage.planLabel == expected)
+    }
+
+    @Test("Kimi prefers an explicit plan title and hides unknown internal levels")
+    func kimiMembershipPlanFallbacks() {
+        let titled = UsageStore.parseKimiUsage([
+            "user": [
+                "membership": [
+                    "level": "LEVEL_FUTURE",
+                    "displayName": "Prestissimo",
+                ],
+            ],
+        ])
+        let unknown = UsageStore.parseKimiUsage([
+            "user": [
+                "membership": ["level": "LEVEL_FUTURE"],
+            ],
+        ])
+
+        #expect(titled.planLabel == "Prestissimo")
+        #expect(unknown.planLabel == nil)
+    }
+
+    @Test("Kimi maps its booster wallet and monthly USD allowance")
+    func kimiBoosterWallet() throws {
+        let usage = UsageStore.parseKimiUsage([
+            "boosterWallet": [
+                "balance": [
+                    "type": "BOOSTER",
+                    "amount": 250_000_000,
+                    "amountLeft": 125_000_000,
+                ],
+                "monthlyChargeLimitEnabled": true,
+                "monthlyChargeLimit": [
+                    "priceInCents": 5_000,
+                    "currency": "USD",
+                ],
+                "monthlyUsed": [
+                    "priceInCents": 1_234,
+                    "currency": "USD",
+                ],
+            ],
+        ])
+
+        let credits = try #require(usage.credits)
+        #expect(credits.balance == 1.25)
+        #expect(credits.used == 12.34)
+        #expect(credits.limit == 50)
+        #expect(credits.unit == .currency("USD"))
+        #expect(abs((credits.utilization ?? 0) - 0.2468) < 0.000_001)
+    }
+
+    @Test("Kimi treats a disabled monthly cap as unlimited and defaults spend to zero")
+    func kimiUnlimitedBoosterWallet() throws {
+        let usage = UsageStore.parseKimiUsage([
+            "boosterWallet": [
+                "balance": [
+                    "type": "BOOSTER",
+                    "amount": 20_000_000_000,
+                    "amountLeft": 10_000_000_000,
+                ],
+            ],
+        ])
+
+        let credits = try #require(usage.credits)
+        #expect(credits.balance == 100)
+        #expect(credits.used == 0)
+        #expect(credits.limit == nil)
+        #expect(credits.unlimited)
+        #expect(credits.unit == .currency("USD"))
+    }
+
+    @Test("Kimi omits unusable rows and clamps out-of-range utilization")
+    func kimiMalformedLimits() throws {
+        let usage = UsageStore.parseKimiUsage([
+            "usage": ["used": 1, "limit": 0],
+            "limits": [
+                ["name": "Missing limit", "detail": ["used": 10]],
+                ["name": "Invalid limit", "detail": ["used": 10, "limit": "none"]],
+                ["name": "Zero limit", "detail": ["used": 10, "limit": 0]],
+                ["name": "Over quota", "detail": ["used": 150, "limit": 100]],
+                ["name": "Negative usage", "detail": ["used": -10, "limit": 100]],
+            ],
+        ])
+
+        #expect(usage.windows.count == 2)
+        let over = try #require(usage.windows.first { $0.name == "Over quota" })
+        #expect(over.utilization == 1)
+        let negative = try #require(usage.windows.first { $0.name == "Negative usage" })
+        #expect(negative.utilization == 0)
+    }
+
     @Test("Codex labels additional multi-window pools so they are distinguishable")
     func codexLabelsAdditionalPools() throws {
         let usage = UsageStore.parseCodexUsage([

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftData
 import Testing
@@ -5,6 +6,14 @@ import Testing
 
 @MainActor
 struct NotesSecurityBoundaryTests {
+    private final class TextChangeCounter: NSObject, NSTextViewDelegate {
+        var notificationCount = 0
+
+        func textDidChange(_ notification: Notification) {
+            notificationCount += 1
+        }
+    }
+
     @Test("Env values are redacted in secondary presentation")
     func redactsEnvValues() {
         let body = "API_TOKEN=secret-value\nOrdinary prose"
@@ -35,5 +44,27 @@ struct NotesSecurityBoundaryTests {
         let saved = try #require(try context.fetch(FetchDescriptor<Note>()).first)
         #expect(saved.body == "API_TOKEN=secret-value")
         #expect(saved.displayTitle == "API_TOKEN=••••••••")
+    }
+
+    @Test("Refreshing the visual mask cannot edit or re-enter the text view")
+    func maskRefreshPreservesTextStorage() throws {
+        let scrollView = MultiCursorTextView.scrollableTextView()
+        let textView = try #require(scrollView.documentView as? MultiCursorTextView)
+        let maskController = EnvMaskController()
+        let counter = TextChangeCounter()
+        let plaintext = "API_TOKEN=secret-value\nOrdinary prose"
+
+        textView.string = plaintext
+        textView.delegate = counter
+        textView.maskController = maskController
+        maskController.textView = textView
+        textView.layoutManager?.delegate = maskController
+
+        maskController.refresh()
+        maskController.refresh()
+
+        #expect(textView.string == plaintext)
+        #expect(counter.notificationCount == 0)
+        #expect(textView.accessibilityValue() == "API_TOKEN=••••••••\nOrdinary prose")
     }
 }

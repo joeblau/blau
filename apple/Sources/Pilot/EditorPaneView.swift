@@ -3,6 +3,16 @@ import CodeEditLanguages
 import CodeEditSourceEditor
 import SwiftUI
 
+enum EditorViewportPolicy {
+    /// Soft-wrapped text has no horizontal scrollable extent. Preserve the
+    /// vertical position while removing any elastic/restored X displacement.
+    static func normalizedWrappedScrollPosition(_ position: CGPoint?) -> CGPoint? {
+        guard var position else { return nil }
+        position.x = 0
+        return position
+    }
+}
+
 /// A lightweight code editor pane: a fuzzy file finder overlaid on top of a
 /// CodeEditSourceEditor buffer. Mirrors `BrowserPaneView`'s contract — a
 /// SwiftData-backed state object plus the `isActive`/`isSelected`/`onSelect`
@@ -164,6 +174,8 @@ struct EditorPaneView: View {
                 ),
                 state: $editorState
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
             .onChange(of: text) {
                 // SourceEditor mutates `text` while loading too; only flag dirty on
                 // a real edit (a file is backing the buffer and we're not mid-load).
@@ -173,6 +185,9 @@ struct EditorPaneView: View {
                     isDirty = true
                     onSelect()
                 }
+            }
+            .onChange(of: editorState.scrollPosition) {
+                normalizeWrappedEditorScrollPosition()
             }
         } else if !showFinder {
             emptyState
@@ -220,7 +235,7 @@ struct EditorPaneView: View {
             resultsBody
                 .frame(maxHeight: 360)
         }
-        .frame(width: 520)
+        .frame(maxWidth: 520)
         .frame(maxHeight: 360)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
         .overlay(
@@ -229,8 +244,20 @@ struct EditorPaneView: View {
         )
         .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 12)
         .padding(.top, 60)             // float the card toward the top third
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// CodeEdit persists both axes of its clip-view origin, even when wrapping
+    /// hides the horizontal scroller. A sideways trackpad gesture can therefore
+    /// leave wrapped text shifted underneath the floating gutter. Wrapped code
+    /// has no valid horizontal offset, so retain only the vertical position.
+    private func normalizeWrappedEditorScrollPosition() {
+        let current = editorState.scrollPosition
+        let normalized = EditorViewportPolicy.normalizedWrappedScrollPosition(current)
+        guard current != normalized else { return }
+        editorState.scrollPosition = normalized
     }
 
     @ViewBuilder

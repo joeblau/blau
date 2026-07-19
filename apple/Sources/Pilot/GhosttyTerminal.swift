@@ -515,7 +515,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     }
 
     override func removeFromSuperview() {
-        Self.registry.removeValue(forKey: pane.id)
+        if Self.registry[pane.id] === self { Self.registry.removeValue(forKey: pane.id) }
         pendingSurfaceResize?.cancel()
         pendingSurfaceResize = nil
         tearDownWindowObservers()

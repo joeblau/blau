@@ -57,6 +57,7 @@ final class FileFinder {
     // exact path component can still beat a very weak/scattered basename match.
     nonisolated private static let basenameLocationBonus = 240
     nonisolated private static let basenameExactBonus = 2_200
+    nonisolated private static let basenameStemExactBonus = 1_900
     nonisolated private static let basenamePrefixBonus = 1_400
     nonisolated private static let basenameSubstringBonus = 800
     nonisolated private static let pathExactBonus = 1_800
@@ -284,6 +285,8 @@ final class FileFinder {
         if isBasename {
             if foldedCandidate == term.folded {
                 tierBonus = basenameExactBonus
+            } else if (foldedCandidate as NSString).deletingPathExtension == term.folded {
+                tierBonus = basenameStemExactBonus
             } else if foldedCandidate.hasPrefix(term.folded) {
                 tierBonus = basenamePrefixBonus
             } else if foldedCandidate.contains(term.folded) {

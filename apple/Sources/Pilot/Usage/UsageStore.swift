@@ -51,6 +51,7 @@ enum UsageConsent {
     static let claudeKey = "usage.consent.claude"
     static let codexKey = "usage.consent.codex"
     static let grokKey = "usage.consent.grok"
+    static let kimiKey = "usage.consent.kimi"
     static let changedNotification = Notification.Name("app.blau.pilot.usage-consent-changed")
 
     static func isClaudeEnabled(defaults: UserDefaults = .standard) -> Bool {
@@ -64,10 +65,14 @@ enum UsageConsent {
     static func isGrokEnabled(defaults: UserDefaults = .standard) -> Bool {
         defaults.bool(forKey: grokKey)
     }
+
+    static func isKimiEnabled(defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: kimiKey)
+    }
 }
 
-/// Pulls **plan usage, reset windows, and credits** for Claude, Codex, and Grok by
-/// reusing the local CLI OAuth sessions (see `UsageSessions`)
+/// Pulls **plan usage, reset windows, and credits** for Claude, Codex, Grok, and
+/// Kimi by reusing the local CLI OAuth sessions (see `UsageSessions`)
 /// and calling each CLI's own usage endpoint — no admin keys, no separate login.
 ///
 /// ⚠️ These are undocumented endpoints the CLIs call internally; they can change.
@@ -79,17 +84,20 @@ final class UsageStore {
         let claude: @Sendable () async -> ProviderFetch
         let codex: @Sendable () async -> ProviderFetch
         let grok: @Sendable () async -> ProviderFetch
+        let kimi: @Sendable () async -> ProviderFetch
 
         static let live = Fetchers(
             claude: { await UsageStore.fetchClaude() },
             codex: { await UsageStore.fetchCodex() },
-            grok: { await UsageStore.fetchGrok() }
+            grok: { await UsageStore.fetchGrok() },
+            kimi: { await UsageStore.fetchKimi() }
         )
     }
 
     private(set) var anthropic: ProviderState = .disabled
     private(set) var openAI: ProviderState = .disabled
     private(set) var xAI: ProviderState = .disabled
+    private(set) var moonshot: ProviderState = .disabled
     private(set) var isLoading = false
 
     private var loadTask: Task<Void, Never>?
@@ -109,7 +117,7 @@ final class UsageStore {
     private static let backoffBase: TimeInterval = 300           // 5 min
     private static let backoffCap: TimeInterval = 3600           // 1 hour
 
-    private enum Provider: CaseIterable { case anthropic, openAI, xAI }
+    private enum Provider: CaseIterable { case anthropic, openAI, xAI, moonshot }
     /// When a provider was last actually hit (for min-spacing).
     private var lastAttempt: [Provider: Date] = [:]
     /// When a rate-limited provider may be hit again.
@@ -153,18 +161,22 @@ final class UsageStore {
         let claudeEnabled = UsageConsent.isClaudeEnabled(defaults: defaults)
         let codexEnabled = UsageConsent.isCodexEnabled(defaults: defaults)
         let grokEnabled = UsageConsent.isGrokEnabled(defaults: defaults)
+        let kimiEnabled = UsageConsent.isKimiEnabled(defaults: defaults)
         if !claudeEnabled { anthropic = .disabled }
         if !codexEnabled { openAI = .disabled }
         if !grokEnabled { xAI = .disabled }
+        if !kimiEnabled { moonshot = .disabled }
         let doAnthropic = claudeEnabled && mayFetch(.anthropic, now: now)
         let doOpenAI = codexEnabled && mayFetch(.openAI, now: now)
         let doGrok = grokEnabled && mayFetch(.xAI, now: now)
+        let doKimi = kimiEnabled && mayFetch(.moonshot, now: now)
         if doAnthropic { lastAttempt[.anthropic] = now }
         if doOpenAI { lastAttempt[.openAI] = now }
         if doGrok { lastAttempt[.xAI] = now }
+        if doKimi { lastAttempt[.moonshot] = now }
 
         // Nothing to do this tick — everything is spaced-out or backed-off.
-        guard doAnthropic || doOpenAI || doGrok else {
+        guard doAnthropic || doOpenAI || doGrok || doKimi else {
             isLoading = false
             return
         }
@@ -175,11 +187,18 @@ final class UsageStore {
             async let anthropicResult = Self.fetch(when: doAnthropic, using: fetchers.claude)
             async let openAIResult = Self.fetch(when: doOpenAI, using: fetchers.codex)
             async let xAIResult = Self.fetch(when: doGrok, using: fetchers.grok)
-            let (aRes, oRes, xRes) = await (anthropicResult, openAIResult, xAIResult)
+            async let moonshotResult = Self.fetch(when: doKimi, using: fetchers.kimi)
+            let (aRes, oRes, xRes, kRes) = await (
+                anthropicResult,
+                openAIResult,
+                xAIResult,
+                moonshotResult
+            )
             if Task.isCancelled { return }
             anthropic = resolve(.anthropic, previous: anthropic, result: aRes)
             openAI = resolve(.openAI, previous: openAI, result: oRes)
             xAI = resolve(.xAI, previous: xAI, result: xRes)
+            moonshot = resolve(.moonshot, previous: moonshot, result: kRes)
             isLoading = false
         }
     }
@@ -536,6 +555,219 @@ final class UsageStore {
         if hint.contains("month") { return "Monthly" }
         if hint.contains("day") { return "Daily" }
         return "Weekly"
+    }
+
+    // MARK: - Kimi (Moonshot AI)
+
+    nonisolated private static func fetchKimi() async -> ProviderFetch {
+        guard let session = UsageSessions.KimiSession.load() else { return .notSignedIn }
+        guard !session.isExpired else {
+            return .failure("Kimi: session expired — re-run `kimi login` to sign in.")
+        }
+        let headers = [
+            "Authorization": "Bearer \(session.accessToken)",
+            "Accept": "application/json",
+        ]
+        let url = URL(string: "https://api.kimi.com/coding/v1/usages")!
+        do {
+            let root = try await getJSONObject(url: url, headers: headers)
+            return .success(Self.parseKimiUsage(root, receivedAt: Date()))
+        } catch {
+            return classify(error, provider: "Kimi", cli: "kimi login")
+        }
+    }
+
+    /// Parse Kimi Code's intentionally loose usage schema: a weekly summary,
+    /// rolling limit rows, and an optional Extra Usage booster wallet.
+    nonisolated static func parseKimiUsage(
+        _ root: [String: Any],
+        receivedAt: Date = Date()
+    ) -> ProviderUsage {
+        var usage = ProviderUsage(planLabel: kimiPlanLabel(root))
+        if let summary = dictionary(root, keys: ["usage"]),
+           let window = kimiWindow(
+               summary,
+               id: "kimi-summary",
+               defaultName: "Weekly limit",
+               receivedAt: receivedAt) {
+            usage.windows.append(window)
+        }
+
+        if let limits = root["limits"] as? [Any] {
+            for (index, rawLimit) in limits.enumerated() {
+                guard let item = rawLimit as? [String: Any] else { continue }
+                let detail = dictionary(item, keys: ["detail"]) ?? item
+                let metadata = dictionary(item, keys: ["window"]) ?? [:]
+                let label = kimiLimitLabel(
+                    item: item,
+                    detail: detail,
+                    window: metadata,
+                    index: index
+                )
+                if let window = kimiWindow(
+                    detail,
+                    id: "kimi-limit-\(index)",
+                    defaultName: label,
+                    receivedAt: receivedAt) {
+                    usage.windows.append(window)
+                }
+            }
+        }
+
+        if let wallet = dictionary(root, keys: ["boosterWallet", "booster_wallet"]) {
+            usage.credits = kimiCredits(wallet)
+        }
+        return usage
+    }
+
+    /// Kimi's usage endpoint reports an internal membership level rather than
+    /// the public plan title. Prefer an explicit title when the service includes
+    /// one, then translate the membership enum used by the current response.
+    nonisolated private static func kimiPlanLabel(_ root: [String: Any]) -> String? {
+        let user = dictionary(root, keys: ["user"]) ?? [:]
+        let membership = dictionary(user, keys: ["membership"])
+            ?? dictionary(root, keys: ["membership"])
+            ?? [:]
+
+        if let title = string(
+            membership,
+            keys: ["title", "name", "displayName", "display_name", "planName", "plan_name"]
+        ) {
+            return title
+        }
+
+        let level = string(membership, keys: ["level", "membershipLevel", "membership_level"])
+            ?? string(user, keys: ["membershipLevel", "membership_level"])
+        switch level?.uppercased() {
+        case "LEVEL_FREE", "FREE":
+            return "Adagio"
+        case "LEVEL_STANDARD", "STANDARD":
+            return "Moderato"
+        case "LEVEL_PLUS", "PLUS":
+            return "Allegretto"
+        case "LEVEL_PREMIUM", "PREMIUM":
+            return "Allegro"
+        case "LEVEL_ELITE", "ELITE":
+            return "Vivace"
+        default:
+            return nil
+        }
+    }
+
+    nonisolated private static func kimiWindow(
+        _ data: [String: Any],
+        id: String,
+        defaultName: String,
+        receivedAt: Date
+    ) -> UsageWindow? {
+        guard let limit = number(data, keys: ["limit"]), limit.isFinite, limit > 0 else {
+            return nil
+        }
+        let used: Double?
+        if let reported = number(data, keys: ["used"]), reported.isFinite {
+            used = reported
+        } else if let remaining = number(data, keys: ["remaining"]), remaining.isFinite {
+            used = limit - remaining
+        } else {
+            used = nil
+        }
+        guard let used, used.isFinite else { return nil }
+
+        let absoluteReset = date(value(
+            data,
+            keys: ["reset_at", "resetAt", "reset_time", "resetTime"]
+        ))
+        let relativeReset = number(data, keys: ["reset_in", "resetIn", "ttl", "window"])
+        let resetsAt = absoluteReset ?? relativeReset.flatMap { seconds in
+            guard seconds.isFinite, seconds > 0 else { return nil }
+            return receivedAt.addingTimeInterval(seconds)
+        }
+        return UsageWindow(
+            id: id,
+            name: string(data, keys: ["name", "title"]) ?? defaultName,
+            utilization: min(max(used / limit, 0), 1),
+            resetsAt: resetsAt
+        )
+    }
+
+    nonisolated private static func kimiLimitLabel(
+        item: [String: Any],
+        detail: [String: Any],
+        window: [String: Any],
+        index: Int
+    ) -> String {
+        if let label = string(item, keys: ["name", "title", "scope"])
+            ?? string(detail, keys: ["name", "title", "scope"]) {
+            return label
+        }
+
+        let duration = number(value(window, keys: ["duration"]))
+            ?? number(value(item, keys: ["duration"]))
+            ?? number(value(detail, keys: ["duration"]))
+        guard let duration, duration.isFinite, duration > 0, duration <= Double(Int.max) else {
+            return "Limit #\(index + 1)"
+        }
+        let amount = Int(duration.rounded(.towardZero))
+        let unit = (string(window, keys: ["timeUnit"])
+            ?? string(item, keys: ["timeUnit"])
+            ?? string(detail, keys: ["timeUnit"])
+            ?? "").uppercased()
+        if unit.contains("MINUTE") {
+            if amount >= 60, amount.isMultiple(of: 60) { return "\(amount / 60)h limit" }
+            return "\(amount)m limit"
+        }
+        if unit.contains("HOUR") { return "\(amount)h limit" }
+        if unit.contains("DAY") { return "\(amount)d limit" }
+        return "\(amount)s limit"
+    }
+
+    nonisolated private static func kimiCredits(_ wallet: [String: Any]) -> CreditInfo? {
+        guard let balance = dictionary(wallet, keys: ["balance"]),
+              string(balance, keys: ["type"])?.uppercased() == "BOOSTER",
+              let total = number(balance, keys: ["amount"]), total.isFinite, total > 0
+        else { return nil }
+
+        let monthlyLimit = dictionary(wallet, keys: ["monthlyChargeLimit", "monthly_charge_limit"])
+        let monthlyUsed = dictionary(wallet, keys: ["monthlyUsed", "monthly_used"])
+        let currency = string(monthlyLimit ?? [:], keys: ["currency"])
+            ?? string(monthlyUsed ?? [:], keys: ["currency"])
+            ?? "USD"
+        let limitEnabled = bool(
+            wallet,
+            keys: ["monthlyChargeLimitEnabled", "monthly_charge_limit_enabled"]
+        ) == true
+        let rawLimit = number(monthlyLimit ?? [:], keys: ["priceInCents", "price_in_cents"])
+        let rawUsed = number(monthlyUsed ?? [:], keys: ["priceInCents", "price_in_cents"])
+        let amountLeft = number(balance, keys: ["amountLeft", "amount_left"])
+            .flatMap(kimiFixedPointMajorCurrency) ?? 0
+        let monthlyLimitMajor: Double? = rawLimit.flatMap { cents -> Double? in
+            guard limitEnabled, cents.isFinite, cents > 0 else { return nil }
+            return cents / 100.0
+        }
+        let monthlyUsedMajor: Double = rawUsed.flatMap { cents -> Double? in
+            cents.isFinite ? max(0, cents) / 100.0 : nil
+        } ?? 0
+        let utilization = monthlyLimitMajor.flatMap { limit in
+            min(max(monthlyUsedMajor / limit, 0), 1)
+        }
+        let credits = CreditInfo(
+            balance: amountLeft,
+            unit: .currency(currency.uppercased()),
+            used: monthlyUsedMajor,
+            limit: monthlyLimitMajor,
+            unlimited: !limitEnabled,
+            utilization: utilization
+        )
+        return credits.isEmpty ? nil : credits
+    }
+
+    /// Booster wallet amounts are fixed-point values where 1,000,000 units are
+    /// one whole cent; Pilot's currency model stores major units instead.
+    nonisolated private static func kimiFixedPointMajorCurrency(_ value: Double) -> Double? {
+        guard value.isFinite else { return nil }
+        let rawCents = max(0, value) / 1_000_000.0
+        let wholeCents = rawCents > 0 && rawCents < 1 ? 1 : rawCents.rounded()
+        return wholeCents / 100.0
     }
 
     // MARK: - Grok (xAI)

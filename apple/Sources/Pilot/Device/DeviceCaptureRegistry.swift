@@ -14,7 +14,7 @@ final class DeviceCaptureRegistry {
         if let existing = sessions[paneID] {
             return existing
         }
-        let session = DeviceCaptureSession()
+        let session = DeviceCaptureSession(paneID: paneID)
         sessions[paneID] = session
         return session
     }
@@ -23,8 +23,25 @@ final class DeviceCaptureRegistry {
         sessions[paneID]
     }
 
+    /// Releases window-bound capture while preserving both the pane's explicit
+    /// device choice and this session's serial executor. A quick hide/show can
+    /// then enqueue its restart behind the in-flight stop instead of creating a
+    /// second `AVCaptureSession` while the first is still tearing down.
+    func suspend(paneID: UUID) {
+        sessions[paneID]?.stop()
+    }
+
+    /// Destructive pane deletion also removes its durable device preference.
     func remove(paneID: UUID) {
-        guard let session = sessions.removeValue(forKey: paneID) else { return }
-        session.stop()
+        clearPreference(paneID: paneID)
+    }
+
+    /// Clears the durable choice and evicts its stopped runtime session.
+    /// Deletion transactions call this only after their SwiftData save succeeds.
+    func clearPreference(paneID: UUID) {
+        sessions.removeValue(forKey: paneID)?.stop()
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: DeviceCaptureSession.preferenceKey(for: paneID))
+        defaults.removeObject(forKey: DeviceCaptureSession.preferenceNameKey(for: paneID))
     }
 }

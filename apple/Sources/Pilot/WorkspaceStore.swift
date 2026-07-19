@@ -92,7 +92,8 @@ final class WorkspaceStore {
             workspacesFetchVersion = version
         }
 
-        return items.sorted { lhs, rhs in
+        let extensionWorkspaceIDs = Set(extensionWorkspaceLinks.compactMap { $0.workspace?.id })
+        return items.filter { !extensionWorkspaceIDs.contains($0.id) }.sorted { lhs, rhs in
             if lhs.isPinned != rhs.isPinned {
                 return lhs.isPinned && !rhs.isPinned
             }
@@ -103,6 +104,16 @@ final class WorkspaceStore {
 
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
+    }
+
+    /// Extension companion workspaces are created and pruned by a sibling
+    /// controller that shares this context. Invalidate the canonical-workspace
+    /// fetch cache whenever that hidden membership changes so a deleted
+    /// companion can never briefly surface in Main from a stale cache entry.
+    func extensionWorkspaceMembershipDidChange() {
+        fetchedWorkspaces = nil
+        workspacesFetchVersion = -1
+        changeCount += 1
     }
 
     /// Called by `WorkspaceActionWatcher` when a GitHub Action run completes
@@ -150,6 +161,7 @@ final class WorkspaceStore {
     /// entry point so selecting a workspace in either one also brings the main
     /// window out of a full-detail Notes or Remote Desktop mode.
     func selectWorkspace(_ workspaceID: UUID) {
+        guard workspaces.contains(where: { $0.id == workspaceID }) else { return }
         if isNotesMode { isNotesMode = false }
         if isRemoteDesktopMode { isRemoteDesktopMode = false }
         if selectedWorkspaceID != workspaceID {
@@ -416,6 +428,9 @@ final class WorkspaceStore {
         }
         self.isRemoteDesktopMode = UserDefaults.standard.bool(forKey: "remoteDesktopMode")
         cleanupBadDirectories()
+        if let selectedWorkspaceID, !workspaces.contains(where: { $0.id == selectedWorkspaceID }) {
+            self.selectedWorkspaceID = workspaces.first?.id
+        }
     }
 
     private func cleanupBadDirectories() {
@@ -463,27 +478,192 @@ final class WorkspaceStore {
         selectWorkspace(workspace.id)
     }
 
-    func deleteWorkspace(_ workspace: Workspace) {
+    @discardableResult
+    func deleteWorkspace(
+        _ workspace: Workspace,
+        performSave: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         let wasSelected = selectedWorkspaceID == workspace.id
-        for pane in workspace.panes {
-            pane.tearDownRuntimeResources()
+        let deletedLinks = extensionWorkspaceLinks.filter { $0.sourceWorkspaceID == workspace.id }
+        let deletedPanes = deletedLinks.compactMap(\.workspace).flatMap(\.panes) + workspace.panes
+        let deletedDevicePaneIDs = Set(deletedPanes.filter { $0.kind == .device }.map(\.id))
+        for pane in deletedPanes {
+            pane.tearDownRuntimeResources(preservingDevicePreference: true)
+        }
+        for link in deletedLinks {
+            modelContext.delete(link)
         }
         modelContext.delete(workspace)
         normalizeWorkspaceSortOrder(workspaces.filter { $0.id != workspace.id })
-        guard modelContext.saveReporting(operation: "Deleting workspace", rollbackOnFailure: true) else {
+        guard modelContext.saveReporting(
+            operation: "Deleting workspace",
+            rollbackOnFailure: true,
+            performSave: performSave
+        ) else {
             changeCount += 1
-            return
+            return false
+        }
+        for paneID in deletedDevicePaneIDs {
+            DeviceCaptureRegistry.shared.clearPreference(paneID: paneID)
         }
         changeCount += 1
         if wasSelected {
             selectedWorkspaceID = workspaces.first?.id
         }
+        return true
+    }
+
+    /// Reorders a pane locally or reparents the exact persisted Pane model
+    /// between Main and Extension. Keeping the Pane identity preserves tmux and
+    /// capture-session registry keys; no runtime teardown occurs during a move.
+    @discardableResult
+    func movePane(_ payload: WorkspacePaneDragPayload, to destination: Workspace, before target: Pane) -> Bool {
+        let allWorkspaces = (try? modelContext.fetch(FetchDescriptor<Workspace>())) ?? []
+        let links = extensionWorkspaceLinks
+        guard let source = allWorkspaces.first(where: { $0.id == payload.sourceWorkspaceID }),
+              let pane = source.panes.first(where: { $0.id == payload.paneID }),
+              allWorkspaces.contains(where: { $0 === destination }),
+              destination.panes.contains(where: { $0 === target }),
+              let sourceIdentity = paneSurfaceIdentity(for: source, links: links),
+              let destinationIdentity = paneSurfaceIdentity(for: destination, links: links),
+              sourceIdentity.projectID == payload.projectID,
+              sourceIdentity.surface == payload.sourceSurface,
+              destinationIdentity.projectID == payload.projectID else { return false }
+
+        if source === destination {
+            guard pane !== target else { return false }
+            var ordered = source.sortedPanes
+            guard let sourceIndex = ordered.firstIndex(where: { $0 === pane }) else { return false }
+            ordered.remove(at: sourceIndex)
+            // Resolve the target after removal. Its old index is one too high
+            // whenever the dragged pane started before it.
+            guard let targetIndex = ordered.firstIndex(where: { $0 === target }) else { return false }
+            ordered.insert(pane, at: targetIndex)
+            renumberPanes(ordered)
+            if !pane.isCollapsed { source.selectedPaneID = pane.id }
+            guard modelContext.saveReporting(
+                operation: "Reordering pane",
+                rollbackOnFailure: true
+            ) else { return false }
+            changeCount += 1
+            return true
+        }
+
+        guard sourceIdentity.surface != destinationIdentity.surface,
+              source.panes.count > 1,
+              !destination.panes.contains(where: { $0.id == pane.id }) else { return false }
+
+        source.prepareForPaneTransfer()
+        destination.prepareForPaneTransfer()
+        let sourceOrder = source.sortedPanes
+        let destinationOrderBeforeMove = destination.sortedPanes
+        guard let removedIndex = sourceOrder.firstIndex(where: { $0 === pane }) else { return false }
+        guard let targetIndex = destinationOrderBeforeMove.firstIndex(where: { $0 === target }) else { return false }
+
+        source.panes.removeAll { $0 === pane }
+        destination.panes.append(pane)
+        pane.workspace = destination
+
+        let remainingSourcePanes = source.sortedPanes
+        renumberPanes(remainingSourcePanes)
+        var selectedFallback: Pane?
+        if source.selectedPaneID == pane.id || !remainingSourcePanes.contains(where: { $0.id == source.selectedPaneID }) {
+            selectedFallback = nearestPane(
+                in: remainingSourcePanes,
+                to: removedIndex,
+                matching: { !$0.isCollapsed }
+            ) ?? nearestPane(in: remainingSourcePanes, to: removedIndex, matching: { _ in true })
+
+            // A focused pane may have been the only expanded pane. Keep the
+            // source usable by revealing the nearest survivor instead of
+            // leaving every pane collapsed behind slits.
+            if let selectedFallback, selectedFallback.isCollapsed {
+                selectedFallback.isCollapsed = false
+                selectedFallback.wasCollapsedBeforeFocus = false
+                selectedFallback.sizeFraction = 1
+            }
+            source.selectedPaneID = selectedFallback?.id
+        }
+        if source.frontmostTerminalPaneID == pane.id {
+            source.frontmostTerminalPaneID = remainingSourcePanes.first(where: {
+                $0.kind == .terminal && !$0.isCollapsed
+            })?.id ?? remainingSourcePanes.first(where: { $0.kind == .terminal })?.id
+        }
+        if selectedFallback?.kind == .terminal {
+            source.frontmostTerminalPaneID = selectedFallback?.id
+        }
+
+        pane.isCollapsed = false
+        pane.wasCollapsedBeforeFocus = false
+        pane.sizeFraction = 0
+        pane.restoredSizeFraction = 0
+        var destinationOrder = destination.sortedPanes.filter { $0 !== pane }
+        destinationOrder.insert(pane, at: targetIndex)
+        renumberPanes(destinationOrder)
+        destination.selectedPaneID = pane.id
+        if pane.kind == .terminal {
+            destination.frontmostTerminalPaneID = pane.id
+        }
+
+        // Selection/frontmost ownership may have changed without a SwiftUI
+        // selected-pane notification (for example, a Browser is selected while
+        // its frontmost Terminal moves). Keep automatic roots correct inside
+        // this same save/rollback transaction.
+        source.syncDefaultRootPathForPaneTransfer()
+        destination.syncDefaultRootPathForPaneTransfer()
+
+        guard modelContext.saveReporting(
+            operation: "Moving pane between Main and Extension",
+            rollbackOnFailure: true
+        ) else { return false }
+        changeCount += 1
+        return true
     }
 
     private func normalizeWorkspaceSortOrder(_ orderedWorkspaces: [Workspace]) {
         for (index, workspace) in orderedWorkspaces.enumerated() {
             workspace.workspaceSortOrder = index
         }
+    }
+
+    private var extensionWorkspaceLinks: [ExtensionWorkspaceLink] {
+        (try? modelContext.fetch(FetchDescriptor<ExtensionWorkspaceLink>())) ?? []
+    }
+
+    private func paneSurfaceIdentity(
+        for workspace: Workspace,
+        links: [ExtensionWorkspaceLink]
+    ) -> (projectID: UUID, surface: WorkspacePaneSurface)? {
+        if let link = links.first(where: { $0.workspace?.id == workspace.id }) {
+            guard workspaces.contains(where: { $0.id == link.sourceWorkspaceID }) else { return nil }
+            return (link.sourceWorkspaceID, .extension)
+        }
+        guard workspaces.contains(where: { $0.id == workspace.id }) else { return nil }
+        return (workspace.id, .main)
+    }
+
+    private func renumberPanes(_ panes: [Pane]) {
+        for (index, pane) in panes.enumerated() {
+            pane.sortOrder = index
+        }
+    }
+
+    private func nearestPane(
+        in panes: [Pane],
+        to index: Int,
+        matching predicate: (Pane) -> Bool
+    ) -> Pane? {
+        panes.enumerated()
+            .filter { predicate($0.element) }
+            .min { lhs, rhs in
+                let lhsDistance = abs(lhs.offset - index)
+                let rhsDistance = abs(rhs.offset - index)
+                if lhsDistance != rhsDistance {
+                    return lhsDistance < rhsDistance
+                }
+                return lhs.offset < rhs.offset
+            }?
+            .element
     }
 
     private func moveWorkspaces(inPinnedSection isPinned: Bool, fromOffsets: IndexSet, toOffset: Int) {
