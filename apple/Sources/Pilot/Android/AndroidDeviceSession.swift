@@ -614,8 +614,10 @@ final class AndroidDeviceSession {
     func scroll(normalizedDX: Double, normalizedDY: Double, anchorX: Double, anchorY: Double) {
         guard let space = naturalDisplaySize.map(orientedSize) ?? captureSize,
               let anchor = devicePoint(normalizedX: anchorX, normalizedY: anchorY) else { return }
-        let dx = normalizedDX * space.width
-        let dy = normalizedDY * space.height
+        // Keep the tuple explicitly CGFloat-typed for Xcode 26 as well as 27;
+        // Xcode 27 permits mixed Double/CGFloat arithmetic that 26 rejects.
+        let dx = CGFloat(normalizedDX) * space.width
+        let dy = CGFloat(normalizedDY) * space.height
         if var pending = pendingScroll {
             pending.dx += dx
             pending.dy += dy
