@@ -4,7 +4,8 @@ import SwiftUI
 
 enum PilotWindowID {
     static let main = "pilot-main"
-    static let `extension` = "pilot-extension"
+    static let extendo = "pilot-extendo"
+    static let extendoTitle = "Extendo"
 }
 
 /// Durable ownership record for the hidden Workspace rendered by Extension.
@@ -26,7 +27,7 @@ final class ExtensionWorkspaceLink {
 
 enum PilotWindowLaunchPolicy {
     static func opensByDefault(_ windowID: String) -> Bool {
-        windowID == PilotWindowID.main || windowID == PilotWindowID.extension
+        windowID == PilotWindowID.main || windowID == PilotWindowID.extendo
     }
 
     static func defaultBehavior(for windowID: String) -> SceneLaunchBehavior {
@@ -37,7 +38,7 @@ enum PilotWindowLaunchPolicy {
     /// Main on every fresh extension appearance repairs that restoration state
     /// while a singleton `Window` keeps the call idempotent.
     static func requiredCompanion(for windowID: String) -> String? {
-        windowID == PilotWindowID.extension ? PilotWindowID.main : nil
+        windowID == PilotWindowID.extendo ? PilotWindowID.main : nil
     }
 }
 
@@ -105,11 +106,14 @@ struct PilotWindowCommands: Commands {
             .keyboardShortcut("n", modifiers: .command)
 
             let isExtensionVisible = ExtensionWindowVisibility.shared.isVisible
-            Button(isExtensionVisible ? "Hide Extension" : "Show Extension") {
+            let extendoCommand = isExtensionVisible
+                ? "Hide \(PilotWindowID.extendoTitle)"
+                : "Show \(PilotWindowID.extendoTitle)"
+            Button(extendoCommand) {
                 if isExtensionVisible {
-                    dismissWindow(id: PilotWindowID.extension)
+                    dismissWindow(id: PilotWindowID.extendo)
                 } else {
-                    openWindow(id: PilotWindowID.extension)
+                    openWindow(id: PilotWindowID.extendo)
                 }
             }
             .keyboardShortcut("e", modifiers: [.command, .option])
@@ -186,7 +190,7 @@ final class ExtensionWorkspaceController {
         synchronizeMetadata(from: source, to: workspace)
         selectedSourceID = source.id
         guard modelContext.saveReporting(
-            operation: "Saving Extension workspace",
+            operation: "Saving Extendo workspace",
             rollbackOnFailure: !deletedDevicePaneIDs.isEmpty,
             performSave: performSave
         ) else { return }
@@ -227,7 +231,7 @@ final class ExtensionWorkspaceController {
                 pane.suspendRuntimeResources()
             }
         }
-        _ = modelContext.saveReporting(operation: "Saving Extension workspaces")
+        _ = modelContext.saveReporting(operation: "Saving Extendo workspaces")
     }
 
     private func makePersistedWorkspace(from source: Workspace) -> Workspace {
@@ -279,7 +283,7 @@ final class ExtensionWorkspaceController {
         }
         if deletedLink {
             guard modelContext.saveReporting(
-                operation: "Deleting orphaned Extension workspaces",
+                operation: "Deleting orphaned Extendo workspaces",
                 rollbackOnFailure: true,
                 performSave: performSave
             ) else {
@@ -467,7 +471,7 @@ struct ExtensionWindowView: View {
                     )
                 }
                 .disabled(extensionWorkspace == nil)
-                .help("Draw over the active extension pane (⇧⌘D)")
+                .help("Draw over the active Extendo pane (⇧⌘D)")
                 .accessibilityIdentifier("extension.annotate")
 
                 Button {
@@ -477,7 +481,7 @@ struct ExtensionWindowView: View {
                     Label("Inspector", systemImage: "sidebar.trailing")
                 }
                 .disabled(extensionWorkspace == nil)
-                .help("Show or hide the extension Inspector")
+                .help("Show or hide the Extendo Inspector")
                 .accessibilityIdentifier("extension.inspector-toggle")
             }
         }
@@ -491,7 +495,7 @@ struct ExtensionWindowView: View {
         }
         .frame(minWidth: 560, minHeight: 480)
         .task {
-            if let windowID = PilotWindowLaunchPolicy.requiredCompanion(for: PilotWindowID.extension) {
+            if let windowID = PilotWindowLaunchPolicy.requiredCompanion(for: PilotWindowID.extendo) {
                 openWindow(id: windowID)
             }
         }

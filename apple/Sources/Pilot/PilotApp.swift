@@ -632,14 +632,14 @@ struct PilotApp: App {
             PilotBrowserCommands(isMobileDeviceConnected: syncService.isConnected)
         }
 
-        Window("Extension", id: PilotWindowID.extension) {
+        Window(PilotWindowID.extendoTitle, id: PilotWindowID.extendo) {
             ExtensionWindowView(store: store, controller: extensionWorkspaceController)
                 .environment(\.uiZoom, uiZoom)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         }
         .modelContainer(modelContainer)
         .defaultSize(width: 820, height: 760)
-        .defaultLaunchBehavior(PilotWindowLaunchPolicy.defaultBehavior(for: PilotWindowID.extension))
+        .defaultLaunchBehavior(PilotWindowLaunchPolicy.defaultBehavior(for: PilotWindowID.extendo))
         .commands {
             // PilotWindowCommands is registered on the main scene only —
             // scene commands merge into one menu bar, and registering them

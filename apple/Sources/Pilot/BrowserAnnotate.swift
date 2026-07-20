@@ -139,9 +139,21 @@ enum BrowserAnnotate {
       var selectionID = null, sendingID = null;
       var bridgeToken = null, selectionBridgeToken = null;
       var fallbackSelectionSequence = 0;
+      var lastPointerX = null, lastPointerY = null, pointerInside = false;
+
+      var interactiveSelector = [
+        'a[href]', 'button', 'input:not([type="hidden"])', 'textarea', 'select', 'summary',
+        '[contenteditable=""]', '[contenteditable="true"]',
+        '[role="button"]', '[role="link"]', '[role="menuitem"]', '[role="option"]',
+        '[role="tab"]', '[role="checkbox"]', '[role="radio"]', '[role="switch"]'
+      ].join(',');
+      var containerTags = {
+        DIV: true, SECTION: true, ARTICLE: true, LI: true, NAV: true, HEADER: true,
+        FOOTER: true, MAIN: true, ASIDE: true, FORM: true
+      };
 
       function ensureCursorStyle() {
-        if (cursorStyle) return;
+        if (cursorStyle && cursorStyle.isConnected) return;
         cursorStyle = document.createElement('style');
         cursorStyle.setAttribute('data-pilot-annotate-cursor', '');
         cursorStyle.textContent = 'html.__pilot-lasso-active, html.__pilot-lasso-active body, html.__pilot-lasso-active body * { cursor: crosshair !important; } html.__pilot-lasso-active [data-pilot-annotate-box], html.__pilot-lasso-active [data-pilot-annotate-box] * { cursor: default !important; } html.__pilot-lasso-active [data-pilot-annotate-box] textarea { cursor: text !important; } html.__pilot-lasso-active [data-pilot-annotate-box] button { cursor: pointer !important; }';
@@ -149,10 +161,10 @@ enum BrowserAnnotate {
       }
 
       function ensureHighlight() {
-        if (highlight) return highlight;
+        if (highlight && highlight.isConnected) return highlight;
         highlight = document.createElement('div');
         highlight.setAttribute('data-pilot-annotate-highlight', '');
-        highlight.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483646;box-sizing:border-box;border:2px solid #3b82f6;background:rgba(59,130,246,0.12);border-radius:3px;display:none;';
+        highlight.style.cssText = 'all:initial!important;position:fixed!important;pointer-events:none!important;z-index:2147483646!important;box-sizing:border-box!important;border:2px solid #3b82f6!important;background:rgba(59,130,246,0.12)!important;border-radius:3px!important;display:none!important;';
         document.documentElement.appendChild(highlight);
         return highlight;
       }
@@ -161,7 +173,7 @@ enum BrowserAnnotate {
         return !el || el === highlight || (box && (el === box || box.contains(el)));
       }
 
-      function eventElement(e) {
+      function rawEventElement(e) {
         var path = typeof e.composedPath === 'function' ? e.composedPath() : [];
         for (var i = 0; i < path.length; i++) {
           var node = path[i];
@@ -169,6 +181,96 @@ enum BrowserAnnotate {
         }
         var fallback = document.elementFromPoint(e.clientX, e.clientY);
         return isPilotUI(fallback) ? null : fallback;
+      }
+
+      function visibleRect(el) {
+        if (!el || el.nodeType !== 1 || !el.isConnected || isPilotUI(el)) return null;
+        var style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.display === 'contents' ||
+            style.visibility === 'hidden' || style.visibility === 'collapse' ||
+            parseFloat(style.opacity || '1') <= 0) return null;
+        var r = el.getBoundingClientRect();
+        if (!Number.isFinite(r.left) || !Number.isFinite(r.top) ||
+            !Number.isFinite(r.width) || !Number.isFinite(r.height) ||
+            r.width < 2 || r.height < 2 || r.right <= 0 || r.bottom <= 0 ||
+            r.left >= window.innerWidth || r.top >= window.innerHeight) return null;
+        return r;
+      }
+
+      function rectContainsPoint(r, x, y) {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return true;
+        return x >= r.left - 1 && x <= r.right + 1 && y >= r.top - 1 && y <= r.bottom + 1;
+      }
+
+      function hasPaintedBox(style) {
+        var background = style.backgroundColor;
+        var hasBackground = style.backgroundImage !== 'none' && style.backgroundImage !== '';
+        if (background && background !== 'transparent' && background !== 'rgba(0, 0, 0, 0)') {
+          hasBackground = true;
+        }
+        var hasBorder = parseFloat(style.borderTopWidth || '0') > 0 ||
+          parseFloat(style.borderRightWidth || '0') > 0 ||
+          parseFloat(style.borderBottomWidth || '0') > 0 ||
+          parseFloat(style.borderLeftWidth || '0') > 0;
+        return hasBackground || hasBorder || (style.boxShadow && style.boxShadow !== 'none');
+      }
+
+      function smartElement(raw, x, y) {
+        if (!raw || raw.nodeType !== 1 || isPilotUI(raw)) return null;
+
+        var interactive = typeof raw.closest === 'function' ? raw.closest(interactiveSelector) : null;
+        var interactiveRect = visibleRect(interactive);
+        if (interactiveRect && rectContainsPoint(interactiveRect, x, y)) return interactive;
+
+        var viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
+        var best = null, bestScore = -Infinity;
+        var node = raw, depth = 0;
+        while (node && node.nodeType === 1 && node !== document.body && node !== document.documentElement && depth < 12) {
+          if (containerTags[node.tagName]) {
+            var r = visibleRect(node);
+            if (r && rectContainsPoint(r, x, y)) {
+              var areaRatio = (r.width * r.height) / viewportArea;
+              // Whole-page shells make almost every point look identical and
+              // are rarely the component the user intends to annotate.
+              if (areaRatio < 0.9) {
+                var style = window.getComputedStyle(node);
+                var score = node.tagName === 'DIV' ? 12 : 9;
+                score -= depth * 1.5;
+                score += r.width >= 32 && r.height >= 20 ? 2 : -6;
+                score += hasPaintedBox(style) ? 8 : 0;
+                score += node.children.length > 1 ? 3 : 0;
+                score += node.id || node.hasAttribute('role') || node.hasAttribute('data-testid') ? 4 : 0;
+                if (areaRatio > 0.65) score -= 12;
+                else if (areaRatio > 0.4) score -= 5;
+                if (score > bestScore) {
+                  best = node;
+                  bestScore = score;
+                }
+              }
+            }
+          }
+          node = node.parentElement;
+          depth += 1;
+        }
+        if (best) return best;
+
+        var rawRect = visibleRect(raw);
+        return rawRect && rectContainsPoint(rawRect, x, y) ? raw : null;
+      }
+
+      function rememberPointer(e) {
+        var x = Number(e.clientX), y = Number(e.clientY);
+        pointerInside = Number.isFinite(x) && Number.isFinite(y) &&
+          x >= 0 && y >= 0 && x <= window.innerWidth && y <= window.innerHeight;
+        if (pointerInside) {
+          lastPointerX = x;
+          lastPointerY = y;
+        }
+      }
+
+      function eventElement(e) {
+        rememberPointer(e);
+        return smartElement(rawEventElement(e), Number(e.clientX), Number(e.clientY));
       }
 
       function makeSelectionID() {
@@ -205,27 +307,57 @@ enum BrowserAnnotate {
       function positionHighlight(el) {
         if (!el || !el.isConnected) { hideHighlight(); return; }
         var r = el.getBoundingClientRect();
+        ensureCursorStyle();
         var h = ensureHighlight();
-        h.style.display = 'block';
-        h.style.left = r.left + 'px';
-        h.style.top = r.top + 'px';
-        h.style.width = r.width + 'px';
-        h.style.height = r.height + 'px';
-        h.style.borderColor = selected === el ? '#0a84ff' : '#3b82f6';
-        h.style.background = selected === el ? 'rgba(10,132,255,0.18)' : 'rgba(59,130,246,0.12)';
-        h.style.boxShadow = selected === el ? '0 0 0 1px rgba(255,255,255,0.8)' : 'none';
+        h.style.setProperty('display', 'block', 'important');
+        h.style.setProperty('left', r.left + 'px', 'important');
+        h.style.setProperty('top', r.top + 'px', 'important');
+        h.style.setProperty('width', r.width + 'px', 'important');
+        h.style.setProperty('height', r.height + 'px', 'important');
+        h.style.setProperty('border-color', selected === el ? '#0a84ff' : '#3b82f6', 'important');
+        h.style.setProperty('background', selected === el ? 'rgba(10,132,255,0.18)' : 'rgba(59,130,246,0.12)', 'important');
+        h.style.setProperty('box-shadow', selected === el ? '0 0 0 1px rgba(255,255,255,0.8)' : 'none', 'important');
       }
 
       function hideHighlight() {
-        if (highlight) highlight.style.display = 'none';
+        if (highlight) highlight.style.setProperty('display', 'none', 'important');
+      }
+
+      function refreshHoverAtPointer() {
+        if (!enabled || selected || sending || !pointerInside ||
+            !Number.isFinite(lastPointerX) || !Number.isFinite(lastPointerY)) return;
+        var raw = document.elementFromPoint(lastPointerX, lastPointerY);
+        var el = smartElement(raw, lastPointerX, lastPointerY);
+        if (!el) {
+          hovered = null;
+          hideHighlight();
+          return;
+        }
+        hovered = el;
+        positionHighlight(el);
       }
 
       function onMove(e) {
+        rememberPointer(e);
         if (!enabled || selected || sending) return;
         var el = eventElement(e);
-        if (!el) return;
+        if (!el) {
+          hovered = null;
+          hideHighlight();
+          return;
+        }
         hovered = el;
         positionHighlight(el);
+      }
+
+      function onPointerLeave(e) {
+        // `mouseout` also fires between descendants. Only clear the remembered
+        // position when the pointer actually exits the document/WebView.
+        if (e && (e.relatedTarget || e.toElement)) return;
+        pointerInside = false;
+        if (!enabled || selected || sending) return;
+        hovered = null;
+        hideHighlight();
       }
 
       // Keep the highlight glued to its element while the page scrolls; the box
@@ -347,6 +479,7 @@ enum BrowserAnnotate {
         ensureCursorStyle();
         document.documentElement.classList.toggle('__pilot-lasso-active', enabled);
         if (!enabled) clearSelection();
+        else refreshHoverAtPointer();
       }
 
       function finishSend(completedSelectionID) {
@@ -364,6 +497,8 @@ enum BrowserAnnotate {
       }
 
       document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('mouseover', onMove, true);
+      document.addEventListener('mouseout', onPointerLeave, true);
       document.addEventListener('pointerdown', onPointerDown, true);
       document.addEventListener('click', onClick, true);
       document.addEventListener('scroll', onScroll, true);
