@@ -12,11 +12,13 @@ struct ExtensionWindowSyncTests {
 
     @Test("Extension launch always restores the singleton main window")
     func extensionLaunchRequiresMainWindow() {
-        #expect(PilotWindowID.main != PilotWindowID.extension)
+        #expect(PilotWindowID.main != PilotWindowID.extendo)
+        #expect(PilotWindowID.extendo == "pilot-extendo")
+        #expect(PilotWindowID.extendoTitle == "Extendo")
         #expect(PilotWindowLaunchPolicy.opensByDefault(PilotWindowID.main))
-        #expect(PilotWindowLaunchPolicy.opensByDefault(PilotWindowID.extension))
+        #expect(PilotWindowLaunchPolicy.opensByDefault(PilotWindowID.extendo))
         #expect(
-            PilotWindowLaunchPolicy.requiredCompanion(for: PilotWindowID.extension)
+            PilotWindowLaunchPolicy.requiredCompanion(for: PilotWindowID.extendo)
                 == PilotWindowID.main
         )
         #expect(PilotWindowLaunchPolicy.requiredCompanion(for: PilotWindowID.main) == nil)

@@ -613,7 +613,7 @@ final class WorkspaceStore {
         destination.syncDefaultRootPathForPaneTransfer()
 
         guard modelContext.saveReporting(
-            operation: "Moving pane between Main and Extension",
+            operation: "Moving pane between Main and Extendo",
             rollbackOnFailure: true
         ) else { return false }
         changeCount += 1

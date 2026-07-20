@@ -49,19 +49,25 @@ struct WorkspacePaneLauncher: View {
             Label("New Browser", systemImage: PaneKind.browser.systemImageName)
         }
 
-        Button {
-            workspace?.addPane(kind: .device, side: .right)
-        } label: {
-            Label("New Device", systemImage: PaneKind.device.systemImageName)
-        }
-        .keyboardShortcut("i", modifiers: [.command, .shift])
+        Menu {
+            Button {
+                workspace?.addPane(kind: .simulator, side: .right)
+            } label: {
+                Label("Simulator", systemImage: PaneKind.simulator.systemImageName)
+            }
+            .keyboardShortcut("s", modifiers: [.command, .shift])
 
-        Button {
-            workspace?.addPane(kind: .simulator, side: .right)
+            Button {
+                workspace?.addPane(kind: .device, side: .right)
+            } label: {
+                Label("Device Stream", systemImage: PaneKind.device.systemImageName)
+            }
+            .keyboardShortcut("i", modifiers: [.command, .shift])
         } label: {
-            Label("New Simulator", systemImage: PaneKind.simulator.systemImageName)
+            Label("Apple", systemImage: "apple.logo")
         }
-        .keyboardShortcut("s", modifiers: [.command, .shift])
+        .help("Open an Apple Simulator or QuickTime device stream")
+        .accessibilityIdentifier("workspace.apple-pane-launcher")
 
         Button {
             workspace?.addPane(kind: .android, side: .right)
