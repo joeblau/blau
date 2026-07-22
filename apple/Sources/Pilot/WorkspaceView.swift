@@ -512,6 +512,7 @@ struct TabItemContent: View {
                 .foregroundStyle(isSelected ? .primary : .secondary)
 
             if pane.kind == .terminal {
+                TerminalAgentBadge(pane: pane, isWorkspaceActive: isWorkspaceActive)
                 TerminalDirtyBadge(pane: pane, isWorkspaceActive: isWorkspaceActive)
             }
 
@@ -538,6 +539,39 @@ struct TabItemContent: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+}
+
+/// Accent capsule naming the coding agent (Claude, Codex, …) currently running
+/// in a terminal pane, shown right after "Terminal". Polls the shell's process
+/// tree every couple of seconds while its workspace is active; renders nothing
+/// when the shell is idle at its prompt.
+private struct TerminalAgentBadge: View {
+    let pane: Pane
+    let isWorkspaceActive: Bool
+    @State private var agent: TerminalAgent?
+
+    var body: some View {
+        Group {
+            if let agent {
+                Text(agent.displayName)
+                    .scaledFont(size: 10, weight: .semibold)
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.accentColor.opacity(0.15), in: Capsule())
+                    .help("\(agent.displayName) is running in this terminal")
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: agent)
+        // Restart polling when activation flips; only the visible workspace polls.
+        .task(id: isWorkspaceActive) {
+            guard isWorkspaceActive else { return }
+            while !Task.isCancelled {
+                agent = pane.liveShellAgent()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
     }
 }
 

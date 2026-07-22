@@ -25,6 +25,7 @@
 		1B602219DEBC76B38ACFEE47 /* MarkdownImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C45B6165F2F6CAEACDFF4FB /* MarkdownImage.swift */; };
 		1C0AED863F4441C1880AD91D /* ReliableMessenger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271D385A8DA926A540CE6710 /* ReliableMessenger.swift */; };
 		1C339E4DD14A67E782134F62 /* CodeEditLanguages in Frameworks */ = {isa = PBXBuildFile; productRef = 17A204F6C41268C5D43D828E /* CodeEditLanguages */; };
+		1C9F6647E047844F8E48DE02 /* TerminalAgentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4012CD05EF80E11A2FEEC925 /* TerminalAgentTests.swift */; };
 		1CA7F3A0C7FE6D35905BADD4 /* MouseBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA97D476477BE66A97A9D77 /* MouseBridge.swift */; };
 		1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 132CB022A0BDFF0DE96316EF /* ContentView.swift */; };
 		1E52F4B58A701BDEFF78E2D0 /* Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC9BB0F198A6D5E8298B3E1 /* Note.swift */; };
@@ -145,6 +146,7 @@
 		A7488948604BF6D0C488D51B /* PeerSyncAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 093AA0A444F56B7FF0D4F41A /* PeerSyncAuthentication.swift */; };
 		A755A8C5DCFF1165E408136A /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3448A85CDA9475511475C2 /* Workspace.swift */; };
 		A777700135D8A05BAA8AB11D /* ColorChipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB6D8C3263608D267C325CE /* ColorChipTests.swift */; };
+		A790602285F94C55B6D3C2C0 /* TerminalAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF325B8B62C28A488518588B /* TerminalAgent.swift */; };
 		A88388A8B8A982296E63C85B /* CryptoCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB3905E9A184741F8BBDBC85 /* CryptoCore.swift */; };
 		A9D25668C070DD5356945E42 /* PacketCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAB4F3EFB9309CE13F44E611 /* PacketCodec.swift */; };
 		AC78A8ADE88B0FDF42BF8919 /* H264AnnexBAssemblerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CA0EE5259D65567B9F3B8E5 /* H264AnnexBAssemblerTests.swift */; };
@@ -340,6 +342,7 @@
 		3BA97D476477BE66A97A9D77 /* MouseBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MouseBridge.swift; sourceTree = "<group>"; };
 		3C68475BF8E1475FC00ABFE0 /* PaneCyclingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneCyclingTests.swift; sourceTree = "<group>"; };
 		3F9B09BF0325E4BD7AA424E2 /* VNCPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VNCPreferencesTests.swift; sourceTree = "<group>"; };
+		4012CD05EF80E11A2FEEC925 /* TerminalAgentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAgentTests.swift; sourceTree = "<group>"; };
 		40448E5B9EBBD91D642FC080 /* DeviceCaptureRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCaptureRegistry.swift; sourceTree = "<group>"; };
 		41E92ECD46F1C55A41F9D826 /* PlotterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotterApp.swift; sourceTree = "<group>"; };
 		46C4196429C52AD7709CA4CF /* Plotter.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Plotter.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -464,6 +467,7 @@
 		F430B621891B5DED12E1CF39 /* Copilot.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Copilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F684D74A8F12B03954CC49B3 /* PilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PilotApp.swift; sourceTree = "<group>"; };
 		F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerSyncService.swift; sourceTree = "<group>"; };
+		FF325B8B62C28A488518588B /* TerminalAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAgent.swift; sourceTree = "<group>"; };
 		FF40C0F2AB338D701B6444C3 /* ExtensionWindowSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionWindowSyncTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -564,6 +568,7 @@
 				F2E7DF37EA94BAC2FDEAB71B /* RepositoryPollingSchedulerTests.swift */,
 				5AF0A09467C1DF183A8D54B2 /* RuntimeTeardownTests.swift */,
 				A4F002C4E4B79B5D1D7053E2 /* ScreenMirrorBitrateTests.swift */,
+				4012CD05EF80E11A2FEEC925 /* TerminalAgentTests.swift */,
 				2202956A27B1E6B78F6F5D3D /* UsageConsentTests.swift */,
 				833A733738ACD8557507F393 /* UsageReportingTests.swift */,
 				3F9B09BF0325E4BD7AA424E2 /* VNCPreferencesTests.swift */,
@@ -786,6 +791,7 @@
 				AB2FB7766C24786389E2F582 /* RemoteScreenDiscovery.swift */,
 				3531C578DF387C51E4AA22F0 /* RepositoryPollingScheduler.swift */,
 				DCB7A71E179389DD6C888CCD /* ScreenMirror.swift */,
+				FF325B8B62C28A488518588B /* TerminalAgent.swift */,
 				5A2C2E1B521C51A4B0B660B1 /* UIZoom.swift */,
 				1B3448A85CDA9475511475C2 /* Workspace.swift */,
 				93E831A131F5C50AD8808B7E /* WorkspaceActionWatcher.swift */,
@@ -1306,6 +1312,7 @@
 				FAF52815DEA134B83422404E /* SimulatorRegistry.swift in Sources */,
 				2B45AA02C4604A14FF1EE51E /* SimulatorSession.swift in Sources */,
 				83D64D93C19B54470E4E1C2C /* SyncMessages.swift in Sources */,
+				A790602285F94C55B6D3C2C0 /* TerminalAgent.swift in Sources */,
 				506D51547D6AA3C40D9B1161 /* UIZoom.swift in Sources */,
 				D8C5507B8AD7FAE2078411E0 /* UsageInspectorView.swift in Sources */,
 				A170D04C95832851ADE7F405 /* UsageSessions.swift in Sources */,
@@ -1389,6 +1396,7 @@
 				42AD1C88122F979531C2C527 /* RepositoryPollingSchedulerTests.swift in Sources */,
 				204D67F9D5A0A40E355C64B5 /* RuntimeTeardownTests.swift in Sources */,
 				7F5123E1F42E7ADB2D8F0E05 /* ScreenMirrorBitrateTests.swift in Sources */,
+				1C9F6647E047844F8E48DE02 /* TerminalAgentTests.swift in Sources */,
 				1B2FABFA4D9EDFD953FB0AF0 /* UsageConsentTests.swift in Sources */,
 				7F1436A765B8A8C52CE9C3E1 /* UsageReportingTests.swift in Sources */,
 				52F31C5E19C11498E23411AA /* VNCPreferencesTests.swift in Sources */,

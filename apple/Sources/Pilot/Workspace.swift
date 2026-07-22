@@ -276,15 +276,30 @@ final class Pane {
         "pilot-\(id.uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
     }
 
+    /// The pid of the pane's in-session shell, recorded by the injected zsh
+    /// `precmd` hook. Panes run inside tmux, so this is the shell attached to
+    /// the pane's tmux session, not a direct child of the Ghostty pty.
+    func liveShellPID() -> pid_t? {
+        let dir = "\(NSTemporaryDirectory())pilot-panes-\(ProcessInfo.processInfo.processIdentifier)"
+        let pidFile = "\(dir)/\(id.uuidString.lowercased()).pid"
+        guard let raw = try? String(contentsOfFile: pidFile, encoding: .utf8) else { return nil }
+        guard let pid = pid_t(raw.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 0 else { return nil }
+        return pid
+    }
+
+    /// The coding agent running under the pane's shell, or `nil` when the shell
+    /// is at its prompt or running something else.
+    func liveShellAgent() -> TerminalAgent? {
+        guard let pid = liveShellPID() else { return nil }
+        return TerminalAgent.running(under: pid)
+    }
+
     /// Reads the live cwd of the pane's shell process from the kernel.
     /// Unlike `currentDirectory` (updated only when the shell emits OSC 7 on
     /// each prompt), this works even while a foreground process like Claude
     /// Code owns the pty — the shell is paused but its cwd is still current.
     func liveShellCurrentDirectory() -> String? {
-        let dir = "\(NSTemporaryDirectory())pilot-panes-\(ProcessInfo.processInfo.processIdentifier)"
-        let pidFile = "\(dir)/\(id.uuidString.lowercased()).pid"
-        guard let raw = try? String(contentsOfFile: pidFile, encoding: .utf8) else { return nil }
-        guard let pid = pid_t(raw.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 0 else { return nil }
+        guard let pid = liveShellPID() else { return nil }
 
         var info = proc_vnodepathinfo()
         let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
