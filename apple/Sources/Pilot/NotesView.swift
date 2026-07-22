@@ -1,6 +1,24 @@
 import AppKit
+import CoreTransferable
 import ImageIO
 import SwiftUI
+import UniformTypeIdentifiers
+
+extension UTType {
+    static let pilotNoteTab = UTType(exportedAs: "app.blau.pilot.note-tab")
+}
+
+/// The note whose tab is being dragged to reorder it. A dedicated Transferable
+/// type — rather than the note's bare UUID string — keeps the drag from being
+/// confused with generic text drags (which is why a plain-`String` payload
+/// dropped unreliably), and mirrors the workspace pane tabs' drag payload.
+struct NoteTabTransfer: Codable, Transferable {
+    let id: UUID
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .pilotNoteTab)
+    }
+}
 
 /// Detail-area view for the global Notes mode (toggled with ⌘0). Renders a
 /// horizontal tab bar of notes across the top with a text editor below for
@@ -9,6 +27,8 @@ struct NotesView: View {
     @Bindable var store: WorkspaceStore
     @State private var showCopiedToast = false
     @State private var toastDismiss: DispatchWorkItem?
+    /// Tab the dragged note would be inserted before; drives the insertion marker.
+    @State private var dropTargetNoteID: UUID?
 
     var body: some View {
         let notes = store.notes
@@ -77,18 +97,33 @@ struct NotesView: View {
                     NoteTab(
                         title: note.displayTitle,
                         isSelected: note.id == store.selectedNoteID,
+                        isDropTarget: dropTargetNoteID == note.id,
                         onSelect: { store.selectedNoteID = note.id },
                         onClose: { store.requestCloseNote(note) }
                     )
-                    // Drag-to-reorder (issue #67). The note's id rides along as
-                    // the dragged payload; dropping onto another tab inserts the
-                    // dragged note just before it and persists the new order.
-                    .draggable(note.id.uuidString)
-                    .dropDestination(for: String.self) { items, _ in
-                        guard let raw = items.first,
-                              let draggedID = UUID(uuidString: raw) else { return false }
-                        store.moveNote(draggedID, before: note.id)
+                    // Drag-to-reorder (issue #67). The note rides along as a
+                    // dedicated Transferable payload; dropping onto another tab
+                    // inserts the dragged note just before it and persists the
+                    // new order.
+                    .draggable(NoteTabTransfer(id: note.id)) {
+                        // Legible chip under the cursor while dragging.
+                        Text(note.displayTitle)
+                            .scaledFont(size: 12)
+                            .lineLimit(1)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                .ultraThinMaterial,
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            )
+                    }
+                    .dropDestination(for: NoteTabTransfer.self) { items, _ in
+                        dropTargetNoteID = nil
+                        guard let dragged = items.first else { return false }
+                        store.moveNote(dragged.id, before: note.id)
                         return true
+                    } isTargeted: { targeted in
+                        dropTargetNoteID = targeted ? note.id : nil
                     }
                 }
 
@@ -104,10 +139,9 @@ struct NotesView: View {
                 .foregroundStyle(.secondary)
                 .help("New Note")
                 // Dropping a tab on (or past) the + button sends it to the end.
-                .dropDestination(for: String.self) { items, _ in
-                    guard let raw = items.first,
-                          let draggedID = UUID(uuidString: raw) else { return false }
-                    store.moveNoteToEnd(draggedID)
+                .dropDestination(for: NoteTabTransfer.self) { items, _ in
+                    guard let dragged = items.first else { return false }
+                    store.moveNoteToEnd(dragged.id)
                     return true
                 }
             }
@@ -1263,6 +1297,7 @@ private struct CopiedSecretToast: View {
 private struct NoteTab: View {
     let title: String
     let isSelected: Bool
+    let isDropTarget: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
 
@@ -1295,6 +1330,18 @@ private struct NoteTab: View {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .strokeBorder(isSelected ? Color.accentColor.opacity(0.5) : .clear, lineWidth: 1)
         }
+        // Insertion marker on the leading edge — a drop places the dragged tab
+        // just before this one.
+        .overlay(alignment: .leading) {
+            if isDropTarget {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: 3)
+                    .padding(.vertical, 2)
+                    .offset(x: -4)
+            }
+        }
+        .animation(.easeInOut(duration: 0.12), value: isDropTarget)
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
         .onHover { isHovering = $0 }
