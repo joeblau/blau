@@ -352,6 +352,7 @@ struct ExtensionWindowView: View {
     @Bindable var store: WorkspaceStore
     @Bindable var controller: ExtensionWorkspaceController
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
 
     @State private var gitStore = GitCommitStore()
     @State private var tasksStore = GitHubTasksStore()
@@ -503,6 +504,33 @@ struct ExtensionWindowView: View {
                 workspace.removePane(pane)
             }
             .keyboardShortcut("w", modifiers: .command)
+            .hidden()
+
+            // ⌥⌘E toggles Extendo everywhere. PilotWindowCommands' menu command
+            // only reaches the main window (a main-scene command doesn't fire
+            // while the Extension window is key — the same reason ⌘1…⌘9 are
+            // re-registered for this scene), so add the hide side here.
+            Button("") {
+                dismissWindow(id: PilotWindowID.extendo)
+            }
+            .keyboardShortcut("e", modifiers: [.command, .option])
+            .hidden()
+
+            // ⌘T / ⌘B add a pane to the Extension workspace. PilotPaneCreation-
+            // Commands lives on the main scene and doesn't fire while this window
+            // is key, so handle them here too, targeting this window's workspace.
+            // macOS matches the menu bar before the responder chain, so when the
+            // menu command *is* active (main window key) these never double-fire.
+            Button("") {
+                extensionWorkspace?.addPane(kind: .terminal, side: .right)
+            }
+            .keyboardShortcut("t", modifiers: .command)
+            .hidden()
+
+            Button("") {
+                extensionWorkspace?.addPane(kind: .browser, side: .right)
+            }
+            .keyboardShortcut("b", modifiers: .command)
             .hidden()
         }
         .frame(minWidth: 560, minHeight: 480)
