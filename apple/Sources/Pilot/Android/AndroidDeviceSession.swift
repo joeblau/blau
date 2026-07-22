@@ -20,6 +20,7 @@ final class AndroidDeviceSession {
     enum Status: Equatable {
         case picking
         case adbMissing
+        case booting(String)
         case connecting(String)
         case streaming
         case failed(String)
@@ -27,6 +28,9 @@ final class AndroidDeviceSession {
 
     var status: Status = .picking
     var devices: [AndroidDevice] = []
+    /// Installed AVDs that are not currently running, offered as "boot one" rows
+    /// in the Simulator picker. Only populated for the `.simulator` target.
+    var bootableAVDs: [String] = []
     var isRefreshing = false
     var lastError: String?
     var isRecording = false
@@ -62,6 +66,13 @@ final class AndroidDeviceSession {
     @ObservationIgnored private var rotationWatcher: Process?
     @ObservationIgnored private var rotationWatcherHandle: FileHandle?
     @ObservationIgnored private var rotationLineBuffer = Data()
+
+    /// The emulator boot launched from the Simulator picker. Retained so it
+    /// isn't deallocated mid-boot; never terminated on teardown — a booted
+    /// emulator outlives the pane. `bootingAVDName` lets Retry re-boot after a
+    /// boot failure (there is no serial to reconnect yet).
+    @ObservationIgnored private var bootProcess: Process?
+    @ObservationIgnored private var bootingAVDName: String?
 
     @ObservationIgnored private var connectionGeneration = 0
     @ObservationIgnored private var streamGeneration = 0
@@ -105,14 +116,14 @@ final class AndroidDeviceSession {
     func refreshDevices() {
         guard !isSuspended, !isRefreshing else { return }
         isRefreshing = true
+        let target = self.target
         Task {
-            let result = await Self.loadDevices()
+            let scan = await Self.scan(target: target)
             self.isRefreshing = false
-            switch result {
+            self.bootableAVDs = scan.bootableAVDs
+            switch scan.devices {
             case .success(let devices):
-                self.devices = self.target.map { target in
-                    devices.filter(target.includes)
-                } ?? devices
+                self.devices = target.map { t in devices.filter(t.includes) } ?? devices
                 self.lastError = nil
                 if self.status == .adbMissing { self.status = .picking }
             case .toolingMissing:
@@ -134,17 +145,139 @@ final class AndroidDeviceSession {
         case failure(String)
     }
 
+    private struct DeviceScan: Sendable {
+        let devices: LoadResult
+        let bootableAVDs: [String]
+    }
+
+    /// One off-main pass: list running adb devices and, for the Simulator
+    /// target, the installed AVDs that are *not* already running (so the picker
+    /// can offer to boot them). Correlating a running emulator back to its AVD
+    /// name needs adb, so bootable AVDs are only computed when adb resolves.
+    /// `adb devices -l` mapped to a `LoadResult`. Synchronous and nonisolated so
+    /// it can run inside the detached scan/poll off the main actor. Shared by
+    /// `scan` and the self-heal poll.
+    private nonisolated static func listDevicesResult() -> LoadResult {
+        do {
+            return .success(try AdbBridge.listDevices())
+        } catch AdbError.toolingMissing {
+            return .toolingMissing
+        } catch AdbError.commandFailed(let message) {
+            return .failure(message)
+        } catch {
+            return .failure(error.localizedDescription)
+        }
+    }
+
     private static func loadDevices() async -> LoadResult {
+        await Task.detached(priority: .userInitiated) { listDevicesResult() }.value
+    }
+
+    private static func scan(target: AndroidPaneTarget?) async -> DeviceScan {
         await Task.detached(priority: .userInitiated) {
-            do {
-                return .success(try AdbBridge.listDevices())
-            } catch AdbError.toolingMissing {
-                return .toolingMissing
-            } catch AdbError.commandFailed(let message) {
-                return .failure(message)
-            } catch {
-                return .failure(error.localizedDescription)
+            let deviceResult = listDevicesResult()
+            let running: [AndroidDevice]
+            if case .success(let devices) = deviceResult { running = devices } else { running = [] }
+
+            var bootable: [String] = []
+            if target == .simulator,
+               let adbURL = AdbBridge.resolveAdbURL(),
+               let installed = try? EmulatorBridge.listAVDs(), !installed.isEmpty {
+                let runningAVDNames = Set(running
+                    .filter(\.isEmulator)
+                    .compactMap { AdbBridge.emulatorAVDName(adbURL: adbURL, serial: $0.serial) })
+                bootable = installed.filter { !runningAVDNames.contains($0) }
             }
+            return DeviceScan(devices: deviceResult, bootableAVDs: bootable)
+        }.value
+    }
+
+    // MARK: - Emulator boot (Simulator target)
+
+    /// Launch an installed AVD and connect the mirror once it finishes booting.
+    /// The emulator is a user resource: it is left running when the pane is
+    /// dismissed, mirroring how a manually started emulator behaves.
+    func bootAVD(_ name: String) {
+        guard EmulatorBridge.isValidAVDName(name),
+              let emulatorURL = EmulatorBridge.resolveEmulatorURL(),
+              let adbURL = AdbBridge.resolveAdbURL() else {
+            status = .adbMissing
+            return
+        }
+        isSuspended = false
+        connectionGeneration &+= 1
+        let generation = connectionGeneration
+        teardownConnection()
+
+        let displayName = EmulatorBridge.displayName(for: name)
+        connectedSerial = nil
+        connectedName = displayName
+        bootingAVDName = name
+        status = .booting(displayName)
+
+        let existingSerials = Set(devices.map(\.serial))
+        let process = EmulatorBridge.makeBootProcess(emulatorURL: emulatorURL, avdName: name)
+        do {
+            try process.run()
+        } catch {
+            status = .failed("Couldn't start the emulator: \(error.localizedDescription)")
+            return
+        }
+        bootProcess = process
+        let pid = process.processIdentifier
+
+        Task {
+            let outcome = await Self.awaitBootedEmulator(
+                adbURL: adbURL,
+                avdName: name,
+                existingSerials: existingSerials,
+                pid: pid
+            )
+            guard generation == self.connectionGeneration else { return }
+            switch outcome {
+            case .booted(let serial):
+                self.bootingAVDName = nil
+                self.connect(AndroidDevice(serial: serial, state: .device, model: displayName, product: nil))
+            case .processExited:
+                self.status = .failed("The emulator stopped before it finished booting.")
+            case .timedOut:
+                self.status = .failed("The emulator is taking too long to boot. Check Android Studio, then Retry.")
+            }
+        }
+    }
+
+    private enum BootOutcome: Sendable {
+        case booted(String)
+        case processExited
+        case timedOut
+    }
+
+    /// Poll adb until the freshly launched AVD reports a booted emulator, then
+    /// hand back its serial. Identifies the emulator by AVD name, falling back
+    /// to "a new emulator serial that wasn't present before the launch". A dead
+    /// emulator process is a hard failure; otherwise it waits out the boot.
+    private static func awaitBootedEmulator(
+        adbURL: URL,
+        avdName: String,
+        existingSerials: Set<String>,
+        pid: pid_t
+    ) async -> BootOutcome {
+        await Task.detached(priority: .userInitiated) {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(240))
+            while ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .seconds(2))
+                if kill(pid, 0) != 0, errno == ESRCH { return .processExited }
+                guard let devices = try? AdbBridge.listDevices() else { continue }
+                for device in devices where device.isEmulator && device.state == .device {
+                    let avd = AdbBridge.emulatorAVDName(adbURL: adbURL, serial: device.serial)
+                    let matches = avd == avdName
+                        || (avd == nil && !existingSerials.contains(device.serial))
+                    if matches, AdbBridge.isBootCompleted(adbURL: adbURL, serial: device.serial) {
+                        return .booted(device.serial)
+                    }
+                }
+            }
+            return .timedOut
         }.value
     }
 
@@ -265,12 +398,18 @@ final class AndroidDeviceSession {
         stop()
         connectedSerial = nil
         connectedName = nil
+        bootingAVDName = nil
         status = .picking
         refreshDevices()
     }
 
     /// Manual retry from the failed overlay — the self-heal poll's big button.
+    /// A boot that failed has no serial yet, so retry re-launches the AVD.
     func retry() {
+        if connectedSerial == nil, let avd = bootingAVDName {
+            bootAVD(avd)
+            return
+        }
         guard case .failed = status, let serial = connectedSerial else { return }
         let device = devices.first { $0.serial == serial }
             ?? AndroidDevice(serial: serial, state: .device, model: connectedName, product: nil)
