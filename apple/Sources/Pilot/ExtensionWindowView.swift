@@ -492,6 +492,18 @@ struct ExtensionWindowView: View {
             }
             .keyboardShortcut("d", modifiers: [.command, .shift])
             .hidden()
+
+            // ⌘W closes the selected pane, never the Extension window. Without
+            // this the shortcut falls through to AppKit's default close-window.
+            // The extension surface may close its last pane (it shows an empty
+            // state), so no minimum-count guard.
+            Button("") {
+                guard let workspace = extensionWorkspace,
+                      let pane = workspace.selectedPane else { return }
+                workspace.removePane(pane)
+            }
+            .keyboardShortcut("w", modifiers: .command)
+            .hidden()
         }
         .frame(minWidth: 560, minHeight: 480)
         .task {
