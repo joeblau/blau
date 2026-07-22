@@ -60,6 +60,7 @@
 		3DA4B44B89281F76759EE2CE /* InkOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D88EA79C48861054839A54 /* InkOverlay.swift */; };
 		3F53B158E0DF1B99E6E6E53B /* FrameProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51953FE31BA534927A942C96 /* FrameProtocol.swift */; };
 		4014326878763DCFCDEFD4A9 /* GhosttyInputRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A7B90C5940A776273E13D /* GhosttyInputRegressionTests.swift */; };
+		403ECD20A25C27953F2817FC /* EmulatorBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68B65C9369B83AEAD1E5A3DB /* EmulatorBridgeTests.swift */; };
 		409BF267099B0CC2035B8471 /* SignalingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E59DAB0A4EFD8A5F838D0A8 /* SignalingClient.swift */; };
 		42AD1C88122F979531C2C527 /* RepositoryPollingSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2E7DF37EA94BAC2FDEAB71B /* RepositoryPollingSchedulerTests.swift */; };
 		43359E06161C1CFB9610398F /* SecureChannelDeadline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68DD092D8ED9F34EC42D8241 /* SecureChannelDeadline.swift */; };
@@ -132,6 +133,7 @@
 		91698151B8722ED0E14C60E9 /* SyncMessagesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A71DC4B75C15342693E47C /* SyncMessagesTests.swift */; };
 		92BDA4A75A83FF11067D37C1 /* SecureChannelCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60239E35495E8B73D9F43FA /* SecureChannelCore.swift */; };
 		9343B8258DC8AD0AF936D013 /* SecureMessagingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63115D2BD54B02BCBFBC5774 /* SecureMessagingView.swift */; };
+		93C44BCAA413AC9F51CDD222 /* EmulatorBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EA37F6C0EBB7522ADAE069B /* EmulatorBridge.swift */; };
 		97CCEC7CB74BCC87DC23E339 /* PaneInitRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7297FC9076A3EEE92FA359FD /* PaneInitRegressionTests.swift */; };
 		9ACCE7E69E845EF4E354B2CD /* ConnectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B944283C684052D8E37CEA34 /* ConnectionState.swift */; };
 		9B007CA103B85D7E93002E57 /* EditorState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60165C6B80F2A33B623EE8A2 /* EditorState.swift */; };
@@ -307,6 +309,7 @@
 		0BDC00051A9FA420E24442FB /* SimulatorPrivateFrameworks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorPrivateFrameworks.swift; sourceTree = "<group>"; };
 		0D11744ADF836F5AE0046ECE /* SecureChannelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureChannelTests.swift; sourceTree = "<group>"; };
 		0DB6D8C3263608D267C325CE /* ColorChipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorChipTests.swift; sourceTree = "<group>"; };
+		0EA37F6C0EBB7522ADAE069B /* EmulatorBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmulatorBridge.swift; sourceTree = "<group>"; };
 		113DAF69FB3F5B7103A098B8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		121C6AC472520F930AD92461 /* SecurePairingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurePairingStore.swift; sourceTree = "<group>"; };
 		1276A49AF5B79B2DF90F9A4F /* SecureChannelResponder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureChannelResponder.swift; sourceTree = "<group>"; };
@@ -376,6 +379,7 @@
 		6705AED63D291136F8D0EB87 /* PrivacyManifestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyManifestTests.swift; sourceTree = "<group>"; };
 		67FAA18AA33DB039B0026206 /* SyncMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMessages.swift; sourceTree = "<group>"; };
 		682AB09642BE2C3FA96FD284 /* PlotterSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotterSnapshotStore.swift; sourceTree = "<group>"; };
+		68B65C9369B83AEAD1E5A3DB /* EmulatorBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmulatorBridgeTests.swift; sourceTree = "<group>"; };
 		68DD092D8ED9F34EC42D8241 /* SecureChannelDeadline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureChannelDeadline.swift; sourceTree = "<group>"; };
 		6AB3DB6D05A10CA69E15605E /* WingmanCommandTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WingmanCommandTests.swift; sourceTree = "<group>"; };
 		6D1A7B90C5940A776273E13D /* GhosttyInputRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyInputRegressionTests.swift; sourceTree = "<group>"; };
@@ -520,6 +524,7 @@
 				12A9B5BA4AEC02243A5D26C3 /* AndroidScreenStream.swift */,
 				BB04F57799570E4A2210BF4C /* AndroidStreamPolicy.swift */,
 				64165F122C0F8FF983D3C7B4 /* AndroidStreamRecorder.swift */,
+				0EA37F6C0EBB7522ADAE069B /* EmulatorBridge.swift */,
 				0A9EDB66F66A7F313ED94CBD /* H264AnnexBAssembler.swift */,
 			);
 			path = Android;
@@ -551,6 +556,7 @@
 				F41F5AC980B9260EDB78A608 /* BrowserStartPageVisibilityTests.swift */,
 				0DB6D8C3263608D267C325CE /* ColorChipTests.swift */,
 				EE4BE7D72DE183D76ABD0EA9 /* DeviceCaptureLifecycleTests.swift */,
+				68B65C9369B83AEAD1E5A3DB /* EmulatorBridgeTests.swift */,
 				FF40C0F2AB338D701B6444C3 /* ExtensionWindowSyncTests.swift */,
 				4AD843F2429472CDAB91130E /* FileFinderTests.swift */,
 				6D1A7B90C5940A776273E13D /* GhosttyInputRegressionTests.swift */,
@@ -1255,6 +1261,7 @@
 				18FED2F1C7DFB765BE7F8A53 /* DevicePaneView.swift in Sources */,
 				9C8264CDCBF880BC7E22F2FA /* EditorPaneView.swift in Sources */,
 				9B007CA103B85D7E93002E57 /* EditorState.swift in Sources */,
+				93C44BCAA413AC9F51CDD222 /* EmulatorBridge.swift in Sources */,
 				7E673C3AAC69631D9B9809E2 /* EnvSecret.swift in Sources */,
 				6AF75946444591D680F5C78E /* ExtensionWindowView.swift in Sources */,
 				59C82F1F0F83C63BFC4C0478 /* FileFinder.swift in Sources */,
@@ -1379,6 +1386,7 @@
 				FFDC16C3D0A160CCB1BCBDCF /* BrowserStartPageVisibilityTests.swift in Sources */,
 				A777700135D8A05BAA8AB11D /* ColorChipTests.swift in Sources */,
 				DEF43D0C04DB2FF723D7BC23 /* DeviceCaptureLifecycleTests.swift in Sources */,
+				403ECD20A25C27953F2817FC /* EmulatorBridgeTests.swift in Sources */,
 				728EB88CFA785A9C3479AA9A /* ExtensionWindowSyncTests.swift in Sources */,
 				067087C5C181973550B9AC7E /* FileFinderTests.swift in Sources */,
 				4014326878763DCFCDEFD4A9 /* GhosttyInputRegressionTests.swift in Sources */,
