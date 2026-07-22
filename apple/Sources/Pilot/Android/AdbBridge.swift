@@ -10,6 +10,28 @@ enum AdbError: Error {
     case invalidOutput(String)
 }
 
+/// Source category selected by the Android launcher. Both categories use the
+/// same embedded ADB stream; this filter keeps each picker focused on the
+/// destination the user requested.
+enum AndroidPaneTarget: String, CaseIterable, Sendable {
+    case simulator
+    case device
+
+    var pickerTitle: String {
+        switch self {
+        case .simulator: "Android Simulator"
+        case .device: "Android Device"
+        }
+    }
+
+    func includes(_ device: AndroidDevice) -> Bool {
+        switch self {
+        case .simulator: device.isEmulator
+        case .device: !device.isEmulator
+        }
+    }
+}
+
 /// One Android device from `adb devices -l`.
 struct AndroidDevice: Identifiable, Hashable, Sendable {
     /// adb connection states we act on. Anything unrecognized maps to `.other`

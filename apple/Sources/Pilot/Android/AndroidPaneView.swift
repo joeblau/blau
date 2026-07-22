@@ -190,7 +190,7 @@ private struct AndroidPickerView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("Android Device", systemImage: "smartphone")
+                Label(session.target?.pickerTitle ?? "Android Device", systemImage: pickerSystemImage)
                     .font(.headline)
                 Spacer()
                 if session.isRefreshing {
@@ -281,13 +281,33 @@ private struct AndroidPickerView: View {
                     .multilineTextAlignment(.center).padding(.horizontal, 32)
             } else {
                 Image(systemName: "smartphone").font(.system(size: 34)).foregroundStyle(.secondary)
-                Text("No Android devices found").font(.headline)
-                Text("Connect a device over USB with USB debugging enabled (Settings → Developer options), or start an emulator.")
+                Text(emptyTitle).font(.headline)
+                Text(emptyGuidance)
                     .font(.subheadline).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).padding(.horizontal, 32)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var pickerSystemImage: String {
+        session.target == .simulator ? "apps.iphone" : "smartphone"
+    }
+
+    private var emptyTitle: String {
+        switch session.target {
+        case .simulator: "No Android simulators found"
+        case .device: "No Android devices found"
+        case nil: "No Android sources found"
+        }
+    }
+
+    private var emptyGuidance: String {
+        switch session.target {
+        case .simulator: "Start an emulator in Android Studio, then Refresh."
+        case .device: "Connect a device over USB with USB debugging enabled (Settings → Developer options)."
+        case nil: "Connect a device over USB with USB debugging enabled, or start an emulator."
+        }
     }
 }
 
