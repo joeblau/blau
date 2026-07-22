@@ -36,6 +36,7 @@ final class AndroidDeviceSession {
     /// Increments the first time typed/pasted characters are dropped by the
     /// adb text allowlist, so the pane can flash a one-time notice.
     var droppedTextNoticeCount = 0
+    private(set) var target: AndroidPaneTarget?
 
     private(set) var connectedSerial: String?
     private(set) var connectedName: String?
@@ -79,13 +80,23 @@ final class AndroidDeviceSession {
 
     private static let selfHealInterval: Duration = .seconds(2)
 
-    init() {
+    init(target: AndroidPaneTarget? = nil) {
+        self.target = target
         displayLayer.videoGravity = .resizeAspect
         displayLayer.backgroundColor = NSColor.clear.cgColor
         recorder.onSegmentFinished = { [weak self] url, errorMessage in
             Task { @MainActor [weak self] in
                 self?.recordingSegmentDidFinish(url: url, errorMessage: errorMessage)
             }
+        }
+    }
+
+    func setTarget(_ target: AndroidPaneTarget) {
+        guard self.target != target else { return }
+        self.target = target
+        devices = devices.filter(target.includes)
+        if status == .picking {
+            refreshDevices()
         }
     }
 
@@ -99,7 +110,9 @@ final class AndroidDeviceSession {
             self.isRefreshing = false
             switch result {
             case .success(let devices):
-                self.devices = devices
+                self.devices = self.target.map { target in
+                    devices.filter(target.includes)
+                } ?? devices
                 self.lastError = nil
                 if self.status == .adbMissing { self.status = .picking }
             case .toolingMissing:

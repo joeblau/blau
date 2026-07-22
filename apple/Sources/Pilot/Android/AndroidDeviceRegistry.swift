@@ -9,12 +9,18 @@ final class AndroidDeviceRegistry {
     static let shared = AndroidDeviceRegistry()
 
     private var sessions: [UUID: AndroidDeviceSession] = [:]
+    private var targets: [UUID: AndroidPaneTarget] = [:]
+
+    func configure(target: AndroidPaneTarget, for paneID: UUID) {
+        targets[paneID] = target
+        sessions[paneID]?.setTarget(target)
+    }
 
     func session(for paneID: UUID) -> AndroidDeviceSession {
         if let existing = sessions[paneID] {
             return existing
         }
-        let session = AndroidDeviceSession()
+        let session = AndroidDeviceSession(target: targets[paneID])
         sessions[paneID] = session
         return session
     }
@@ -37,6 +43,7 @@ final class AndroidDeviceRegistry {
     }
 
     func remove(paneID: UUID) {
+        targets.removeValue(forKey: paneID)
         guard let session = sessions.removeValue(forKey: paneID) else { return }
         session.stop()
     }

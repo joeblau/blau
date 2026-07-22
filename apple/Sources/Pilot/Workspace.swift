@@ -463,7 +463,8 @@ final class Workspace {
         self.frontmostTerminalPaneID = initialPane.id
     }
 
-    func addPane(kind: PaneKind, side: Side) {
+    @discardableResult
+    func addPane(kind: PaneKind, side: Side) -> Pane {
         let maxOrder = panes.map(\.sortOrder).max() ?? -1
         let pane = Pane(
             kind: kind,
@@ -501,6 +502,7 @@ final class Workspace {
         }
         syncDefaultRootPathIfNeeded()
         _ = modelContext?.saveReporting(operation: "Adding pane")
+        return pane
     }
 
     @discardableResult

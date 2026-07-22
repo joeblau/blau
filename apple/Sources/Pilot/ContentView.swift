@@ -69,11 +69,27 @@ struct WorkspacePaneLauncher: View {
         .help("Open an Apple Simulator or QuickTime device stream")
         .accessibilityIdentifier("workspace.apple-pane-launcher")
 
-        Button {
-            workspace?.addPane(kind: .android, side: .right)
+        Menu {
+            Button {
+                addAndroidPane(target: .simulator)
+            } label: {
+                Label("Android Simulator", systemImage: "apps.iphone")
+            }
+
+            Button {
+                addAndroidPane(target: .device)
+            } label: {
+                Label("Android Device", systemImage: "smartphone")
+            }
         } label: {
-            Label("New Android", systemImage: PaneKind.android.systemImageName)
+            Label {
+                Text("Android")
+            } icon: {
+                Image("AndroidRobot")
+            }
         }
+        .help("Open an Android Simulator or device stream")
+        .accessibilityIdentifier("workspace.android-pane-launcher")
 
         Button {
             workspace?.addPane(kind: .editor, side: .right)
@@ -101,6 +117,11 @@ struct WorkspacePaneLauncher: View {
                 ? "Set a workspace root path to open it in Finder"
                 : "Open the workspace folder in Finder"
         )
+    }
+
+    private func addAndroidPane(target: AndroidPaneTarget) {
+        guard let pane = workspace?.addPane(kind: .android, side: .right) else { return }
+        AndroidDeviceRegistry.shared.configure(target: target, for: pane.id)
     }
 }
 

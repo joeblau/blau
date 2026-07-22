@@ -36,6 +36,27 @@ struct AdbBridgeParsingTests {
     }
 
     @Test
+    func androidPaneTargetsSeparateSimulatorsAndDevices() {
+        let simulator = AndroidDevice(
+            serial: "emulator-5554",
+            state: .device,
+            model: "sdk_gphone64_arm64",
+            product: nil
+        )
+        let device = AndroidDevice(
+            serial: "R5CT10XXXX",
+            state: .device,
+            model: "Pixel_9",
+            product: nil
+        )
+
+        #expect(AndroidPaneTarget.simulator.includes(simulator))
+        #expect(!AndroidPaneTarget.simulator.includes(device))
+        #expect(AndroidPaneTarget.device.includes(device))
+        #expect(!AndroidPaneTarget.device.includes(simulator))
+    }
+
+    @Test
     func ignoresNoiseBeforeHeaderAndUnknownStates() {
         let output = """
         adb server version (41) doesn't match this client
