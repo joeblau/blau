@@ -92,7 +92,7 @@ struct AndroidPaneView: View {
                 AndroidPickerView(session: session, isPolling: isActive && !isCollapsed)
             case .adbMissing:
                 AndroidToolingMissingView(session: session)
-            case .connecting, .failed:
+            case .booting, .connecting, .failed:
                 AndroidStatusOverlay(session: session)
             }
 
@@ -208,18 +208,39 @@ private struct AndroidPickerView: View {
             .padding(12)
             Divider()
 
-            if session.devices.isEmpty {
+            if session.devices.isEmpty && session.bootableAVDs.isEmpty {
                 emptyState
             } else {
                 List {
-                    ForEach(session.devices) { device in
-                        Button {
-                            session.connect(device)
-                        } label: {
-                            deviceRow(device)
+                    if !session.devices.isEmpty {
+                        Section {
+                            ForEach(session.devices) { device in
+                                Button {
+                                    session.connect(device)
+                                } label: {
+                                    deviceRow(device)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(!device.isConnectable)
+                            }
+                        } header: {
+                            if showsBootableSection { Text("Running") }
                         }
-                        .buttonStyle(.plain)
-                        .disabled(!device.isConnectable)
+                    }
+
+                    // Installed-but-stopped AVDs the picker can boot (Simulator
+                    // target only), mirroring the iOS pane's shut-down sims.
+                    if showsBootableSection {
+                        Section("Available") {
+                            ForEach(session.bootableAVDs, id: \.self) { avd in
+                                Button {
+                                    session.bootAVD(avd)
+                                } label: {
+                                    avdRow(avd)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
                 }
                 .listStyle(.inset)
@@ -252,6 +273,30 @@ private struct AndroidPickerView: View {
             }
             Spacer()
             Image(systemName: device.isConnectable ? "chevron.right" : "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 3)
+    }
+
+    /// Only the Simulator target lists bootable AVDs; the header text only earns
+    /// its keep when running devices are also shown alongside them.
+    private var showsBootableSection: Bool {
+        session.target == .simulator && !session.bootableAVDs.isEmpty
+    }
+
+    private func avdRow(_ avd: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "play.circle")
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(EmulatorBridge.displayName(for: avd))
+                Text("Not running — tap to boot").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "power")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -304,7 +349,7 @@ private struct AndroidPickerView: View {
 
     private var emptyGuidance: String {
         switch session.target {
-        case .simulator: "Start an emulator in Android Studio, then Refresh."
+        case .simulator: "Create an emulator in Android Studio's Device Manager, then Refresh."
         case .device: "Connect a device over USB with USB debugging enabled (Settings → Developer options)."
         case nil: "Connect a device over USB with USB debugging enabled, or start an emulator."
         }
@@ -340,6 +385,13 @@ private struct AndroidStatusOverlay: View {
     var body: some View {
         VStack(spacing: 12) {
             switch session.status {
+            case .booting(let name):
+                ProgressView()
+                Text("Starting \(name)…").font(.headline)
+                Text("The emulator can take a minute to boot.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                Button("Back to Devices") { session.chooseAnotherDevice() }
+                    .padding(.top, 4)
             case .connecting(let name):
                 ProgressView()
                 Text("Connecting to \(name)…").font(.headline)

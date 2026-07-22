@@ -172,6 +172,38 @@ enum AdbBridge {
         }
     }
 
+    // MARK: - Emulator correlation
+
+    /// The AVD backing a running emulator, via `adb -s <serial> emu avd name`
+    /// (output is the AVD id on its own line, followed by an `OK` line). Returns
+    /// nil for physical devices or on any error. Lets the Simulator picker hide
+    /// AVDs that are already running from its "boot one" list.
+    static func emulatorAVDName(adbURL: URL, serial: String) -> String? {
+        guard let data = try? run(
+            adbURL: adbURL,
+            arguments: ["-s", serial, "emu", "avd", "name"],
+            timeout: .seconds(5)
+        ) else { return nil }
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            let name = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if name.isEmpty || name == "OK" { continue }
+            return name
+        }
+        return nil
+    }
+
+    /// Whether `sys.boot_completed` is set — the emulator has finished booting
+    /// and its screen/services are up. Used to wait out a fresh emulator boot
+    /// before connecting the mirror.
+    static func isBootCompleted(adbURL: URL, serial: String) -> Bool {
+        guard let data = try? run(
+            adbURL: adbURL,
+            arguments: ["-s", serial, "shell", "getprop", "sys.boot_completed"],
+            timeout: .seconds(5)
+        ) else { return false }
+        return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+    }
+
     // MARK: - Display size
 
     /// Current display size from `adb shell wm size`, in the device's natural
