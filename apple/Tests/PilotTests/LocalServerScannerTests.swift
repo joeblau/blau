@@ -82,4 +82,46 @@ struct LocalServerScannerTests {
         let beta = LocalServer(port: 3000, name: "beta")
         #expect(alpha.id != beta.id)
     }
+
+    /// Regression for opening the browser preview before the dev server: a
+    /// failed initial probe must not leave the card gray for the rest of the
+    /// start page's lifetime.
+    @Test
+    @MainActor
+    func livenessMonitorReprobesUntilServerStarts() async {
+        let scriptedProbe = ScriptedServerProbe(results: [false, true])
+        var updates: [[Int: Bool]] = []
+
+        let monitor = Task {
+            await LocalServerLivenessMonitor.monitor(
+                servers: [LocalServer(port: 30_000, name: "late-server")],
+                interval: .milliseconds(10),
+                probe: { _ in await scriptedProbe.next() },
+                onUpdate: { update in updates.append(update) }
+            )
+        }
+
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while updates.count < 2, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        monitor.cancel()
+        await monitor.value
+
+        #expect(updates.count >= 2)
+        #expect(updates[0][30_000] == false)
+        #expect(updates[1][30_000] == true)
+    }
+}
+
+private actor ScriptedServerProbe {
+    private var results: [Bool]
+
+    init(results: [Bool]) {
+        self.results = results
+    }
+
+    func next() -> Bool {
+        results.isEmpty ? true : results.removeFirst()
+    }
 }

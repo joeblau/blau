@@ -73,20 +73,8 @@ struct BrowserStartPageView: View {
         let discovered = await LocalServerScanner.scan(rootPath: path)
         servers = discovered
         hasScanned = true
-        await probe(servers: discovered)
-    }
-
-    private func probe(servers: [LocalServer]) async {
-        await withTaskGroup(of: (Int, Bool).self) { group in
-            for server in servers {
-                group.addTask {
-                    let live = await LocalServerProbe.isLive(port: server.port)
-                    return (server.port, live)
-                }
-            }
-            for await (port, live) in group {
-                liveness[port] = live
-            }
+        await LocalServerLivenessMonitor.monitor(servers: discovered) { latest in
+            liveness = latest
         }
     }
 }
