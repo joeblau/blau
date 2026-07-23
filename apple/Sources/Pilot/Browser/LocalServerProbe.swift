@@ -34,6 +34,58 @@ enum LocalServerProbe {
     }
 }
 
+// Re-probes the discovered ports while the browser start page is visible.
+// Discovery only needs to happen once, but liveness must remain dynamic because
+// developers commonly open the preview before starting a dev server.
+enum LocalServerLivenessMonitor {
+    static let defaultInterval: Duration = .seconds(2)
+
+    static func monitor(
+        servers: [LocalServer],
+        interval: Duration = defaultInterval,
+        probe: @escaping @Sendable (Int) async -> Bool = { port in
+            await LocalServerProbe.isLive(port: port)
+        },
+        onUpdate: @escaping @MainActor ([Int: Bool]) -> Void
+    ) async {
+        while !Task.isCancelled {
+            let latest = await snapshot(servers: servers, probe: probe)
+            guard !Task.isCancelled else { return }
+            await onUpdate(latest)
+
+            do {
+                try await Task.sleep(for: interval)
+            } catch {
+                // SwiftUI cancels the view task when the start page disappears.
+                return
+            }
+        }
+    }
+
+    private static func snapshot(
+        servers: [LocalServer],
+        probe: @escaping @Sendable (Int) async -> Bool
+    ) async -> [Int: Bool] {
+        let ports = Set(servers.map(\.port))
+        return await withTaskGroup(
+            of: (Int, Bool).self,
+            returning: [Int: Bool].self
+        ) { group in
+            for port in ports {
+                group.addTask {
+                    (port, await probe(port))
+                }
+            }
+
+            var result: [Int: Bool] = [:]
+            for await (port, isLive) in group {
+                result[port] = isLive
+            }
+            return result
+        }
+    }
+}
+
 private final class ResultBox: @unchecked Sendable {
     private let lock = NSLock()
     private var done = false
