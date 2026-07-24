@@ -291,16 +291,37 @@ struct BrowserNavigationToolbarControls: View {
 struct BrowserToolsToolbarControls: View {
     let state: BrowserState
 
+    @State private var isConfirmingWebsiteDataReset = false
+    @State private var isClearingWebsiteData = false
+
     var body: some View {
 
         Menu {
             Button("Default Profile") {}
             Divider()
             Button("Manage Profiles...") {}
+            Divider()
+            Button("Clear All Browser Data…", role: .destructive) {
+                isConfirmingWebsiteDataReset = true
+            }
+            .disabled(isClearingWebsiteData)
+            .accessibilityIdentifier("browser.clear-data")
         } label: {
             Label("Profile", systemImage: "person.circle")
         }
         .accessibilityIdentifier("browser.profile")
+        .alert("Clear All Browser Data?", isPresented: $isConfirmingWebsiteDataReset) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear and Reload", role: .destructive) {
+                clearWebsiteData()
+            }
+        } message: {
+            Text(
+                "This clears caches, cookies, local and session storage, IndexedDB, "
+                    + "service workers, and other website data for every browser pane. "
+                    + "The current page will reload in a clean browser."
+            )
+        }
 
         ControlGroup {
             Menu {
@@ -351,6 +372,15 @@ struct BrowserToolsToolbarControls: View {
         case .system: "circle.lefthalf.filled"
         case .light: "sun.max"
         case .dark: "moon"
+        }
+    }
+
+    private func clearWebsiteData() {
+        isClearingWebsiteData = true
+        Task { @MainActor in
+            await BrowserWebsiteData.clearAll()
+            state.requestWebsiteDataReset()
+            isClearingWebsiteData = false
         }
     }
 }

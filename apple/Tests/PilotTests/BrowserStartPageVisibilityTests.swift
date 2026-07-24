@@ -47,6 +47,39 @@ struct BrowserStartPageVisibilityTests {
     }
 }
 
+@Suite("Browser website data reset")
+struct BrowserWebsiteDataResetTests {
+
+    @Test
+    func resetRequestRecreatesTheBrowserAndClearsNavigationState() {
+        let state = BrowserState()
+        state.urlText = "http://localhost:3000"
+        state.pendingURL = URL(string: "http://localhost:3001")
+        state.canGoBack = true
+        state.canGoForward = true
+        let initialRequestID = state.websiteDataResetRequestID
+
+        state.requestWebsiteDataReset()
+
+        #expect(state.websiteDataResetRequestID == initialRequestID + 1)
+        #expect(state.pendingURL == nil)
+        #expect(!state.canGoBack)
+        #expect(!state.canGoForward)
+        #expect(state.isLoading)
+    }
+
+    @Test
+    @MainActor
+    func resetIncludesCachesAndBrowserStorage() {
+        let dataTypes = BrowserWebsiteData.allDataTypes
+
+        #expect(dataTypes.contains(WKWebsiteDataTypeDiskCache))
+        #expect(dataTypes.contains(WKWebsiteDataTypeMemoryCache))
+        #expect(dataTypes.contains(WKWebsiteDataTypeLocalStorage))
+        #expect(dataTypes.contains(WKWebsiteDataTypeSessionStorage))
+    }
+}
+
 @Suite("Browser lasso state and script contracts")
 struct BrowserLassoTests {
 

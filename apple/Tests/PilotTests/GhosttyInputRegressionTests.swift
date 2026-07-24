@@ -95,4 +95,47 @@ struct GhosttyInputRegressionTests {
         #expect(routed.rawValue & GHOSTTY_MODS_CTRL.rawValue != 0)
         #expect(routed.rawValue & GHOSTTY_MODS_ALT.rawValue != 0)
     }
+
+    @Test("⌥⌘ shortcuts reach Pilot's menu instead of the terminal (⌥⌘E toggles Extendo)")
+    func optionCommandCombosForwardToMenu() {
+        // The regression: a focused terminal swallowed ⌥⌘E because Option combos
+        // skipped the menu handoff entirely.
+        #expect(GhosttyMenuKeyEquivalentPolicy.forwardsToMainMenu(
+            hasCommand: true, hasControl: false, hasOption: true, characters: "e"
+        ))
+        #expect(GhosttyMenuKeyEquivalentPolicy.forwardsToMainMenu(
+            hasCommand: true, hasControl: false, hasOption: true, characters: "d"
+        ))
+        // Even a plain-⌘ editing key forwards once Option is added — ⌥⌘C is not
+        // Ghostty copy, and an unmatched combo still falls through to the terminal.
+        #expect(GhosttyMenuKeyEquivalentPolicy.forwardsToMainMenu(
+            hasCommand: true, hasControl: false, hasOption: true, characters: "c"
+        ))
+    }
+
+    @Test("Plain ⌘ global shortcuts forward but editing/focus keys stay with Ghostty")
+    func plainCommandRouting() {
+        #expect(GhosttyMenuKeyEquivalentPolicy.forwardsToMainMenu(
+            hasCommand: true, hasControl: false, hasOption: false, characters: "t"
+        ))
+        for reserved in ["c", "v", "x", "a", "z", "f", ","] {
+            #expect(!GhosttyMenuKeyEquivalentPolicy.forwardsToMainMenu(
+                hasCommand: true, hasControl: false, hasOption: false, characters: reserved
+            ))
+        }
+    }
+
+    @Test("Control combos and non-Command keys never leave the terminal")
+    func controlAndModifierlessKeysStayLocal() {
+        // Ghostty owns C-c, C-d, … — Control must never hand off to the menu.
+        #expect(!GhosttyMenuKeyEquivalentPolicy.forwardsToMainMenu(
+            hasCommand: true, hasControl: true, hasOption: false, characters: "e"
+        ))
+        #expect(!GhosttyMenuKeyEquivalentPolicy.forwardsToMainMenu(
+            hasCommand: true, hasControl: true, hasOption: true, characters: "e"
+        ))
+        #expect(!GhosttyMenuKeyEquivalentPolicy.forwardsToMainMenu(
+            hasCommand: false, hasControl: false, hasOption: true, characters: "e"
+        ))
+    }
 }
