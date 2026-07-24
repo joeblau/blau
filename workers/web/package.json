@@ -5,21 +5,17 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build && node scripts/check-build-size.mjs && node scripts/check-security-headers.mjs",
-    "check": "astro check && node scripts/gen-og.mjs --check",
+    "check": "astro check",
     "check:size": "node scripts/check-build-size.mjs",
     "lint": "eslint .",
     "preview": "astro preview",
-    "og": "node scripts/gen-og.mjs",
     "test": "node --test test/*.test.mjs",
     "deploy": "wrangler deploy",
     "deploy:list": "wrangler deployments list",
     "rollback": "wrangler rollback"
   },
   "dependencies": {
-    "@fontsource-variable/geist": "^5.2.9",
-    "@fontsource-variable/geist-mono": "^5.2.8",
-    "astro": "6.4.8",
-    "sharp": "0.35.3"
+    "astro": "6.4.8"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.9",
