@@ -1,19 +1,10 @@
 ---
-import '../styles/fonts.css';
-import geistLatinUrl from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
-import geistMonoLatinUrl from '@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2?url';
-
 interface Props {
   title: string;
   description?: string;
 }
 
-const {
-  title,
-  description = 'blau is a four-app native Apple ecosystem: Pilot (macOS) is a dev command-center with embedded Ghostty terminals, a WebKit browser, and git tooling — synced peer-to-peer to iPhone, Apple Watch, and a live HEVC screen mirror on iPad.',
-} = Astro.props;
-
-const ogImage = new URL('/og.png', Astro.site ?? 'https://blau.app').href;
+const { title, description = 'blau' } = Astro.props;
 ---
 
 <!doctype html>
@@ -24,34 +15,13 @@ const ogImage = new URL('/og.png', Astro.site ?? 'https://blau.app').href;
     <meta name="description" content={description} />
     <meta name="generator" content={Astro.generator} />
     <meta name="theme-color" content="#05070a" />
-
-    <meta property="og:title" content={title} />
-    <meta property="og:description" content={description} />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://blau.app" />
-    <meta property="og:image" content={ogImage} />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="blau — a native Apple developer cockpit" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content={ogImage} />
-
-    <link rel="preload" href={geistLatinUrl} as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href={geistMonoLatinUrl} as="font" type="font/woff2" crossorigin />
-
     <title>{title}</title>
-
-    <!-- Reveal styles are gated on .js so nothing is hidden without JavaScript -->
-    <script is:inline src="/scripts/head.js"></script>
   </head>
   <body>
     <slot />
-    <script is:inline src="/scripts/main.js"></script>
   </body>
 </html>
 
 <style is:global>
-  @import '../styles/tokens.css';
   @import '../styles/global.css';
-  @import '../styles/sections.css';
 </style>
