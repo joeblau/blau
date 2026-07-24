@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00FEB31D65A29F985BCA164A /* GhosttyMenuKeyEquivalentPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB700E81A7299BEF341424D5 /* GhosttyMenuKeyEquivalentPolicy.swift */; };
 		065E28B7F767E99E1FA32890 /* SecureChannelDeadline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68DD092D8ED9F34EC42D8241 /* SecureChannelDeadline.swift */; };
 		067087C5C181973550B9AC7E /* FileFinderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AD843F2429472CDAB91130E /* FileFinderTests.swift */; };
 		08403915F26DF1ED6FBDDF1E /* AdbBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377AA1E2161E8621F037D693 /* AdbBridge.swift */; };
@@ -449,6 +450,7 @@
 		D76CFD688C6FEFB4356EDBF2 /* BrowserStartPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserStartPageView.swift; sourceTree = "<group>"; };
 		D806B2F6BB75F102EA196B1F /* ReplayWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayWindow.swift; sourceTree = "<group>"; };
 		DA57761D349040DD147F613C /* PilotEditorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PilotEditorTheme.swift; sourceTree = "<group>"; };
+		DB700E81A7299BEF341424D5 /* GhosttyMenuKeyEquivalentPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyMenuKeyEquivalentPolicy.swift; sourceTree = "<group>"; };
 		DC0508AE36331AD5FF847915 /* SecureIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureIdentity.swift; sourceTree = "<group>"; };
 		DC8EF4863BC5170A0F737E82 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		DCB7A71E179389DD6C888CCD /* ScreenMirror.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenMirror.swift; sourceTree = "<group>"; };
@@ -771,6 +773,7 @@
 				C971881DE3E3A351D80D93A4 /* ExtensionWindowView.swift */,
 				62A8F342389E5A70FB03AB4F /* FileFinder.swift */,
 				819159D14AF22FEDCAB5EFA2 /* FuzzyMatcher.swift */,
+				DB700E81A7299BEF341424D5 /* GhosttyMenuKeyEquivalentPolicy.swift */,
 				71A7E1AE9E717B53A369709B /* GhosttyTerminal.swift */,
 				DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */,
 				09CBC9A2EAF71B52D91F96DB /* GitHubTasksStore.swift */,
@@ -1269,6 +1272,7 @@
 				54204575F9849A037FAB0D0F /* FrameLinkSecurity.swift in Sources */,
 				B50854F8DDEEB5A8A9EE4FF2 /* FrameProtocol.swift in Sources */,
 				4CC119B103910656F4E6473E /* FuzzyMatcher.swift in Sources */,
+				00FEB31D65A29F985BCA164A /* GhosttyMenuKeyEquivalentPolicy.swift in Sources */,
 				72A25CCED00C4DA32999DC63 /* GhosttyTerminal.swift in Sources */,
 				F797C21E5A72C28BD91D6073 /* GitCommitStore.swift in Sources */,
 				E57F6CDE4BED1E1E9489FE9E /* GitHubTasksStore.swift in Sources */,

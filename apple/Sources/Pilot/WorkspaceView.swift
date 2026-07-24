@@ -782,6 +782,7 @@ struct BrowserPaneView: View {
                 onSelect: onSelect,
                 targetTerminalPaneID: targetTerminalPaneID
             )
+            .id(state.websiteDataResetRequestID)
             .onAppear {
                 captureInitialURLState()
                 hasLoadedAnyURL = true
@@ -804,6 +805,22 @@ struct BrowserPaneView: View {
     private func captureInitialURLState() {
         guard openedWithBlankURL == nil else { return }
         openedWithBlankURL = state.urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+@MainActor
+enum BrowserWebsiteData {
+    static let allDataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+
+    static func clearAll() async {
+        await withCheckedContinuation { continuation in
+            WKWebsiteDataStore.default().removeData(
+                ofTypes: allDataTypes,
+                modifiedSince: .distantPast
+            ) {
+                continuation.resume()
+            }
+        }
     }
 }
 

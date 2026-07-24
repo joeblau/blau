@@ -138,6 +138,8 @@ final class BrowserState {
     @Transient var annotateToggleRequestID: Int = 0
     /// Set by ⌘L and consumed when this browser's address field is mounted.
     @Transient var needsAddressFocus: Bool = false
+    /// Recreates the WKWebView after its persistent website data is cleared.
+    @Transient var websiteDataResetRequestID: Int = 0
 
     var appearanceMode: AppearanceMode {
         get { AppearanceMode(rawValue: appearanceModeRaw) ?? .system }
@@ -174,6 +176,14 @@ final class BrowserState {
 
     func requestAddressFocus() {
         needsAddressFocus = true
+    }
+
+    func requestWebsiteDataReset() {
+        pendingURL = nil
+        canGoBack = false
+        canGoForward = false
+        isLoading = !urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        websiteDataResetRequestID += 1
     }
 
     /// Set lasso mode explicitly. The request ID is the WebView update trigger,
