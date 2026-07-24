@@ -9,6 +9,6 @@
 
 # Astro fingerprints everything under /_astro/ (content-hashed filenames), so
 # browsers and the Cloudflare edge can cache those forever. HTML and other
-# unhashed files (og.png, mockups) keep the default revalidation behavior.
+# unhashed files keep the default revalidation behavior.
 /_astro/*
   Cache-Control: public, max-age=31536000, immutable
