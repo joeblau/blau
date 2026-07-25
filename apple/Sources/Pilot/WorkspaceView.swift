@@ -1110,6 +1110,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         /// Last annotate-toggle id pushed into the page, to dedupe updateNSView runs.
         var lastAnnotateToggleID = -1
         private var urlObservation: NSKeyValueObservation?
+        private var navStateObservations: [NSKeyValueObservation] = []
         private var pendingDestinations: [ObjectIdentifier: URL] = [:]
         private var annotateGrant: BrowserAnnotate.BridgeGrant?
 
@@ -1120,6 +1121,7 @@ struct WebViewRepresentable: NSViewRepresentable {
 
         deinit {
             urlObservation?.invalidate()
+            navStateObservations.forEach { $0.invalidate() }
         }
 
         // MARK: - Browser Annotate
@@ -1212,6 +1214,9 @@ struct WebViewRepresentable: NSViewRepresentable {
         /// KVO on `WKWebView.url` so the address bar reflects every URL
         /// change — link clicks, server redirects, hash changes, and
         /// `history.pushState` from SPAs — not just `didFinish` loads.
+        /// `canGoBack`/`canGoForward` get the same treatment: same-document
+        /// SPA navigations never hit the delegate callbacks that otherwise
+        /// refresh them, which left Back/Forward stuck disabled.
         func observeURL(of webView: WKWebView) {
             urlObservation?.invalidate()
             urlObservation = webView.observe(\.url, options: [.new, .initial]) { [weak self] webView, _ in
@@ -1223,6 +1228,19 @@ struct WebViewRepresentable: NSViewRepresentable {
                     }
                 }
             }
+            navStateObservations.forEach { $0.invalidate() }
+            navStateObservations = [
+                webView.observe(\.canGoBack, options: [.new, .initial]) { [weak self] webView, _ in
+                    Task { @MainActor in
+                        self?.state.canGoBack = webView.canGoBack
+                    }
+                },
+                webView.observe(\.canGoForward, options: [.new, .initial]) { [weak self] webView, _ in
+                    Task { @MainActor in
+                        self?.state.canGoForward = webView.canGoForward
+                    }
+                },
+            ]
         }
 
         // MARK: - Download routing
