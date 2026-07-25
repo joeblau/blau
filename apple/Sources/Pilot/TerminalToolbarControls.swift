@@ -60,6 +60,7 @@ struct TerminalFastCommandToolbarActions: View {
 
     @AppStorage private var command: String
     @State private var activeAction: Action?
+    @State private var activity: TerminalProcessActivity = .idle
 
     private enum Action {
         case play
@@ -86,11 +87,19 @@ struct TerminalFastCommandToolbarActions: View {
             Button(action: stop) {
                 actionLabel(for: .stop, systemImage: "stop.fill")
             }
-            .disabled(activeAction != nil)
+            // Nothing to stop when the terminal sits at a shell prompt.
+            .disabled(activeAction != nil || activity != .running)
             .help("Stop the active terminal process")
             .accessibilityIdentifier("terminal.fast-command.stop")
         }
         .controlGroupStyle(.navigation)
+        .task(id: pane.id) {
+            let sessionName = pane.persistentSessionName
+            while !Task.isCancelled {
+                activity = await PersistentTerminalSession.foregroundActivity(sessionName: sessionName)
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
     }
 
     @ViewBuilder
