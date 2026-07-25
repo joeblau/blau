@@ -29,6 +29,7 @@
 		1C9F6647E047844F8E48DE02 /* TerminalAgentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4012CD05EF80E11A2FEEC925 /* TerminalAgentTests.swift */; };
 		1CA7F3A0C7FE6D35905BADD4 /* MouseBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA97D476477BE66A97A9D77 /* MouseBridge.swift */; };
 		1D5F70DCFE144EB480C64B17 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 132CB022A0BDFF0DE96316EF /* ContentView.swift */; };
+		B8D2E4F60A1B3C5D7E9F1023 /* TerminalToolbarControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C1D3E5F709B2C4D6E8A012 /* TerminalToolbarControls.swift */; };
 		1E52F4B58A701BDEFF78E2D0 /* Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC9BB0F198A6D5E8298B3E1 /* Note.swift */; };
 		1F253D4F3DCD296F823A2E74 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7D00A3F70E212149A88CCD63 /* Assets.xcassets */; };
 		204D67F9D5A0A40E355C64B5 /* RuntimeTeardownTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AF0A09467C1DF183A8D54B2 /* RuntimeTeardownTests.swift */; };
@@ -319,6 +320,7 @@
 		1276A49AF5B79B2DF90F9A4F /* SecureChannelResponder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureChannelResponder.swift; sourceTree = "<group>"; };
 		12A9B5BA4AEC02243A5D26C3 /* AndroidScreenStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndroidScreenStream.swift; sourceTree = "<group>"; };
 		132CB022A0BDFF0DE96316EF /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A7C1D3E5F709B2C4D6E8A012 /* TerminalToolbarControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalToolbarControls.swift; sourceTree = "<group>"; };
 		146BC5C13A2019B42354E198 /* FrameLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameLink.swift; sourceTree = "<group>"; };
 		158C2018D7407AF1E5F146CB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1A34F794F92162E19581AA82 /* UsageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSettingsView.swift; sourceTree = "<group>"; };
@@ -807,6 +809,7 @@
 				3531C578DF387C51E4AA22F0 /* RepositoryPollingScheduler.swift */,
 				DCB7A71E179389DD6C888CCD /* ScreenMirror.swift */,
 				FF325B8B62C28A488518588B /* TerminalAgent.swift */,
+				A7C1D3E5F709B2C4D6E8A012 /* TerminalToolbarControls.swift */,
 				5A2C2E1B521C51A4B0B660B1 /* UIZoom.swift */,
 				1B3448A85CDA9475511475C2 /* Workspace.swift */,
 				93E831A131F5C50AD8808B7E /* WorkspaceActionWatcher.swift */,
@@ -1331,6 +1334,7 @@
 				2B45AA02C4604A14FF1EE51E /* SimulatorSession.swift in Sources */,
 				83D64D93C19B54470E4E1C2C /* SyncMessages.swift in Sources */,
 				A790602285F94C55B6D3C2C0 /* TerminalAgent.swift in Sources */,
+				B8D2E4F60A1B3C5D7E9F1023 /* TerminalToolbarControls.swift in Sources */,
 				506D51547D6AA3C40D9B1161 /* UIZoom.swift in Sources */,
 				D8C5507B8AD7FAE2078411E0 /* UsageInspectorView.swift in Sources */,
 				A170D04C95832851ADE7F405 /* UsageSessions.swift in Sources */,
