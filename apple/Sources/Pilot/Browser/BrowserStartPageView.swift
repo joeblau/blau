@@ -124,12 +124,7 @@ private struct LocalServerCard: View {
             .padding(.vertical, 10)
             .background {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor)
-                        .opacity(isHovering ? 0.9 : 0.6))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 1)
+                    .fill(Color.primary.opacity(isHovering ? 0.10 : 0.06))
             }
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }

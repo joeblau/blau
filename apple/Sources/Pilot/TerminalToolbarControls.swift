@@ -14,13 +14,17 @@ enum TerminalToolbarSelection {
 struct TerminalFastCommandToolbarField: View {
     let pane: Pane
 
-    @AppStorage private var command: String
+    @State private var command: String
 
     init(pane: Pane) {
         self.pane = pane
-        _command = AppStorage(
-            wrappedValue: "",
-            TerminalFastCommandStore.preferenceKey(for: pane.id)
+        // Local state is the editing source of truth. Backing the field with
+        // @AppStorage looped every keystroke's UserDefaults write back into a
+        // re-render of the toolbar-hosted field — the visible flash while
+        // typing. Persist through the store instead; observers of the key
+        // (Play button, collapsed-pane slit) still update live.
+        _command = State(
+            wrappedValue: TerminalFastCommandStore.command(for: pane.id)
         )
     }
 
@@ -29,6 +33,9 @@ struct TerminalFastCommandToolbarField: View {
             .textFieldStyle(.plain)
             .scaledFont(size: 13, weight: .medium, design: .monospaced)
             .onSubmit(run)
+            .onChange(of: command) { _, newValue in
+                TerminalFastCommandStore.setCommand(newValue, for: pane.id)
+            }
             .padding(.horizontal, 12)
             .frame(minWidth: 220, idealWidth: 360, maxWidth: 480)
             .layoutPriority(1)

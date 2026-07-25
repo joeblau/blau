@@ -723,11 +723,6 @@ struct ContentView: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
-                Button(action: store.addWorkspace) {
-                    Label("New Workspace", systemImage: "plus")
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
                 // ⌘T / ⌘B live as main-menu commands (see PilotApp.commands)
                 // so a focused browser web view can't swallow them.
                 WorkspacePaneLauncher(workspace: store.selectedWorkspace)
