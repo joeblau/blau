@@ -375,6 +375,7 @@ struct ExtensionWindowView: View {
         let isUsagePresented = extensionWorkspace?.isInspectorPresented == true
             && extensionWorkspace?.inspectorTab == .usage
         let selectedBrowserState = BrowserToolbarSelection.state(for: extensionWorkspace?.selectedPane)
+        let selectedTerminalPane = TerminalToolbarSelection.pane(for: extensionWorkspace?.selectedPane)
 
         NavigationStack {
             ZStack {
@@ -448,6 +449,15 @@ struct ExtensionWindowView: View {
                         addressIdealWidth: 320,
                         addressMaxWidth: 480
                     )
+                } else if let selectedTerminalPane {
+                    TerminalFastCommandToolbarField(pane: selectedTerminalPane)
+                        .id(selectedTerminalPane.id)
+                }
+            }
+            ToolbarItem(placement: .principal) {
+                if let selectedTerminalPane {
+                    TerminalFastCommandToolbarActions(pane: selectedTerminalPane)
+                        .id(selectedTerminalPane.id)
                 }
             }
             ToolbarItemGroup(placement: .secondaryAction) {

@@ -50,11 +50,20 @@ struct PilotBrowserCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Browser") {
-            Button("Reload") {
-                selectedBrowserState?.requestNavigationCommand("blau://reload")
+            Button(primaryCommandTitle) {
+                if let selectedBrowserState {
+                    selectedBrowserState.requestNavigationCommand("blau://reload")
+                } else if let selectedTerminalFastCommand {
+                    Task {
+                        _ = await PersistentTerminalSession.runFastCommand(
+                            selectedTerminalFastCommand.command,
+                            sessionName: selectedTerminalFastCommand.pane.persistentSessionName
+                        )
+                    }
+                }
             }
             .keyboardShortcut("r", modifiers: .command)
-            .disabled(selectedBrowserState == nil)
+            .disabled(selectedBrowserState == nil && selectedTerminalFastCommand == nil)
 
             Button("Focus Address Bar") {
                 BrowserCommandSelection.revealBrowser(in: workspace)?.requestAddressFocus()
@@ -80,6 +89,20 @@ struct PilotBrowserCommands: Commands {
 
     private var selectedBrowserState: BrowserState? {
         BrowserCommandSelection.selectedState(in: workspace)
+    }
+
+    private var selectedTerminalFastCommand: (pane: Pane, command: String)? {
+        guard let pane = TerminalToolbarSelection.pane(for: workspace?.selectedPane),
+              let command = TerminalFastCommandStore.executableCommand(
+                  from: TerminalFastCommandStore.command(for: pane.id)
+              ) else {
+            return nil
+        }
+        return (pane, command)
+    }
+
+    private var primaryCommandTitle: String {
+        selectedTerminalFastCommand == nil ? "Reload" : "Run Fast Command"
     }
 
     private var hasBrowserPane: Bool {
