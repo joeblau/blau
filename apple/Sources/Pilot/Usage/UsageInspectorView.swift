@@ -21,7 +21,6 @@ struct UsageListView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             ScrollView {
                 VStack(spacing: 12) {
                     ProviderCard(
@@ -64,24 +63,13 @@ struct UsageListView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
-            Text("Plan Usage")
-                .scaledFont(size: 11, weight: .medium)
-                .foregroundStyle(.secondary)
-            if store.isLoading {
-                ProgressView().controlSize(.mini)
-            }
-            Spacer()
-            Button {
-                store.reload()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.plain)
-            .help("Refresh usage")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        InspectorSectionHeader(
+            title: "Plan Usage",
+            systemImage: "chart.bar.xaxis",
+            isLoading: store.isLoading,
+            refreshHelp: "Refresh usage",
+            refresh: store.reload
+        )
     }
 
     private func openSetup() {

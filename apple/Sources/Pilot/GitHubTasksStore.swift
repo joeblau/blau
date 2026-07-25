@@ -130,7 +130,6 @@ struct GitHubTasksView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             // Fill the remaining height so the header stays pinned to the top
             // and the empty/loading states center in the space below it.
             content
@@ -139,28 +138,16 @@ struct GitHubTasksView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
-            Text(store.tasks.isEmpty ? "Issues" : "\(store.tasks.count) open")
-                .scaledFont(size: 11, weight: .medium)
-                .foregroundStyle(.secondary)
+        InspectorSectionHeader(
+            title: store.tasks.isEmpty ? "Issues" : "\(store.tasks.count) open",
+            systemImage: "checkmark.square",
             // Subtle activity hint on the initial load. Background polls are
             // silent — the list just auto-updates, no manual refresh.
-            if store.isLoading && store.tasks.isEmpty {
-                ProgressView()
-                    .controlSize(.mini)
-            }
-            Spacer()
-            Button {
-                store.refresh()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.plain)
-            .disabled(store.isLoading)
-            .help("Refresh GitHub issues")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+            isLoading: store.isLoading && store.tasks.isEmpty,
+            refreshHelp: "Refresh GitHub issues",
+            isRefreshDisabled: store.isLoading,
+            refresh: store.refresh
+        )
     }
 
     @ViewBuilder
@@ -170,20 +157,21 @@ struct GitHubTasksView: View {
         // screen mid-poll.
         if !store.tasks.isEmpty {
             ScrollViewReader { proxy in
-                List(store.tasks) { task in
-                    GitHubTaskRow(task: task)
-                        .listRowSeparator(.hidden)
-                        // Fade in rather than sliding from the top edge: the
-                        // `.move(edge: .top)` transition left a newly-injected
-                        // first row offset under the header on the inset List,
-                        // clipping it (issue #47).
-                        .transition(.opacity)
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(store.tasks) { task in
+                            GitHubTaskRow(task: task)
+                                .inspectorListCard()
+                                .id(task.id)
+                                // Fade in rather than sliding from the top edge
+                                // when a newly fetched issue appears.
+                                .transition(.opacity)
+                        }
+                    }
+                    .padding(12)
                 }
-                .listStyle(.inset)
                 .animation(.snappy, value: store.tasks)
-                // When a new issue is injected at the top, the inset List keeps
-                // its scroll offset and hides the fresh first row behind the
-                // header — scroll it back into view so it renders fully.
+                // Keep a newly injected first issue visible.
                 .onChange(of: store.tasks.first?.id) { _, newFirstID in
                     guard let newFirstID else { return }
                     withAnimation(.snappy) {
@@ -227,7 +215,6 @@ private struct GitHubTaskRow: View {
                 .onTapGesture(perform: open)
                 .help("Open #\(task.number) on GitHub")
         }
-        .padding(.vertical, 3)
     }
 
     /// Click the number to drop an agent-ready prompt into the active terminal:

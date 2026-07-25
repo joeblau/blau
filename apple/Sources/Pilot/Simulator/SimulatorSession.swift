@@ -404,6 +404,10 @@ final class SimulatorSession {
         hid?.sendScroll(normalizedDX: normalizedDX, normalizedDY: normalizedDY, anchorX: anchorX, anchorY: anchorY)
     }
 
+    func goHome() {
+        hid?.sendHome()
+    }
+
     func keyUsage(_ usage: UInt32, down: Bool) {
         hid?.sendKeyUsage(usage, down: down)
     }

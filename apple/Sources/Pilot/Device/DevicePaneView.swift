@@ -162,7 +162,7 @@ struct DeviceToolbarControls: View {
         Button {
             session.takeScreenshot()
         } label: {
-            Label("Take Screenshot", systemImage: "camera")
+            Label("Take Screenshot", systemImage: "camera.viewfinder")
         }
         .disabled(!isStreaming)
         .help("Save a screenshot of the iPhone screen to the Desktop")
@@ -170,7 +170,7 @@ struct DeviceToolbarControls: View {
         Button {
             session.copyScreenshotToClipboard()
         } label: {
-            Label("Copy Screenshot", systemImage: "doc.on.clipboard")
+            Label("Copy Screenshot", systemImage: "clipboard")
         }
         .disabled(!isStreaming)
         .help("Copy a screenshot of the iPhone screen to the clipboard")

@@ -87,6 +87,202 @@ final class ExtensionWindowVisibility {
     var isVisible = false
 }
 
+enum ExtensionWindowShortcut: Equatable {
+    case toggleDrawing
+
+    static func match(modifierFlags: NSEvent.ModifierFlags, characters: String?) -> Self? {
+        let routingFlags = modifierFlags.intersection([.command, .control, .option, .shift])
+        let key = characters?.lowercased()
+
+        switch (routingFlags, key) {
+        case ([.command, .shift], "d"): return .toggleDrawing
+        default: return nil
+        }
+    }
+}
+
+private struct ExtensionWindowShortcutMonitor: NSViewRepresentable {
+    let onToggleDrawing: @MainActor () -> Void
+
+    func makeNSView(context: Context) -> MonitorView {
+        MonitorView(onToggleDrawing: onToggleDrawing)
+    }
+
+    func updateNSView(_ nsView: MonitorView, context: Context) {
+        nsView.onToggleDrawing = onToggleDrawing
+    }
+
+    @MainActor
+    final class MonitorView: NSView {
+        var onToggleDrawing: @MainActor () -> Void
+        private var monitor: Any?
+
+        init(onToggleDrawing: @escaping @MainActor () -> Void) {
+            self.onToggleDrawing = onToggleDrawing
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil {
+                removeMonitor()
+            } else {
+                installMonitor()
+            }
+        }
+
+        override func removeFromSuperview() {
+            removeMonitor()
+            super.removeFromSuperview()
+        }
+
+        private func installMonitor() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                self?.handle(event) ?? event
+            }
+        }
+
+        private func removeMonitor() {
+            guard let monitor else { return }
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+
+        private func handle(_ event: NSEvent) -> NSEvent? {
+            // Key-equivalent events do not always retain their originating
+            // window by the time local monitors run. Scope by the owning
+            // window's key state so ⌘W is still swallowed before AppKit can
+            // route it to the default Close Window menu item.
+            guard window?.isKeyWindow == true,
+                  let shortcut = ExtensionWindowShortcut.match(
+                      modifierFlags: event.modifierFlags,
+                      characters: event.charactersIgnoringModifiers
+                  ) else {
+                return event
+            }
+
+            switch shortcut {
+            case .toggleDrawing: onToggleDrawing()
+            }
+            return nil
+        }
+    }
+}
+
+/// SwiftUI supplies its own `performClose:` File-menu item with ⌘W. Pilot owns
+/// the three close commands instead, so hide only that stock item whenever the
+/// merged app menu is rebuilt.
+struct PilotWindowCloseMenuInstaller: NSViewRepresentable {
+    func makeNSView(context: Context) -> GuardView {
+        GuardView()
+    }
+
+    func updateNSView(_ nsView: GuardView, context: Context) {}
+
+    /// Finds only SwiftUI's auto-generated Close items. Pilot's replacement
+    /// commands use closure-backed actions and are therefore excluded.
+    static func stockCloseMenuItems(in menu: NSMenu) -> [NSMenuItem] {
+        menu.items.flatMap { item -> [NSMenuItem] in
+            if let submenu = item.submenu {
+                return stockCloseMenuItems(in: submenu)
+            }
+            let isClose = item.action == #selector(NSWindow.performClose(_:))
+                && item.keyEquivalent == "w"
+            return isClose ? [item] : []
+        }
+    }
+
+    @MainActor
+    final class GuardView: NSView {
+        private var observers: [NSObjectProtocol] = []
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers.removeAll()
+            guard window != nil else { return }
+
+            // SwiftUI can rebuild the merged menu bar on scene state changes,
+            // minting fresh Close items; hide them whenever any menu mutates.
+            observers.append(
+                NotificationCenter.default.addObserver(forName: NSMenu.didAddItemNotification, object: nil, queue: .main) { [weak self] _ in
+                    Task { @MainActor in
+                        self?.apply()
+                    }
+                }
+            )
+            apply()
+        }
+
+        override func removeFromSuperview() {
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers.removeAll()
+            super.removeFromSuperview()
+        }
+
+        private func apply() {
+            guard let menu = NSApp.mainMenu else { return }
+            for item in PilotWindowCloseMenuInstaller.stockCloseMenuItems(in: menu) {
+                item.isHidden = true
+                item.keyEquivalent = ""
+            }
+        }
+    }
+}
+
+@MainActor
+struct PilotCloseTabAction {
+    let isEnabled: Bool
+    let perform: () -> Void
+}
+
+private struct PilotCloseTabActionKey: FocusedValueKey {
+    typealias Value = PilotCloseTabAction
+}
+
+extension FocusedValues {
+    var pilotCloseTabAction: PilotCloseTabAction? {
+        get { self[PilotCloseTabActionKey.self] }
+        set { self[PilotCloseTabActionKey.self] = newValue }
+    }
+}
+
+/// File-menu close behavior follows standard tabbed macOS apps:
+/// ⌘W closes content, ⇧⌘W closes one window, and ⌥⇧⌘W closes all windows.
+struct PilotCloseCommands: Commands {
+    @FocusedValue(\.pilotCloseTabAction) private var closeTabAction
+
+    var body: some Commands {
+        CommandGroup(before: .saveItem) {
+            Button("Close Window") {
+                NSApp.keyWindow?.performClose(nil)
+            }
+            .keyboardShortcut("w", modifiers: [.command, .shift])
+
+            Button("Close All Windows") {
+                let windows = NSApp.windows.filter {
+                    $0.isVisible && $0.styleMask.contains(.closable)
+                }
+                for window in windows {
+                    window.performClose(nil)
+                }
+            }
+            .keyboardShortcut("w", modifiers: [.command, .option, .shift])
+
+            Button("Close Tab") {
+                closeTabAction?.perform()
+            }
+            .keyboardShortcut("w", modifiers: .command)
+            .disabled(closeTabAction?.isEnabled != true)
+        }
+    }
+}
+
 /// Window-menu entries for restoring either singleton Pilot window. `Window`,
 /// rather than `WindowGroup`, guarantees these actions focus existing windows
 /// instead of mounting duplicate terminal/browser/device runtime surfaces.
@@ -168,6 +364,12 @@ final class ExtensionWorkspaceController {
     var selectedWorkspace: Workspace? {
         guard let selectedSourceID else { return nil }
         return workspacesBySourceID[selectedSourceID]
+    }
+
+    func closeSelectedPane() {
+        guard let workspace = selectedWorkspace,
+              let pane = workspace.selectedPane else { return }
+        workspace.removePane(pane)
     }
 
     func synchronize(with source: Workspace?) {
@@ -352,7 +554,6 @@ struct ExtensionWindowView: View {
     @Bindable var store: WorkspaceStore
     @Bindable var controller: ExtensionWorkspaceController
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.dismissWindow) private var dismissWindow
 
     @State private var gitStore = GitCommitStore()
     @State private var tasksStore = GitHubTasksStore()
@@ -435,6 +636,13 @@ struct ExtensionWindowView: View {
             }
         }
         .focusedSceneValue(extensionWorkspace)
+        .focusedSceneValue(
+            \.pilotCloseTabAction,
+            PilotCloseTabAction(
+                isEnabled: extensionWorkspace?.selectedPane != nil,
+                perform: controller.closeSelectedPane
+            )
+        )
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 if let selectedBrowserState {
@@ -467,12 +675,15 @@ struct ExtensionWindowView: View {
                     extensionCaptureControls(for: pane)
                 }
             }
-            ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 WorkspacePaneLauncher(
                     workspace: extensionWorkspace,
                     isCompact: selectedBrowserState != nil
                 )
-
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+            ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     isDrawingActive.toggle()
                 } label: {
@@ -497,52 +708,17 @@ struct ExtensionWindowView: View {
             }
         }
         .background {
-            Button("") {
-                guard extensionWorkspace != nil else { return }
-                isDrawingActive.toggle()
-            }
-            .keyboardShortcut("d", modifiers: [.command, .shift])
-            .hidden()
-
-            // ⌘W closes the selected pane, never the Extension window. Without
-            // this the shortcut falls through to AppKit's default close-window.
-            // The extension surface may close its last pane (it shows an empty
-            // state), so no minimum-count guard.
-            Button("") {
-                guard let workspace = extensionWorkspace,
-                      let pane = workspace.selectedPane else { return }
-                workspace.removePane(pane)
-            }
-            .keyboardShortcut("w", modifiers: .command)
-            .hidden()
-
-            // ⌥⌘E toggles Extendo everywhere. PilotWindowCommands' menu command
-            // only reaches the main window (a main-scene command doesn't fire
-            // while the Extension window is key — the same reason ⌘1…⌘9 are
-            // re-registered for this scene), so add the hide side here.
-            Button("") {
-                dismissWindow(id: PilotWindowID.extendo)
-            }
-            .keyboardShortcut("e", modifiers: [.command, .option])
-            .hidden()
-
-            // ⌘T / ⌘B add a pane to the Extension workspace. PilotPaneCreation-
-            // Commands lives on the main scene and doesn't fire while this window
-            // is key, so handle them here too, targeting this window's workspace.
-            // macOS matches the menu bar before the responder chain, so when the
-            // menu command *is* active (main window key) these never double-fire.
-            Button("") {
-                extensionWorkspace?.addPane(kind: .terminal, side: .right)
-            }
-            .keyboardShortcut("t", modifiers: .command)
-            .hidden()
-
-            Button("") {
-                extensionWorkspace?.addPane(kind: .browser, side: .right)
-            }
-            .keyboardShortcut("b", modifiers: .command)
-            .hidden()
+            // Pane creation and closing are owned by focused menu commands.
+            // Keep only drawing here because its state is local to Extendo.
+            ExtensionWindowShortcutMonitor(
+                onToggleDrawing: {
+                    guard extensionWorkspace != nil else { return }
+                    isDrawingActive.toggle()
+                }
+            )
+            .frame(width: 0, height: 0)
         }
+        .background(PilotWindowCloseMenuInstaller())
         .frame(minWidth: 560, minHeight: 480)
         .task {
             if let windowID = PilotWindowLaunchPolicy.requiredCompanion(for: PilotWindowID.extendo) {

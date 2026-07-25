@@ -9,11 +9,79 @@ struct InspectorTabSelector: View {
     var body: some View {
         Picker("View", selection: $selection) {
             ForEach(InspectorTab.allCases, id: \.self) { tab in
-                Text(tab.rawValue).tag(tab)
+                Label(tab.rawValue, systemImage: tab.systemImageName).tag(tab)
             }
         }
         .pickerStyle(.segmented)
         .labelsHidden()
+    }
+}
+
+/// One geometry for the metadata row directly beneath every inspector tab.
+/// Keeping this shared prevents icon, title, and refresh controls from shifting
+/// when the user switches between Actions, Tasks, Commits, Files, and Usage.
+struct InspectorSectionHeader: View {
+    let title: String
+    let systemImage: String
+    var titleDesign: Font.Design = .default
+    var isLoading = false
+    var refreshHelp: String?
+    var isRefreshDisabled = false
+    var refresh: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .scaledFont(size: 11, weight: .medium)
+                .frame(width: 16)
+                .accessibilityHidden(true)
+
+            Text(title)
+                .scaledFont(size: 11, weight: .medium, design: titleDesign)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            if isLoading {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+
+            Spacer(minLength: 8)
+
+            if let refresh {
+                Button(action: refresh) {
+                    Image(systemName: "arrow.clockwise")
+                        .scaledFont(size: 13)
+                        .frame(width: 17, height: 17)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isRefreshDisabled)
+                .help(refreshHelp ?? "Refresh")
+            }
+        }
+        .foregroundStyle(.secondary)
+        .frame(height: 17)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity)
+        .background(
+            .quaternary.opacity(0.45),
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
+}
+
+extension View {
+    func inspectorListCard() -> some View {
+        padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                .quaternary.opacity(0.4),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
     }
 }
 
@@ -25,28 +93,9 @@ struct InspectorPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                InspectorTabSelector(selection: $selectedTab)
-                    .frame(maxWidth: .infinity)
-                if selectedTab == .actions || selectedTab == .commits {
-                    Button {
-                        if selectedTab == .actions {
-                            gitStore.fetchWorkflowRuns(policy: .manual)
-                        } else {
-                            gitStore.fetchCommits(policy: .manual)
-                        }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(gitStore.repoPath.isEmpty)
-                    .help("Refresh repository data")
-                }
-            }
+            InspectorTabSelector(selection: $selectedTab)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-
-            Divider()
 
             // Expand the tab content to fill the inspector's height. Without
             // this, an intrinsically-sized tab (e.g. an empty-state
@@ -93,25 +142,11 @@ struct FilesystemListView: View {
     }
 
     private var rootHeader: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Label(rootName, systemImage: "folder.fill")
-                .scaledFont(size: 11, weight: .semibold)
-
-            Text(store.repoPath)
-                .scaledFont(size: 10, design: .monospaced)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .padding(.bottom, 4)
-    }
-
-    private var rootName: String {
-        let name = URL(fileURLWithPath: store.repoPath).lastPathComponent
-        return name.isEmpty ? store.repoPath : name
+        InspectorSectionHeader(
+            title: store.repoPath,
+            systemImage: "folder",
+            titleDesign: .monospaced
+        )
     }
 }
 
@@ -379,16 +414,31 @@ struct CommitListView: View {
     let store: GitCommitStore
 
     var body: some View {
-        if store.commits.isEmpty && !store.isLoading {
-            ContentUnavailableView("No Commits",
-                                   systemImage: "clock.arrow.circlepath",
-                                   description: Text("Select a workspace with a git repo root path."))
-        } else {
-            List(store.commits) { commit in
-                commitRow(commit)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+        VStack(spacing: 0) {
+            RepositoryTableHeader(
+                title: store.activeBranchDisplayName,
+                systemImage: "arrow.triangle.branch",
+                refreshHelp: "Refresh commits",
+                isRefreshDisabled: store.repoPath.isEmpty
+            ) {
+                store.fetchCommits(policy: .manual)
             }
-            .listStyle(.plain)
+
+            if store.commits.isEmpty && !store.isLoading {
+                ContentUnavailableView("No Commits",
+                                       systemImage: "clock.arrow.circlepath",
+                                       description: Text("Select a workspace with a git repo root path."))
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(store.commits) { commit in
+                            commitRow(commit)
+                                .inspectorListCard()
+                        }
+                    }
+                    .padding(12)
+                }
+            }
         }
     }
 
@@ -435,16 +485,32 @@ struct ActionsListView: View {
     let store: GitCommitStore
 
     var body: some View {
-        if store.actions.isEmpty && !store.isLoading {
-            ContentUnavailableView("No Actions",
-                                   systemImage: "gearshape.2",
-                                   description: Text("Select a workspace with a GitHub repo root path."))
-        } else {
-            List(store.actions) { action in
-                actionRow(action)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+        VStack(spacing: 0) {
+            RepositoryTableHeader(
+                title: store.repositoryName,
+                systemImage: "folder",
+                refreshHelp: "Refresh actions",
+                isRefreshDisabled: store.repoPath.isEmpty
+            ) {
+                store.fetchWorkflowRuns(policy: .manual)
             }
-            .listStyle(.plain)
+
+            if store.actions.isEmpty && !store.isLoading {
+                ContentUnavailableView("No Actions",
+                                       systemImage: "gearshape.2",
+                                       description: Text("Select a workspace with a GitHub repo root path."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(store.actions) { action in
+                            actionRow(action)
+                                .inspectorListCard()
+                        }
+                    }
+                    .padding(12)
+                }
+            }
         }
     }
 
@@ -530,6 +596,24 @@ struct ActionsListView: View {
                     .foregroundStyle(.quaternary)
             }
         }
+    }
+}
+
+private struct RepositoryTableHeader: View {
+    let title: String
+    let systemImage: String
+    let refreshHelp: String
+    let isRefreshDisabled: Bool
+    let refresh: () -> Void
+
+    var body: some View {
+        InspectorSectionHeader(
+            title: title,
+            systemImage: systemImage,
+            refreshHelp: refreshHelp,
+            isRefreshDisabled: isRefreshDisabled,
+            refresh: refresh
+        )
     }
 }
 

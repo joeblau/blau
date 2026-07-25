@@ -1047,7 +1047,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
     func sendEnter() {
         _ = keyAction(GHOSTTY_ACTION_PRESS, keycode: 0x24) // kVK_Return
     }
-
+    func sendUpArrow() { _ = keyAction(GHOSTTY_ACTION_PRESS, keycode: 0x7E) } // kVK_UpArrow
     override func flagsChanged(with event: NSEvent) {
         let mod: UInt32
         switch event.keyCode {

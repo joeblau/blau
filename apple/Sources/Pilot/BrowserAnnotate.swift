@@ -417,25 +417,52 @@ enum BrowserAnnotate {
         var r = el.getBoundingClientRect();
         box = document.createElement('div');
         box.setAttribute('data-pilot-annotate-box', '');
-        box.style.cssText = 'position:fixed;z-index:2147483647;left:' + Math.max(8, Math.min(r.left, window.innerWidth - 320)) + 'px;top:' + Math.min(r.bottom + 6, window.innerHeight - 170) + 'px;width:300px;background:#1c1c1e;color:#fff;border:1px solid #3b82f6;border-radius:10px;padding:10px;box-shadow:0 8px 30px rgba(0,0,0,0.55);font:13px -apple-system,system-ui;';
+        box.style.cssText = 'position:fixed;z-index:2147483647;left:' + Math.max(8, Math.min(r.left, window.innerWidth - 340)) + 'px;top:' + Math.min(r.bottom + 8, window.innerHeight - 210) + 'px;width:324px;background:rgba(32,32,34,0.97);color:#fff;border:1px solid rgba(255,255,255,0.14);border-radius:12px;padding:12px;box-shadow:0 12px 40px rgba(0,0,0,0.5);font:13px -apple-system,system-ui;backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);';
+
+        var style = document.createElement('style');
+        style.textContent = '[data-pilot-annotate-box] .pa-close:hover{background:rgba(255,255,255,0.12)!important;color:#fff!important;}' +
+          '[data-pilot-annotate-box] textarea:focus{outline:none!important;border-color:#0a84ff!important;box-shadow:0 0 0 3px rgba(10,132,255,0.25)!important;}' +
+          '[data-pilot-annotate-box] textarea::placeholder{color:#636366!important;}' +
+          '[data-pilot-annotate-box] .pa-send:hover{background:#2f8cff!important;}';
+        box.appendChild(style);
+
+        var header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:8px;';
+        var title = document.createElement('span');
+        title.textContent = 'Annotate element';
+        title.style.cssText = 'font:600 12px -apple-system,system-ui;color:#ebebf0;';
+        header.appendChild(title);
+        var tag = document.createElement('span');
+        tag.textContent = '<' + el.tagName.toLowerCase() + '>';
+        tag.style.cssText = 'font:11px ui-monospace,Menlo,monospace;color:#8e8e93;background:rgba(255,255,255,0.08);border-radius:4px;padding:1px 5px;overflow:hidden;text-overflow:ellipsis;max-width:120px;white-space:nowrap;';
+        header.appendChild(tag);
         var close = document.createElement('button');
+        close.className = 'pa-close';
         close.textContent = '×';
         close.title = 'Dismiss';
-        close.style.cssText = 'position:absolute;top:4px;right:6px;width:20px;height:20px;line-height:18px;text-align:center;background:transparent;color:#8e8e93;border:none;border-radius:4px;font-size:17px;cursor:pointer;padding:0;';
+        close.setAttribute('aria-label', 'Dismiss');
+        close.style.cssText = 'margin-left:auto;width:22px;height:22px;line-height:20px;text-align:center;background:transparent;color:#8e8e93;border:none;border-radius:6px;font-size:16px;cursor:pointer;padding:0;transition:background 0.12s;';
         close.addEventListener('click', clearSelection);
-        box.appendChild(close);
+        header.appendChild(close);
+        box.appendChild(header);
+
         var ta = document.createElement('textarea');
         ta.placeholder = 'Describe what you want to happen…';
-        ta.style.cssText = 'width:100%;height:62px;background:#000;color:#fff;border:1px solid #333;border-radius:6px;padding:6px;resize:none;box-sizing:border-box;font:13px -apple-system,system-ui;';
+        ta.style.cssText = 'width:100%;height:64px;background:rgba(255,255,255,0.06);color:#fff;border:1px solid rgba(255,255,255,0.14);border-radius:8px;padding:8px;resize:none;box-sizing:border-box;font:13px -apple-system,system-ui;transition:border-color 0.12s,box-shadow 0.12s;';
         box.appendChild(ta);
+
+        var footer = document.createElement('div');
+        footer.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px;';
         var hint = document.createElement('div');
         hint.textContent = 'Press Enter, click a terminal, then Send';
-        hint.style.cssText = 'color:#8e8e93;font-size:11px;margin-top:6px;';
-        box.appendChild(hint);
+        hint.style.cssText = 'color:#8e8e93;font-size:11px;flex:1;';
+        footer.appendChild(hint);
         var send = document.createElement('button');
+        send.className = 'pa-send';
         send.textContent = 'Send';
-        send.style.cssText = 'display:none;margin-top:8px;width:100%;background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:7px;font:600 13px -apple-system,system-ui;cursor:pointer;';
-        box.appendChild(send);
+        send.style.cssText = 'display:none;background:#0a84ff;color:#fff;border:none;border-radius:7px;padding:6px 14px;font:600 12px -apple-system,system-ui;cursor:pointer;transition:background 0.12s;';
+        footer.appendChild(send);
+        box.appendChild(footer);
         document.documentElement.appendChild(box);
         ta.focus();
 

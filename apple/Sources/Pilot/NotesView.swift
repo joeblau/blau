@@ -20,11 +20,40 @@ struct NoteTabTransfer: Codable, Transferable {
     }
 }
 
+private enum NoteWordWrap: Int, CaseIterable, Identifiable {
+    case eighty = 80
+    case oneTwenty = 120
+    case none = 0
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .eighty: "80 characters"
+        case .oneTwenty: "120 characters"
+        case .none: "None"
+        }
+    }
+
+    var compactTitle: String {
+        switch self {
+        case .eighty: "80"
+        case .oneTwenty: "120"
+        case .none: "None"
+        }
+    }
+
+    var columnCount: Int? {
+        self == .none ? nil : rawValue
+    }
+}
+
 /// Detail-area view for the global Notes mode (toggled with ⌘0). Renders a
 /// horizontal tab bar of notes across the top with a text editor below for
 /// the selected note — the same shape as the browser/terminal tab strip.
 struct NotesView: View {
     @Bindable var store: WorkspaceStore
+    @AppStorage("notes.wordWrap") private var wordWrapRawValue = NoteWordWrap.eighty.rawValue
     @State private var showCopiedToast = false
     @State private var toastDismiss: DispatchWorkItem?
     /// Tab the dragged note would be inserted before; drives the insertion marker.
@@ -91,69 +120,108 @@ struct NotesView: View {
     }
 
     private func tabBar(notes: [Note]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(notes) { note in
-                    NoteTab(
-                        title: note.displayTitle,
-                        isSelected: note.id == store.selectedNoteID,
-                        isDropTarget: dropTargetNoteID == note.id,
-                        onSelect: { store.selectedNoteID = note.id },
-                        onClose: { store.requestCloseNote(note) }
-                    )
-                    // Drag-to-reorder (issue #67). The note rides along as a
-                    // dedicated Transferable payload; dropping onto another tab
-                    // inserts the dragged note just before it and persists the
-                    // new order.
-                    .draggable(NoteTabTransfer(id: note.id)) {
-                        // Legible chip under the cursor while dragging.
-                        Text(note.displayTitle)
-                            .scaledFont(size: 12)
-                            .lineLimit(1)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(
-                                .ultraThinMaterial,
-                                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                GlassEffectContainer(spacing: 8) {
+                    HStack(spacing: 8) {
+                        ForEach(notes) { note in
+                            NoteTab(
+                                title: note.displayTitle,
+                                isSelected: note.id == store.selectedNoteID,
+                                isDropTarget: dropTargetNoteID == note.id,
+                                onSelect: { store.selectedNoteID = note.id },
+                                onClose: { store.requestCloseNote(note) }
                             )
-                    }
-                    .dropDestination(for: NoteTabTransfer.self) { items, _ in
-                        dropTargetNoteID = nil
-                        guard let dragged = items.first else { return false }
-                        store.moveNote(dragged.id, before: note.id)
-                        return true
-                    } isTargeted: { targeted in
-                        dropTargetNoteID = targeted ? note.id : nil
-                    }
-                }
+                            // Drag-to-reorder (issue #67). The note rides along as a
+                            // dedicated Transferable payload; dropping onto another tab
+                            // inserts the dragged note just before it and persists the
+                            // new order.
+                            .draggable(NoteTabTransfer(id: note.id)) {
+                                // Legible chip under the cursor while dragging.
+                                Text(note.displayTitle)
+                                    .scaledFont(size: 12)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(
+                                        .ultraThinMaterial,
+                                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    )
+                            }
+                            .dropDestination(for: NoteTabTransfer.self) { items, _ in
+                                dropTargetNoteID = nil
+                                guard let dragged = items.first else { return false }
+                                store.moveNote(dragged.id, before: note.id)
+                                return true
+                            } isTargeted: { targeted in
+                                dropTargetNoteID = targeted ? note.id : nil
+                            }
+                        }
 
-                Button {
-                    store.addNote()
-                } label: {
-                    Image(systemName: "plus")
-                        .scaledFont(size: 12, weight: .medium)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
+                        Button {
+                            store.addNote()
+                        } label: {
+                            Image(systemName: "plus")
+                                .scaledFont(size: 12, weight: .medium)
+                        }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .foregroundStyle(.primary)
+                        .help("New Note")
+                        // Dropping a tab on (or past) the + button sends it to the end.
+                        .dropDestination(for: NoteTabTransfer.self) { items, _ in
+                            guard let dragged = items.first else { return false }
+                            store.moveNoteToEnd(dragged.id)
+                            return true
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("New Note")
-                // Dropping a tab on (or past) the + button sends it to the end.
-                .dropDestination(for: NoteTabTransfer.self) { items, _ in
-                    guard let dragged = items.first else { return false }
-                    store.moveNoteToEnd(dragged.id)
-                    return true
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+
+            Divider()
+                .frame(height: 26)
+
+            wordWrapMenu
+                .padding(.horizontal, 12)
+        }
+    }
+
+    private var selectedWordWrap: NoteWordWrap {
+        NoteWordWrap(rawValue: wordWrapRawValue) ?? .eighty
+    }
+
+    private var wordWrapMenu: some View {
+        Menu {
+            ForEach(NoteWordWrap.allCases) { option in
+                Button {
+                    wordWrapRawValue = option.rawValue
+                } label: {
+                    if option == selectedWordWrap {
+                        Label(option.title, systemImage: "checkmark")
+                    } else {
+                        Text(option.title)
+                    }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+        } label: {
+            Label("Word Wrap: \(selectedWordWrap.compactTitle)", systemImage: "text.word.spacing")
+                .scaledFont(size: 11, weight: .medium)
         }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Word Wrap")
     }
 
     @ViewBuilder
     private var editor: some View {
         if let note = store.selectedNote {
-            NoteEditor(note: note, onCopySecret: flashCopiedToast)
+            NoteEditor(
+                note: note,
+                wordWrapColumns: selectedWordWrap.columnCount,
+                onCopySecret: flashCopiedToast
+            )
                 // Re-create the editor when the selected note changes so the
                 // text view rebinds cleanly instead of reusing stale state.
                 .id(note.id)
@@ -169,11 +237,17 @@ struct NotesView: View {
 
 private struct NoteEditor: View {
     @Bindable var note: Note
+    let wordWrapColumns: Int?
     let onCopySecret: () -> Void
     @Environment(\.uiZoom) private var uiZoom
 
     var body: some View {
-        NoteTextView(text: $note.body, fontSize: 13 * uiZoom, onCopySecret: onCopySecret)
+        NoteTextView(
+            text: $note.body,
+            fontSize: 13 * uiZoom,
+            wordWrapColumns: wordWrapColumns,
+            onCopySecret: onCopySecret
+        )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onChange(of: note.body) {
                 _ = note.modelContext?.saveReporting(operation: "Saving note")
@@ -189,6 +263,7 @@ private struct NoteEditor: View {
 private struct NoteTextView: NSViewRepresentable {
     @Binding var text: String
     let fontSize: CGFloat
+    let wordWrapColumns: Int?
     let onCopySecret: () -> Void
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -245,6 +320,7 @@ private struct NoteTextView: NSViewRepresentable {
 
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
+        applyWordWrap(to: textView, in: scrollView)
 
         return scrollView
     }
@@ -261,6 +337,8 @@ private struct NoteTextView: NSViewRepresentable {
             }
         }
 
+        applyWordWrap(to: textView, in: scrollView)
+
         // Only overwrite when the model diverges from the view (e.g. an
         // external edit) — never on the user's own keystrokes, which would
         // stomp the cursor(s). Setting `.string` re-triggers styling via the
@@ -268,6 +346,37 @@ private struct NoteTextView: NSViewRepresentable {
         if textView.string != text {
             textView.string = text
         }
+    }
+
+    private func applyWordWrap(to textView: NSTextView, in scrollView: NSScrollView) {
+        guard let textContainer = textView.textContainer else { return }
+
+        textContainer.widthTracksTextView = false
+        textContainer.heightTracksTextView = false
+
+        if let wordWrapColumns {
+            let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+            let characterWidth = ("0" as NSString).size(withAttributes: [.font: font]).width
+            let lineWidth = ceil(characterWidth * CGFloat(wordWrapColumns))
+                + (textContainer.lineFragmentPadding * 2)
+
+            textView.isHorizontallyResizable = false
+            textContainer.containerSize = NSSize(
+                width: lineWidth,
+                height: .greatestFiniteMagnitude
+            )
+            scrollView.hasHorizontalScroller = false
+        } else {
+            textView.isHorizontallyResizable = true
+            textContainer.containerSize = NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+            scrollView.hasHorizontalScroller = true
+        }
+
+        textView.layoutManager?.ensureLayout(for: textContainer)
+        textView.needsDisplay = true
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -1322,8 +1431,10 @@ private struct NoteTab: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .frame(maxWidth: 170, alignment: .leading)
-        .background(
-            isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.08),
+        .glassEffect(
+            .regular
+                .tint(isSelected ? Color.accentColor.opacity(0.14) : nil)
+                .interactive(),
             in: RoundedRectangle(cornerRadius: 7, style: .continuous)
         )
         .overlay {

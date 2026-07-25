@@ -46,7 +46,6 @@ struct WorkspaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             tabBar
-            Divider()
             panesContent
         }
         .onAppear {
@@ -88,6 +87,14 @@ struct WorkspaceView: View {
 
     private func tabItem(_ pane: Pane) -> some View {
         let isSelected = workspace.selectedPaneID == pane.id && !pane.isCollapsed
+        let isDropTarget = dropTargetPaneID == pane.id
+        let glassTint: Color? = if isDropTarget {
+            Color.accentColor.opacity(0.24)
+        } else if isSelected {
+            Color.accentColor.opacity(0.12)
+        } else {
+            nil
+        }
 
         return TabItemContent(
             pane: pane,
@@ -104,19 +111,17 @@ struct WorkspaceView: View {
         .padding(.horizontal, pane.isCollapsed ? 0 : 14)
         .frame(maxWidth: .infinity)
         .frame(height: 28)
-        .background(
-            dropTargetPaneID == pane.id
-                ? Color.accentColor.opacity(0.22)
-                : (isSelected ? .white.opacity(0.1) : .clear),
-            in: RoundedRectangle(cornerRadius: 6)
+        .glassEffect(
+            .regular.tint(glassTint).interactive(),
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
         )
         .overlay {
-            if dropTargetPaneID == pane.id {
-                RoundedRectangle(cornerRadius: 6)
+            if isDropTarget {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .stroke(Color.accentColor.opacity(0.8), lineWidth: 1)
             }
         }
-        .contentShape(RoundedRectangle(cornerRadius: 6))
+        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onHover { isHovering in
             if isHovering {
                 hoveredPaneID = pane.id
@@ -389,6 +394,7 @@ private struct PaneResizeHandle: View {
     let trailingID: UUID
     let workspace: Workspace
     let isEnabled: Bool
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isDragging = false
     @State private var isHovering = false
     @State private var lastDragLocation: CGFloat = 0
@@ -396,10 +402,10 @@ private struct PaneResizeHandle: View {
     var body: some View {
         ZStack {
             Rectangle()
-                .fill(Color(nsColor: .separatorColor).opacity(isHovering || isDragging ? 0.18 : 0.08))
+                .fill(separatorColor.opacity(isHovering || isDragging ? 0.18 : 0.08))
 
             Rectangle()
-                .fill(isDragging || isHovering ? Color.accentColor : Color(nsColor: .separatorColor))
+                .fill(isDragging || isHovering ? Color.accentColor : separatorColor)
                 .frame(
                     width: isVertical ? PaneLayoutMetrics.dividerLineThickness : nil,
                     height: isVertical ? nil : PaneLayoutMetrics.dividerLineThickness
@@ -456,6 +462,14 @@ private struct PaneResizeHandle: View {
                     isDragging = false
                     workspace.persistPaneSizes()
                 }
+        )
+    }
+
+    private var separatorColor: Color {
+        Color(
+            .sRGB,
+            white: colorScheme == .dark ? 0.2 : 0.78,
+            opacity: 1
         )
     }
 

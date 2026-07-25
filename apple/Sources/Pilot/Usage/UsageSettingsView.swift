@@ -4,6 +4,8 @@ import SwiftUI
 /// from the `claude`, `codex`, `grok`, and `kimi` CLI sessions already on this
 /// Mac. This page shows whether each is signed in and how to sign in if not.
 struct UsageSettingsView: View {
+    var showsPageHeader = false
+
     @AppStorage(UsageConsent.claudeKey) private var claudeEnabled = false
     @AppStorage(UsageConsent.codexKey) private var codexEnabled = false
     @AppStorage(UsageConsent.grokKey) private var grokEnabled = false
@@ -20,6 +22,15 @@ struct UsageSettingsView: View {
 
     var body: some View {
         Form {
+            if showsPageHeader {
+                PilotSettingsPageHeader(
+                    title: "Usage",
+                    subtitle: "Connect local coding-agent sessions and review their usage in Pilot.",
+                    systemImage: "chart.bar.xaxis",
+                    tint: .blue
+                )
+            }
+
             Section {
                 Toggle("Allow Pilot to read Claude Code credentials and usage", isOn: $claudeEnabled)
                 statusRow(enabled: claudeEnabled, signedIn: claudeSignedIn)
