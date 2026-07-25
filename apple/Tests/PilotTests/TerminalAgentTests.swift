@@ -112,3 +112,68 @@ struct TerminalAgentTests {
         #expect(TerminalAgent.match(executablePath: nil, arguments: []) == nil)
     }
 }
+
+@Suite("Terminal foreground activity")
+struct TerminalProcessActivityTests {
+    @Test("Interactive shells are idle")
+    func classifiesInteractiveShellsAsIdle() {
+        #expect(TerminalProcessActivity.classify(currentCommand: "zsh") == .idle)
+        #expect(TerminalProcessActivity.classify(currentCommand: "-bash") == .idle)
+        #expect(TerminalProcessActivity.classify(currentCommand: "/opt/homebrew/bin/fish") == .idle)
+    }
+
+    @Test("Foreground commands are running")
+    func classifiesForegroundCommandsAsRunning() {
+        #expect(TerminalProcessActivity.classify(currentCommand: "turbo") == .running)
+        #expect(TerminalProcessActivity.classify(currentCommand: "bun") == .running)
+        #expect(TerminalProcessActivity.classify(currentCommand: "/usr/local/bin/node") == .running)
+    }
+
+    @Test("Missing tmux output is idle")
+    func classifiesMissingCommandAsIdle() {
+        #expect(TerminalProcessActivity.classify(currentCommand: nil) == .idle)
+        #expect(TerminalProcessActivity.classify(currentCommand: " \n") == .idle)
+    }
+}
+
+@Suite("Terminal fast commands")
+struct TerminalFastCommandTests {
+    @Test("Commands persist independently for each terminal pane")
+    func commandsAreStoredPerPane() throws {
+        let suiteName = "TerminalFastCommandTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let firstPaneID = UUID()
+        let secondPaneID = UUID()
+
+        TerminalFastCommandStore.setCommand("bun dev", for: firstPaneID, defaults: defaults)
+        TerminalFastCommandStore.setCommand("swift test", for: secondPaneID, defaults: defaults)
+
+        #expect(TerminalFastCommandStore.command(for: firstPaneID, defaults: defaults) == "bun dev")
+        #expect(TerminalFastCommandStore.command(for: secondPaneID, defaults: defaults) == "swift test")
+
+        TerminalFastCommandStore.removeCommand(for: firstPaneID, defaults: defaults)
+        #expect(TerminalFastCommandStore.command(for: firstPaneID, defaults: defaults).isEmpty)
+        #expect(TerminalFastCommandStore.command(for: secondPaneID, defaults: defaults) == "swift test")
+    }
+
+    @Test("Only non-empty commands can execute")
+    func executableCommandsAreTrimmed() {
+        #expect(TerminalFastCommandStore.executableCommand(from: "  bun dev  ") == "bun dev")
+        #expect(TerminalFastCommandStore.executableCommand(from: "\n\t ") == nil)
+    }
+
+    @Test("Clearing a command removes its preference")
+    func clearingCommandRemovesPreference() throws {
+        let suiteName = "TerminalFastCommandTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let paneID = UUID()
+
+        TerminalFastCommandStore.setCommand("make serve", for: paneID, defaults: defaults)
+        TerminalFastCommandStore.setCommand("", for: paneID, defaults: defaults)
+
+        #expect(TerminalFastCommandStore.command(for: paneID, defaults: defaults).isEmpty)
+    }
+}

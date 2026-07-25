@@ -261,6 +261,7 @@ struct WorkspaceView: View {
                             CollapsedPaneSlit(
                                 pane: pane,
                                 isVertical: isVertical,
+                                isWorkspaceActive: isActive,
                                 onUnhide: { workspace.expandPane(pane) }
                             )
                         }
@@ -275,11 +276,8 @@ struct WorkspaceView: View {
                         .clipped()
                         .simultaneousGesture(
                             TapGesture().onEnded {
-                                if pane.isCollapsed {
-                                    workspace.expandPane(pane)
-                                } else {
-                                    workspace.selectedPaneID = pane.id
-                                }
+                                guard !pane.isCollapsed else { return }
+                                workspace.selectedPaneID = pane.id
                             }
                         )
 
@@ -610,22 +608,33 @@ private struct TerminalDirtyBadge: View {
 private struct CollapsedPaneSlit: View {
     let pane: Pane
     let isVertical: Bool
+    let isWorkspaceActive: Bool
     let onUnhide: () -> Void
 
     var body: some View {
-        Group {
-            if isVertical {
-                VStack(spacing: 0) {
-                    unhideButton
-                    Spacer(minLength: 0)
+        ZStack {
+            Button(action: onUnhide) {
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Unhide \(pane.kind.displayName)")
+
+            Group {
+                if isVertical {
+                    VStack(spacing: 0) {
+                        unhideButton
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.top, 6)
+                } else {
+                    HStack(spacing: 0) {
+                        unhideButton
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 6)
                 }
-                .padding(.top, 6)
-            } else {
-                HStack(spacing: 0) {
-                    unhideButton
-                    Spacer(minLength: 0)
-                }
-                .padding(.leading, 6)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -634,34 +643,114 @@ private struct CollapsedPaneSlit: View {
             Rectangle()
                 .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 1)
         }
-        .contentShape(Rectangle())
     }
 
+    @ViewBuilder
     private var unhideButton: some View {
-        Button(action: onUnhide) {
-            if pane.kind == .terminal {
-                HiddenTerminalIndicator(compact: false)
-            } else {
+        if pane.kind == .terminal {
+            HiddenTerminalIndicator(
+                pane: pane,
+                compact: false,
+                isWorkspaceActive: isWorkspaceActive
+            )
+        } else {
+            Button(action: onUnhide) {
                 Image(systemName: "eye")
                     .scaledFont(size: 10, weight: .semibold)
                     .foregroundStyle(.secondary)
                     .frame(width: 18, height: 18)
             }
+            .buttonStyle(.plain)
+            .help("Unhide \(pane.kind.displayName)")
         }
-        .buttonStyle(.plain)
-        .help(
-            pane.kind == .terminal
-                ? "Show Terminal. Hidden terminals keep running."
-                : "Unhide \(pane.kind.displayName)"
-        )
     }
 }
 
 private struct HiddenTerminalIndicator: View {
+    let pane: Pane
     let compact: Bool
+    let isWorkspaceActive: Bool
+    @AppStorage private var fastCommand: String
+    @State private var activity: TerminalProcessActivity = .idle
     @State private var isPulsing = false
+    @State private var activeAction: FastCommandAction?
+
+    private enum FastCommandAction {
+        case play
+        case stop
+    }
+
+    init(pane: Pane, compact: Bool, isWorkspaceActive: Bool) {
+        self.pane = pane
+        self.compact = compact
+        self.isWorkspaceActive = isWorkspaceActive
+        _fastCommand = AppStorage(
+            wrappedValue: "",
+            TerminalFastCommandStore.preferenceKey(for: pane.id)
+        )
+    }
 
     var body: some View {
+        VStack(spacing: compact ? 2 : 5) {
+            if activity == .running {
+                runningIndicator
+                    .help("This hidden terminal is running")
+                    .accessibilityLabel("Hidden terminal is running")
+            }
+
+            if executableCommand != nil {
+                fastCommandButton(
+                    action: .play,
+                    systemName: "play.fill",
+                    help: "Stop the active process and run the Fast Command"
+                )
+                fastCommandButton(
+                    action: .stop,
+                    systemName: "stop.fill",
+                    help: "Stop the active terminal process"
+                )
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: activity)
+        .animation(.easeInOut(duration: 0.2), value: executableCommand != nil)
+        .task(id: isWorkspaceActive) {
+            guard isWorkspaceActive else { return }
+            let sessionName = pane.persistentSessionName
+            while !Task.isCancelled {
+                activity = await PersistentTerminalSession.foregroundActivity(sessionName: sessionName)
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    private func fastCommandButton(
+        action: FastCommandAction,
+        systemName: String,
+        help: String
+    ) -> some View {
+        Button {
+            perform(action)
+        } label: {
+            Group {
+                if activeAction == action {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else {
+                    Image(systemName: systemName)
+                        .scaledFont(size: compact ? 7 : 8, weight: .semibold)
+                }
+            }
+            .foregroundStyle(action == .play ? Color.primary : Color.secondary)
+            .frame(width: compact ? 18 : 20, height: compact ? 18 : 20)
+            .background(Color.primary.opacity(0.06), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(activeAction != nil)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+
+    private var runningIndicator: some View {
         ZStack {
             Circle()
                 .fill(Color.accentColor.opacity(compact ? 0.12 : 0.16))
@@ -673,11 +762,39 @@ private struct HiddenTerminalIndicator: View {
                 .scaleEffect(isPulsing ? 1.0 : 0.72)
         }
         .frame(width: compact ? 18 : 20, height: compact ? 18 : 20)
-        .accessibilityLabel("Hidden terminal is still running")
         .onAppear {
             withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
                 isPulsing = true
             }
+        }
+    }
+
+    private var executableCommand: String? {
+        TerminalFastCommandStore.executableCommand(from: fastCommand)
+    }
+
+    private func perform(_ action: FastCommandAction) {
+        guard activeAction == nil else { return }
+        if action == .play, executableCommand == nil { return }
+        activeAction = action
+        Task {
+            switch action {
+            case .play:
+                if let executableCommand {
+                    _ = await PersistentTerminalSession.runFastCommand(
+                        executableCommand,
+                        sessionName: pane.persistentSessionName
+                    )
+                }
+            case .stop:
+                _ = await PersistentTerminalSession.stopForegroundCommand(
+                    sessionName: pane.persistentSessionName
+                )
+            }
+            activity = await PersistentTerminalSession.foregroundActivity(
+                sessionName: pane.persistentSessionName
+            )
+            activeAction = nil
         }
     }
 }

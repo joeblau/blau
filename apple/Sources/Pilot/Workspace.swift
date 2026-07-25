@@ -51,6 +51,43 @@ enum RootPathSource: String, Codable {
     case manual
 }
 
+/// A terminal pane's persisted one-click command. This intentionally lives in
+/// UUID-keyed preferences rather than the versioned SwiftData graph: it is
+/// terminal UI state, and adding it must not force a migration of user notes
+/// and workspaces.
+enum TerminalFastCommandStore {
+    private static let keyPrefix = "terminal.fastCommand."
+
+    static func command(for paneID: UUID, defaults: UserDefaults = .standard) -> String {
+        defaults.string(forKey: preferenceKey(for: paneID)) ?? ""
+    }
+
+    static func setCommand(
+        _ command: String,
+        for paneID: UUID,
+        defaults: UserDefaults = .standard
+    ) {
+        if command.isEmpty {
+            defaults.removeObject(forKey: preferenceKey(for: paneID))
+        } else {
+            defaults.set(command, forKey: preferenceKey(for: paneID))
+        }
+    }
+
+    static func removeCommand(for paneID: UUID, defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: preferenceKey(for: paneID))
+    }
+
+    static func executableCommand(from command: String) -> String? {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func preferenceKey(for paneID: UUID) -> String {
+        keyPrefix + paneID.uuidString.lowercased()
+    }
+}
+
 enum PersistentTerminalSession {
     private static let tmuxCandidates = [
         "/opt/homebrew/bin/tmux",
@@ -105,6 +142,122 @@ enum PersistentTerminalSession {
         }
     }
 
+    static func foregroundActivity(sessionName: String) async -> TerminalProcessActivity {
+        guard let tmuxPath = tmuxExecutablePath() else { return .idle }
+
+        return await Task.detached(priority: .utility) {
+            let process = Process()
+            let output = Pipe()
+            process.executableURL = URL(fileURLWithPath: tmuxPath)
+            process.arguments = [
+                "display-message",
+                "-p",
+                "-t",
+                sessionName,
+                "#{pane_current_command}",
+            ]
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+            } catch {
+                return .idle
+            }
+
+            guard process.terminationStatus == 0 else { return .idle }
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            let command = String(decoding: data, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return TerminalProcessActivity.classify(currentCommand: command)
+        }.value
+    }
+
+    /// Interrupts the foreground process group and waits until tmux reports
+    /// that the pane's interactive shell owns the terminal again.
+    static func stopForegroundCommand(sessionName: String) async -> Bool {
+        guard let tmuxPath = tmuxExecutablePath() else { return false }
+
+        if await foregroundActivity(sessionName: sessionName) == .idle {
+            return true
+        }
+
+        // Interactive agents can consume one interrupt without exiting. Retry
+        // a bounded number of times and wait for the shell after each attempt.
+        for _ in 0..<3 {
+            guard await sendKeys(["C-c"], to: sessionName, using: tmuxPath) else {
+                return false
+            }
+            for _ in 0..<5 {
+                do {
+                    try await Task.sleep(for: .milliseconds(100))
+                } catch {
+                    return false
+                }
+                if await foregroundActivity(sessionName: sessionName) == .idle {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    /// Stops the active job, inserts the exact command text at the returned
+    /// shell prompt, and executes it. `send-keys -l` prevents tmux from treating
+    /// command fragments as named keys.
+    static func runFastCommand(_ command: String, sessionName: String) async -> Bool {
+        guard let command = TerminalFastCommandStore.executableCommand(from: command),
+              await stopForegroundCommand(sessionName: sessionName),
+              let tmuxPath = tmuxExecutablePath(),
+              await sendLiteral(command, to: sessionName, using: tmuxPath) else {
+            return false
+        }
+        return await sendKeys(["Enter"], to: sessionName, using: tmuxPath)
+    }
+
+    private static func sendKeys(
+        _ keys: [String],
+        to sessionName: String,
+        using tmuxPath: String
+    ) async -> Bool {
+        do {
+            _ = try await ProcessRunner.run(
+                ProcessInvocation(
+                    executableURL: URL(fileURLWithPath: tmuxPath),
+                    arguments: ["send-keys", "-t", sessionName] + keys,
+                    timeout: .seconds(2),
+                    standardOutputLimit: 1_024,
+                    standardErrorLimit: 4_096
+                )
+            )
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func sendLiteral(
+        _ text: String,
+        to sessionName: String,
+        using tmuxPath: String
+    ) async -> Bool {
+        do {
+            _ = try await ProcessRunner.run(
+                ProcessInvocation(
+                    executableURL: URL(fileURLWithPath: tmuxPath),
+                    arguments: ["send-keys", "-l", "-t", sessionName, "--", text],
+                    timeout: .seconds(2),
+                    standardOutputLimit: 1_024,
+                    standardErrorLimit: 4_096
+                )
+            )
+            return true
+        } catch {
+            return false
+        }
+    }
+
     private static func tmuxExecutablePath() -> String? {
         tmuxCandidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
@@ -117,6 +270,38 @@ enum PersistentTerminalSession {
 
     private static func shellEscape(_ string: String) -> String {
         "'" + string.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+    }
+}
+
+enum TerminalProcessActivity: Equatable, Sendable {
+    case idle
+    case running
+
+    private static let interactiveShellNames: Set<String> = [
+        "bash",
+        "csh",
+        "dash",
+        "fish",
+        "ksh",
+        "nu",
+        "pwsh",
+        "sh",
+        "tcsh",
+        "xonsh",
+        "zsh",
+    ]
+
+    static func classify(currentCommand: String?) -> Self {
+        guard let currentCommand else { return .idle }
+        let command = currentCommand
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "/")
+            .last
+            .map(String.init)?
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+            .lowercased() ?? ""
+        guard !command.isEmpty else { return .idle }
+        return interactiveShellNames.contains(command) ? .idle : .running
     }
 }
 
@@ -357,7 +542,11 @@ final class Pane {
                 SimulatorRegistry.shared.remove(paneID: paneID)
             case .android:
                 AndroidDeviceRegistry.shared.remove(paneID: paneID)
-            case .terminal, .browser, .editor:
+            case .terminal:
+                if isDestructive {
+                    TerminalFastCommandStore.removeCommand(for: paneID)
+                }
+            case .browser, .editor:
                 break
             }
         }
