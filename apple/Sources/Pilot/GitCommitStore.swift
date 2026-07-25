@@ -50,9 +50,20 @@ final class GitCommitStore {
     var runs: [GitRun] = []
     var filesystem: [FileSystemEntry] = []
     var repoPath: String = ""
+    var activeBranch: String = ""
     var isLoading = false
     var isLoadingFilesystem = false
     private var refreshTimer: Timer?
+
+    var repositoryName: String {
+        guard !repoPath.isEmpty else { return "Repository" }
+        let name = URL(fileURLWithPath: repoPath, isDirectory: true).lastPathComponent
+        return name.isEmpty ? repoPath : name
+    }
+
+    var activeBranchDisplayName: String {
+        activeBranch.isEmpty ? "Branch" : activeBranch
+    }
 
     func startWatching(directory: String) {
         if repoPath == directory {
@@ -68,6 +79,7 @@ final class GitCommitStore {
         actions = []
         runs = []
         filesystem = []
+        activeBranch = ""
         fetchAll(policy: .automatic)
         fetchFilesystem()
         refreshTimer?.invalidate()
@@ -86,6 +98,7 @@ final class GitCommitStore {
         actions = []
         runs = []
         filesystem = []
+        activeBranch = ""
         isLoading = false
         isLoadingFilesystem = false
     }
@@ -101,11 +114,14 @@ final class GitCommitStore {
         let dir = repoPath
 
         Task {
-            let result = await Self.fetchGitData(directory: dir, policy: policy)
+            async let commits = Self.fetchGitData(directory: dir, policy: policy)
+            async let branch = Self.fetchActiveBranch(directory: dir)
+            let (result, branchName) = await (commits, branch)
             // Drop stale results: the user may have switched workspaces while
             // the shell command ran, and these would clobber the new repo's data.
             guard self.repoPath == dir else { return }
             self.commits = result
+            self.activeBranch = branchName
             self.isLoading = false
         }
     }
@@ -230,6 +246,32 @@ final class GitCommitStore {
                 continuation.resume(returning: entries)
             }
         }
+    }
+
+    private nonisolated static func fetchActiveBranch(directory: String) async -> String {
+        let directoryURL = URL(fileURLWithPath: directory, isDirectory: true)
+        let branchInvocation = ProcessInvocation.developerTool(
+            "git",
+            arguments: ["branch", "--show-current"],
+            currentDirectoryURL: directoryURL,
+            timeout: .seconds(10),
+            standardOutputLimit: 64 * 1_024
+        )
+        if let result = try? await ProcessRunner.run(branchInvocation) {
+            let branch = result.standardOutputString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !branch.isEmpty { return branch }
+        }
+
+        let headInvocation = ProcessInvocation.developerTool(
+            "git",
+            arguments: ["rev-parse", "--short", "HEAD"],
+            currentDirectoryURL: directoryURL,
+            timeout: .seconds(10),
+            standardOutputLimit: 64 * 1_024
+        )
+        guard let result = try? await ProcessRunner.run(headInvocation) else { return "" }
+        let head = result.standardOutputString.trimmingCharacters(in: .whitespacesAndNewlines)
+        return head.isEmpty ? "" : "Detached · \(head)"
     }
 
     private nonisolated static func relativeTime(from iso: String) -> String {

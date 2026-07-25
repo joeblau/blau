@@ -44,6 +44,16 @@ enum InspectorTab: String, Codable, CaseIterable {
     case commits = "Commits"
     case filesystem = "Files"
     case usage = "Usage"
+
+    var systemImageName: String {
+        switch self {
+        case .actions: "gearshape.2"
+        case .tasks: "checklist"
+        case .commits: "arrow.triangle.branch"
+        case .filesystem: "folder"
+        case .usage: "chart.bar.xaxis"
+        }
+    }
 }
 
 enum RootPathSource: String, Codable {

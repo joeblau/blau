@@ -26,10 +26,13 @@ struct WorkspacePaneLauncher: View {
             .help("Open a view in this workspace")
             .accessibilityIdentifier("workspace.pane-launcher")
         } else {
-            ControlGroup {
+            HStack(spacing: 0) {
                 paneButtons
             }
-            .controlGroupStyle(.navigation)
+            .buttonStyle(.plain)
+            .menuStyle(.borderlessButton)
+            .padding(.horizontal, 4)
+            .glassEffect(.regular, in: Capsule())
             .disabled(workspace == nil)
             .accessibilityIdentifier("workspace.pane-launcher")
         }
@@ -40,14 +43,16 @@ struct WorkspacePaneLauncher: View {
         Button {
             workspace?.addPane(kind: .terminal, side: .right)
         } label: {
-            Label("New Terminal", systemImage: PaneKind.terminal.systemImageName)
+            launcherLabel("New Terminal", systemImage: PaneKind.terminal.systemImageName)
         }
+        .frame(width: 36, height: 36)
 
         Button {
             workspace?.addPane(kind: .browser, side: .right)
         } label: {
-            Label("New Browser", systemImage: PaneKind.browser.systemImageName)
+            launcherLabel("New Browser", systemImage: PaneKind.browser.systemImageName)
         }
+        .frame(width: 36, height: 36)
 
         Menu {
             Button {
@@ -64,8 +69,10 @@ struct WorkspacePaneLauncher: View {
             }
             .keyboardShortcut("i", modifiers: [.command, .shift])
         } label: {
-            Label("Apple", systemImage: "apple.logo")
+            launcherLabel("Apple", systemImage: "apple.logo")
         }
+        .menuIndicator(.hidden)
+        .frame(width: 36, height: 36)
         .help("Open an Apple Simulator or QuickTime device stream")
         .accessibilityIdentifier("workspace.apple-pane-launcher")
 
@@ -82,20 +89,21 @@ struct WorkspacePaneLauncher: View {
                 Label("Android Device", systemImage: "smartphone")
             }
         } label: {
-            Label {
-                Text("Android")
-            } icon: {
+            launcherLabel("Android") {
                 Image("AndroidRobot")
             }
         }
+        .menuIndicator(.hidden)
+        .frame(width: 36, height: 36)
         .help("Open an Android Simulator or device stream")
         .accessibilityIdentifier("workspace.android-pane-launcher")
 
         Button {
             workspace?.addPane(kind: .editor, side: .right)
         } label: {
-            Label("Open Editor", systemImage: PaneKind.editor.systemImageName)
+            launcherLabel("Open Editor", systemImage: PaneKind.editor.systemImageName)
         }
+        .frame(width: 36, height: 36)
         .keyboardShortcut("e", modifiers: .command)
         .disabled(workspace?.effectiveRootPath == nil)
         .help(
@@ -109,8 +117,9 @@ struct WorkspacePaneLauncher: View {
                 NSWorkspace.shared.open(URL(fileURLWithPath: rootPath))
             }
         } label: {
-            Label("Open in Finder", systemImage: "folder")
+            launcherLabel("Open in Finder", systemImage: "folder")
         }
+        .frame(width: 36, height: 36)
         .disabled(workspace?.effectiveRootPath == nil)
         .help(
             workspace?.effectiveRootPath == nil
@@ -122,6 +131,26 @@ struct WorkspacePaneLauncher: View {
     private func addAndroidPane(target: AndroidPaneTarget) {
         guard let pane = workspace?.addPane(kind: .android, side: .right) else { return }
         AndroidDeviceRegistry.shared.configure(target: target, for: pane.id)
+    }
+
+    private func launcherLabel(_ title: String, systemImage: String) -> some View {
+        launcherLabel(title) {
+            Image(systemName: systemImage)
+        }
+    }
+
+    private func launcherLabel<Icon: View>(
+        _ title: String,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
+        Label {
+            Text(title)
+        } icon: {
+            icon()
+        }
+        .labelStyle(.iconOnly)
+        .frame(width: 36, height: 36)
+        .contentShape(Rectangle())
     }
 }
 
@@ -315,6 +344,7 @@ struct BrowserBackForwardToolbarControls: View {
             .disabled(!state.canGoForward)
             .accessibilityIdentifier("browser.forward")
         }
+        .controlGroupStyle(.navigation)
     }
 }
 
@@ -574,6 +604,7 @@ struct ContentView: View {
     @AppStorage("inspector.width") private var inspectorWidth = 280.0
     @State private var notesToggleMonitor: Any?
     @State private var persistenceFailure: PersistenceFailure?
+    @FocusState private var renamingWorkspaceID: UUID?
 
     var body: some View {
         let activeInspectorRepoPath = isInspectorPresentedForSelectedWorkspace ? selectedWorkspaceRootPath : nil
@@ -616,15 +647,16 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 12) {
                     RecordingStatusIndicator(isRecording: isPeerRecording)
+                    AwakeStatusButton()
 
                     Spacer(minLength: 0)
 
                     HStack(spacing: 12) {
                         ForEach(connectedDevices) { device in
-                            Image(systemName: device.kind.systemImageName)
-                                .symbolVariant(device.kind.usesFillVariant ? .fill : .none)
-                                .foregroundStyle(device.isConnected ? .green : .secondary)
-                                .help(device.name ?? device.kind.displayName)
+                            DeviceStatusButton(
+                                device: device,
+                                connectionDetail: connectionDetail(for: device)
+                            )
                         }
                     }
                 }
@@ -761,6 +793,13 @@ struct ContentView: View {
                 ? nil
                 : store.selectedWorkspace
         )
+        .focusedSceneValue(
+            \.pilotCloseTabAction,
+            PilotCloseTabAction(
+                isEnabled: canCloseActiveTab,
+                perform: closeActiveTab
+            )
+        )
         .toolbar {
             ToolbarItem(placement: .principal) {
                 if !store.isNotesMode,
@@ -780,11 +819,6 @@ struct ContentView: View {
                    ) {
                     TerminalFastCommandToolbarActions(pane: pane)
                         .id(pane.id)
-                }
-            }
-            ToolbarItem(placement: .navigation) {
-                Button(action: store.addWorkspace) {
-                    Label("New Workspace", systemImage: "plus")
                 }
             }
             ToolbarItemGroup(placement: .secondaryAction) {
@@ -813,13 +847,20 @@ struct ContentView: View {
                     androidToolbar(paneID: pane.id)
                 }
             }
-            ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: store.addWorkspace) {
+                    Label("New Workspace", systemImage: "plus")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
                 // ⌘T / ⌘B live as main-menu commands (see PilotApp.commands)
                 // so a focused browser web view can't swallow them.
                 WorkspacePaneLauncher(workspace: store.selectedWorkspace)
-                // Render the seven "New …" pane actions as one connected group
-                // rather than separate circular toolbar buttons.
                     .disabled(store.isNotesMode)
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+            ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     isDrawingActive.toggle()
                 } label: {
@@ -837,25 +878,13 @@ struct ContentView: View {
                 .disabled(store.selectedWorkspace == nil || store.isNotesMode || store.isRemoteDesktopMode)
             }
         }
+        .background(LeadingWorkspaceToolbarItem())
+        .background(PilotWindowCloseMenuInstaller())
         .background {
             WorkspaceNumberShortcuts(
                 workspaceIDs: workspaceShortcutIDs,
                 onSelect: store.selectWorkspace
             )
-            Button("") {
-                // ⌘W closes what's in front: the active note tab in Notes
-                // mode, otherwise the selected workspace pane.
-                if store.isNotesMode {
-                    guard let note = store.selectedNote else { return }
-                    store.requestCloseNote(note)
-                    return
-                }
-                guard let workspace = store.selectedWorkspace,
-                      let pane = workspace.selectedPane else { return }
-                workspace.removePane(pane)
-            }
-            .keyboardShortcut("w", modifiers: .command)
-            .hidden()
             Button("") {
                 guard store.selectedWorkspace != nil, !store.isNotesMode else { return }
                 isDrawingActive.toggle()
@@ -893,6 +922,26 @@ struct ContentView: View {
                     .padding(16)
             }
         }
+    }
+
+    private var canCloseActiveTab: Bool {
+        if store.isNotesMode {
+            return store.selectedNote != nil
+        }
+        guard !store.isRemoteDesktopMode else { return false }
+        return store.selectedWorkspace?.selectedPane != nil
+    }
+
+    private func closeActiveTab() {
+        if store.isNotesMode {
+            guard let note = store.selectedNote else { return }
+            store.requestCloseNote(note)
+            return
+        }
+        guard !store.isRemoteDesktopMode,
+              let workspace = store.selectedWorkspace,
+              let pane = workspace.selectedPane else { return }
+        workspace.removePane(pane)
     }
 
     /// Bridges the single-typed `List` selection to the store's split state:
@@ -976,9 +1025,29 @@ struct ContentView: View {
         ]
     }
 
+    private func connectionDetail(for device: ConnectedDevice) -> String? {
+        switch device.kind {
+        case .iphone:
+            syncService.statusText
+        case .ipad:
+            isPlotterConnected ? "Plotter connected" : nil
+        case .appleWatch:
+            peerDeviceStatus.isWatchConnected ? "Companion watch connected" : nil
+        case .airpods, .airpodsPro, .airpodsMax, .beats, .headphonesWired,
+             .headphonesBluetooth, .usb, .speaker, .unknown:
+            nil
+        case .computer:
+            nil
+        }
+    }
+
     private func workspaceRow(_ workspace: Workspace) -> some View {
         HStack {
             TextField("Name", text: Bindable(workspace).name)
+                .focused($renamingWorkspaceID, equals: workspace.id)
+                .onSubmit {
+                    renamingWorkspaceID = nil
+                }
             if workspace.badgeCount > 0 {
                 Text("\(workspace.badgeCount)")
                     .scaledFont(size: 10, weight: .bold)
@@ -990,6 +1059,15 @@ struct ContentView: View {
         }
         .tag(SidebarSelection.workspace(workspace.id))
         .contextMenu {
+            Button {
+                let workspaceID = workspace.id
+                DispatchQueue.main.async {
+                    renamingWorkspaceID = workspaceID
+                }
+            } label: {
+                Label("Rename Workspace", systemImage: "pencil")
+            }
+
             Button {
                 presentRootPathPicker(for: workspace)
             } label: {
@@ -1036,9 +1114,17 @@ struct ContentView: View {
         .help(session.isRecording ? "Stop recording" : "Record the simulator screen")
 
         Button {
+            session.goHome()
+        } label: {
+            Label("Home", systemImage: "square.grid.3x3.fill")
+        }
+        .disabled(!isStreaming)
+        .help("Go to the simulator Home screen")
+
+        Button {
             session.takeScreenshot()
         } label: {
-            Label("Take Screenshot", systemImage: "camera")
+            Label("Take Screenshot", systemImage: "camera.viewfinder")
         }
         .disabled(!isStreaming)
         .help("Save a screenshot of the simulator screen to the Desktop")
@@ -1046,7 +1132,7 @@ struct ContentView: View {
         Button {
             session.copyScreenshotToClipboard()
         } label: {
-            Label("Copy Screenshot", systemImage: "doc.on.clipboard")
+            Label("Copy Screenshot", systemImage: "clipboard")
         }
         .disabled(!isStreaming)
         .help("Copy a screenshot of the simulator screen to the clipboard")
@@ -1065,12 +1151,6 @@ struct ContentView: View {
         }
         .disabled(session.bootedUDID == nil)
         .help("Power off the booted simulator")
-
-        if isStreaming {
-            Image(systemName: "dot.radiowaves.left.and.right")
-                .foregroundStyle(.green)
-                .help("Live")
-        }
     }
 
     @ViewBuilder
@@ -1093,7 +1173,7 @@ struct ContentView: View {
         Button {
             session.takeScreenshot()
         } label: {
-            Label("Take Screenshot", systemImage: "camera")
+            Label("Take Screenshot", systemImage: "camera.viewfinder")
         }
         .disabled(!isStreaming)
         .help("Save a screenshot of the Android screen to the Desktop")
@@ -1101,7 +1181,7 @@ struct ContentView: View {
         Button {
             session.copyScreenshotToClipboard()
         } label: {
-            Label("Copy Screenshot", systemImage: "doc.on.clipboard")
+            Label("Copy Screenshot", systemImage: "clipboard")
         }
         .disabled(!isStreaming)
         .help("Copy a screenshot of the Android screen to the clipboard")
@@ -1117,7 +1197,7 @@ struct ContentView: View {
         Button {
             session.sendKeycode(AndroidKeyMap.Keycode.home)
         } label: {
-            Label("Home", systemImage: "circle")
+            Label("Home", systemImage: "square.grid.3x3.fill")
         }
         .disabled(!isStreaming)
         .help("Android Home")
@@ -1136,12 +1216,6 @@ struct ContentView: View {
             Label("Choose Device", systemImage: "list.bullet")
         }
         .help("Pick a different Android device")
-
-        if isStreaming {
-            Image(systemName: "dot.radiowaves.left.and.right")
-                .foregroundStyle(.green)
-                .help("Live")
-        }
     }
 
     private var selectedWorkspaceInspectorTabBinding: Binding<InspectorTab> {
@@ -1229,18 +1303,246 @@ struct ContentView: View {
     }
 }
 
+/// `.primaryAction` is semantically correct for New Workspace, but macOS places
+/// primary actions on the trailing side of the toolbar. Keep the native sidebar
+/// toggle/tracking separator while moving only New Workspace ahead of it.
+private struct LeadingWorkspaceToolbarItem: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        InstallerView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class InstallerView: NSView {
+        private var toolbarObservers: [NSObjectProtocol] = []
+        private weak var observedToolbar: NSToolbar?
+        private var isReordering = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            installToolbarObserversIfNeeded()
+            scheduleReordering()
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            if newWindow == nil {
+                toolbarObservers.forEach(NotificationCenter.default.removeObserver)
+                toolbarObservers.removeAll()
+                observedToolbar = nil
+            }
+            super.viewWillMove(toWindow: newWindow)
+        }
+
+        private func installToolbarObserversIfNeeded() {
+            guard let toolbar = window?.toolbar, toolbar !== observedToolbar else { return }
+            toolbarObservers.forEach(NotificationCenter.default.removeObserver)
+            toolbarObservers.removeAll()
+            observedToolbar = toolbar
+
+            for name in [NSToolbar.willAddItemNotification, NSToolbar.didRemoveItemNotification] {
+                toolbarObservers.append(
+                    NotificationCenter.default.addObserver(
+                        forName: name,
+                        object: toolbar,
+                        queue: .main
+                    ) { [weak self] _ in
+                        Task { @MainActor in
+                            self?.scheduleReordering()
+                        }
+                    }
+                )
+            }
+        }
+
+        private func scheduleReordering() {
+            DispatchQueue.main.async { [weak self] in
+                self?.moveWorkspaceButtonToLeadingEdge()
+            }
+        }
+
+        private func moveWorkspaceButtonToLeadingEdge() {
+            guard !isReordering, let toolbar = window?.toolbar else { return }
+            installToolbarObserversIfNeeded()
+            guard let currentIndex = toolbar.items.firstIndex(where: {
+                $0.label == "New Workspace"
+            }), currentIndex > 0 else { return }
+
+            isReordering = true
+            let identifier = toolbar.items[currentIndex].itemIdentifier
+            toolbar.removeItem(at: currentIndex)
+            toolbar.insertItem(withItemIdentifier: identifier, at: 0)
+            isReordering = false
+        }
+    }
+}
+
 private struct RecordingStatusIndicator: View {
     let isRecording: Bool
+    @State private var isPopoverPresented = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        Button {
+            isPopoverPresented.toggle()
+        } label: {
             Image(systemName: isRecording ? "waveform.circle.fill" : "waveform.circle")
                 .foregroundStyle(isRecording ? .red : .secondary)
-
-            Text(isRecording ? "Recording" : "Mic Idle")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
+        .buttonStyle(.plain)
+        .statusButtonHitTarget()
+        .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
+            StatusPopoverContent(
+                title: "Microphone",
+                status: isRecording ? "Recording" : "Idle",
+                systemImage: isRecording ? "waveform.circle.fill" : "waveform.circle",
+                tint: isRecording ? .red : .secondary
+            )
+        }
+        .help(isRecording ? "Microphone recording" : "Microphone idle")
+        .accessibilityLabel(isRecording ? "Microphone recording" : "Microphone idle")
+        .accessibilityIdentifier("sidebar.microphone-status")
+    }
+}
+
+private struct AwakeStatusButton: View {
+    @State private var controller = AwakeSessionController.shared
+    @State private var isPopoverPresented = false
+
+    var body: some View {
+        Button {
+            isPopoverPresented.toggle()
+        } label: {
+            Image(systemName: "cup.and.heat.waves")
+                .foregroundStyle(controller.isEnabled ? Color.green : .secondary)
+        }
+        .buttonStyle(.plain)
+        .statusButtonHitTarget()
+        .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
+            AwakeSessionDetailsView(controller: controller)
+        }
+        .help(controller.isEnabled ? "Keep Awake active" : "Keep Awake off")
+        .accessibilityLabel(controller.isEnabled ? "Keep Awake active" : "Keep Awake off")
+        .accessibilityIdentifier("sidebar.keep-awake-status")
+    }
+}
+
+private struct AwakeSessionDetailsView: View {
+    @Bindable var controller: AwakeSessionController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: $controller.isEnabled) {
+                HStack(spacing: 8) {
+                    Image(systemName: "cup.and.heat.waves")
+                    Text("Keep Awake")
+                        .fontWeight(.semibold)
+                    Spacer(minLength: 12)
+                    Circle()
+                        .fill(controller.isEnabled ? Color.green : Color.secondary.opacity(0.6))
+                        .frame(width: 7, height: 7)
+                }
+            }
+            .toggleStyle(.checkbox)
+
+            Text(controller.sessionStatus)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .contentTransition(.numericText())
+
+            VStack(alignment: .leading, spacing: 7) {
+                Toggle("Allow display sleep", isOn: $controller.allowDisplaySleep)
+                Toggle(
+                    "Allow system sleep when display is closed",
+                    isOn: $controller.allowSystemSleepWhenDisplayClosed
+                )
+                Toggle(
+                    "Allow screen saver after 45m of inactivity",
+                    isOn: $controller.allowScreenSaverAfter45Minutes
+                )
+            }
+            .toggleStyle(.checkbox)
+
+            if let assertionError = controller.assertionError {
+                Text(assertionError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .frame(width: 350, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("keep-awake.popover")
+    }
+}
+
+private struct DeviceStatusButton: View {
+    let device: ConnectedDevice
+    let connectionDetail: String?
+    @State private var isPopoverPresented = false
+
+    var body: some View {
+        Button {
+            isPopoverPresented.toggle()
+        } label: {
+            Image(systemName: device.kind.systemImageName)
+                .symbolVariant(device.kind.usesFillVariant ? .fill : .none)
+                .foregroundStyle(device.isConnected ? .green : .secondary)
+        }
+        .buttonStyle(.plain)
+        .statusButtonHitTarget()
+        .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
+            StatusPopoverContent(
+                title: device.name ?? device.kind.displayName,
+                status: device.isConnected ? "Connected" : "Not connected",
+                detail: connectionDetail,
+                systemImage: device.kind.systemImageName,
+                tint: device.isConnected ? .green : .secondary
+            )
+        }
+        .help(device.name ?? device.kind.displayName)
+        .accessibilityLabel(
+            "\(device.name ?? device.kind.displayName), \(device.isConnected ? "connected" : "not connected")"
+        )
+        .accessibilityIdentifier("sidebar.device-status.\(device.kind.rawValue)")
+    }
+}
+
+private struct StatusPopoverContent: View {
+    let title: String
+    let status: String
+    var detail: String?
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
+                .font(.title3)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.headline)
+                Text(status)
+                    .foregroundStyle(.secondary)
+                if let detail, detail != status {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 240, alignment: .leading)
+    }
+}
+
+private extension View {
+    func statusButtonHitTarget() -> some View {
+        frame(width: 22, height: 22)
+            .contentShape(Rectangle())
     }
 }
 

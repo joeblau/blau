@@ -106,6 +106,21 @@ struct WorkspaceRootTrackingTests {
     }
 
     @Test
+    @MainActor
+    func inspectorRepositoryHeadersDescribeTheirCurrentContext() {
+        let store = GitCommitStore()
+
+        #expect(store.repositoryName == "Repository")
+        #expect(store.activeBranchDisplayName == "Branch")
+
+        store.repoPath = "/tmp/example-repository"
+        store.activeBranch = "feature/inspector-header"
+
+        #expect(store.repositoryName == "example-repository")
+        #expect(store.activeBranchDisplayName == "feature/inspector-header")
+    }
+
+    @Test
     func manualRootPathIsNotOverwrittenByAutomaticSync() throws {
         let workspace = Workspace(name: "Test")
         let terminal = Pane(kind: .terminal, sortOrder: 0)

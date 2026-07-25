@@ -1,4 +1,4 @@
-import CoreGraphics
+import AppKit
 import Testing
 @testable import Pilot
 
@@ -72,5 +72,57 @@ struct PaneInitRegressionTests {
 
         #expect(normalized == CGPoint(x: 0, y: 512))
         #expect(EditorViewportPolicy.normalizedWrappedScrollPosition(nil) == nil)
+    }
+
+    @Test("Find panel visibility keeps editor text outside the overlay")
+    func findPanelVisibilityAdjustsEditorViewport() {
+        let startingPosition = CGPoint(x: 0, y: 320)
+        let opened = EditorViewportPolicy.adjustedScrollPosition(
+            startingPosition,
+            findPanelWasVisible: false,
+            findPanelIsVisible: true
+        )
+        let closed = EditorViewportPolicy.adjustedScrollPosition(
+            opened,
+            findPanelWasVisible: true,
+            findPanelIsVisible: false
+        )
+
+        #expect(opened == CGPoint(x: 0, y: 292))
+        #expect(closed == startingPosition)
+        #expect(
+            EditorViewportPolicy.adjustedScrollPosition(
+                startingPosition,
+                findPanelWasVisible: true,
+                findPanelIsVisible: true
+            ) == startingPosition
+        )
+        #expect(
+            EditorViewportPolicy.adjustedScrollPosition(
+                nil,
+                findPanelWasVisible: false,
+                findPanelIsVisible: true
+            ) == CGPoint(x: 0, y: -28)
+        )
+    }
+
+    @MainActor
+    @Test("Editor find panel receives clicks above the text surface")
+    func findPanelIsPromotedForHitTesting() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 40))
+        let findPanel = NSView(frame: container.bounds)
+        let textSurface = NSView(frame: container.bounds)
+        container.addSubview(findPanel)
+        container.addSubview(textSurface)
+
+        #expect(container.hitTest(NSPoint(x: 20, y: 20)) === textSurface)
+
+        let repairCount = EditorFindPanelHitTestingPolicy.bringFindPanelsToFront(
+            in: container,
+            matching: { $0 === findPanel }
+        )
+
+        #expect(repairCount == 1)
+        #expect(container.hitTest(NSPoint(x: 20, y: 20)) === findPanel)
     }
 }

@@ -12,15 +12,19 @@ final class SimulatorHID: @unchecked Sendable {
         UnsafePointer<CGPoint>, UnsafePointer<CGPoint>?, UInt32, Int32, CGFloat, CGFloat, UInt32
     ) -> UnsafeMutableRawPointer?
     private typealias KeyboardFunc = @convention(c) (UInt32, UInt32) -> UnsafeMutableRawPointer?
+    private typealias ButtonFunc = @convention(c) (UInt32, UInt32, UInt32) -> UnsafeMutableRawPointer?
 
     private let hidClient: NSObject
     private let sendSel: Selector
     private let mouseFunc: MouseFunc
     private let keyboardFunc: KeyboardFunc?
+    private let buttonFunc: ButtonFunc?
     private let inputQueue = DispatchQueue(label: "app.blau.simulator.hid")
 
     /// Digitizer HID target — the value that's honored for touch on Xcode 26/27.
     private static let touchTarget: UInt32 = 0x32
+    /// Hardware-button HID target used by SimulatorKit.
+    private static let hardwareButtonTarget: UInt32 = 0x33
 
     init(deviceUDID: String) throws {
         SimPrivateFrameworks.load()
@@ -33,6 +37,8 @@ final class SimulatorHID: @unchecked Sendable {
         self.mouseFunc = unsafeBitCast(mousePtr, to: MouseFunc.self)
         self.keyboardFunc = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "IndigoHIDMessageForKeyboardArbitrary")
             .map { unsafeBitCast($0, to: KeyboardFunc.self) }
+        self.buttonFunc = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "IndigoHIDMessageForButton")
+            .map { unsafeBitCast($0, to: ButtonFunc.self) }
 
         guard let hidClass = NSClassFromString("_TtC12SimulatorKit24SimDeviceLegacyHIDClient") else {
             throw Self.error(3, "SimDeviceLegacyHIDClient not found")
@@ -79,6 +85,43 @@ final class SimulatorHID: @unchecked Sendable {
         var p2 = CGPoint(x: clamp(x2), y: clamp(y2))
         guard let msg = mouseFunc(&p1, &p2, Self.touchTarget, eventType(phase), 1.0, 1.0, 0) else { return }
         inputQueue.async { [self] in rawSend(msg) }
+    }
+
+    /// Press the simulator's hardware Home button. Older SimulatorKit versions
+    /// without the button builder fall back to a bottom-edge swipe.
+    func sendHome() {
+        if let buttonFunc {
+            let homeKey: UInt32 = 0
+            guard let down = buttonFunc(homeKey, 1, Self.hardwareButtonTarget) else {
+                sendHomeSwipe()
+                return
+            }
+            guard let up = buttonFunc(homeKey, 2, Self.hardwareButtonTarget) else {
+                free(down)
+                sendHomeSwipe()
+                return
+            }
+            inputQueue.async { [self] in
+                rawSend(down)
+                Thread.sleep(forTimeInterval: 0.06)
+                rawSend(up)
+            }
+            return
+        }
+        sendHomeSwipe()
+    }
+
+    private func sendHomeSwipe() {
+        inputQueue.async { [self] in
+            let points = [0.999, 0.92, 0.80, 0.66, 0.50]
+            rawTouch(1, CGPoint(x: 0.5, y: points[0]), edge: .bottom)
+            for y in points.dropFirst() {
+                Thread.sleep(forTimeInterval: 0.018)
+                rawTouch(1, CGPoint(x: 0.5, y: y), edge: .bottom)
+            }
+            Thread.sleep(forTimeInterval: 0.018)
+            rawTouch(2, CGPoint(x: 0.5, y: points[points.count - 1]), edge: .bottom)
+        }
     }
 
     // MARK: Scroll — a stateful synthesized drag (serve-sim technique)
@@ -130,9 +173,9 @@ final class SimulatorHID: @unchecked Sendable {
     }
 
     /// Synchronous single-finger touch (call only on `inputQueue`).
-    private func rawTouch(_ type: Int32, _ point: CGPoint) {
+    private func rawTouch(_ type: Int32, _ point: CGPoint, edge: Edge = .none) {
         var p = CGPoint(x: clamp(point.x), y: clamp(point.y))
-        if let msg = mouseFunc(&p, nil, Self.touchTarget, type, 1.0, 1.0, 0) { rawSend(msg) }
+        if let msg = mouseFunc(&p, nil, Self.touchTarget, type, 1.0, 1.0, edge.rawValue) { rawSend(msg) }
     }
 
     // MARK: - Keyboard

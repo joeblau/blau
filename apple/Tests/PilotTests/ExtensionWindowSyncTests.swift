@@ -1,13 +1,67 @@
 import Foundation
 import SwiftData
 import Testing
+import AppKit
 @testable import Pilot
 
 @Suite("Extension window workspace sync", .serialized)
 @MainActor
 struct ExtensionWindowSyncTests {
+    @Test("Extendo monitor routes only its window-local shortcut")
+    func shortcutRouting() {
+        #expect(ExtensionWindowShortcut.match(
+            modifierFlags: [.command, .shift],
+            characters: "d"
+        ) == .toggleDrawing)
+    }
+
+    @Test("Extendo shortcuts reject conflicting modifiers")
+    func shortcutRoutingRejectsConflicts() {
+        #expect(ExtensionWindowShortcut.match(modifierFlags: .command, characters: "t") == nil)
+        #expect(ExtensionWindowShortcut.match(modifierFlags: .command, characters: "w") == nil)
+        #expect(ExtensionWindowShortcut.match(modifierFlags: .command, characters: "b") == nil)
+        #expect(ExtensionWindowShortcut.match(
+            modifierFlags: [.command, .option],
+            characters: "e"
+        ) == nil)
+    }
+
     private enum InjectedFailure: Error {
         case unavailable
+    }
+
+    @Test("Close-menu installer finds only stock performClose items")
+    func closeMenuInstallerScan() {
+        let menu = NSMenu()
+        let closeItem = NSMenuItem(
+            title: "Close",
+            action: #selector(NSWindow.performClose(_:)),
+            keyEquivalent: "w"
+        )
+        // Same shortcut but a different action — the main window's own ⌘W
+        // pane/note command must never be stripped.
+        let otherAction = NSMenuItem(title: "Close Pane", action: nil, keyEquivalent: "w")
+        let otherShortcut = NSMenuItem(
+            title: "Minimize",
+            action: #selector(NSWindow.performMiniaturize(_:)),
+            keyEquivalent: "m"
+        )
+        let nestedClose = NSMenuItem(
+            title: "Close",
+            action: #selector(NSWindow.performClose(_:)),
+            keyEquivalent: "w"
+        )
+        let submenu = NSMenu()
+        submenu.addItem(nestedClose)
+        let parent = NSMenuItem(title: "File", action: nil, keyEquivalent: "")
+        parent.submenu = submenu
+
+        for item in [closeItem, otherAction, otherShortcut, parent] {
+            menu.addItem(item)
+        }
+
+        let found = PilotWindowCloseMenuInstaller.stockCloseMenuItems(in: menu)
+        #expect(Set(found) == Set([closeItem, nestedClose]))
     }
 
     @Test("Extension launch always restores the singleton main window")

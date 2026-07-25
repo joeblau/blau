@@ -4,12 +4,68 @@ import CodeEditSourceEditor
 import SwiftUI
 
 enum EditorViewportPolicy {
+    static let findPanelHeight: CGFloat = 28
+
     /// Soft-wrapped text has no horizontal scrollable extent. Preserve the
     /// vertical position while removing any elastic/restored X displacement.
     static func normalizedWrappedScrollPosition(_ position: CGPoint?) -> CGPoint? {
         guard var position else { return nil }
         position.x = 0
         return position
+    }
+
+    /// CodeEdit adds a content inset when its find panel changes visibility,
+    /// but AppKit leaves the clip-view origin where it was. Offset that origin
+    /// by the same amount so the first visible line moves below the panel
+    /// instead of remaining underneath it.
+    static func adjustedScrollPosition(
+        _ position: CGPoint?,
+        findPanelWasVisible: Bool,
+        findPanelIsVisible: Bool
+    ) -> CGPoint? {
+        guard findPanelWasVisible != findPanelIsVisible else {
+            return position
+        }
+        var position = position ?? .zero
+        position.y += findPanelIsVisible ? -findPanelHeight : findPanelHeight
+        return position
+    }
+}
+
+@MainActor
+enum EditorFindPanelHitTestingPolicy {
+    /// CodeEditSourceEditor 0.15.2 adds its text surface after its find panel.
+    /// The panel's layer is visually raised, but AppKit hit-testing still follows
+    /// subview order, so clicks fall through to the editor. Move the panel to the
+    /// front of that order as well.
+    @discardableResult
+    static func bringFindPanelsToFront(in rootView: NSView) -> Int {
+        bringFindPanelsToFront(in: rootView, matching: isCodeEditFindPanel)
+    }
+
+    @discardableResult
+    static func bringFindPanelsToFront(
+        in rootView: NSView,
+        matching isFindPanel: (NSView) -> Bool
+    ) -> Int {
+        var pending = [rootView]
+        var repairCount = 0
+
+        while let container = pending.popLast() {
+            let children = container.subviews
+            pending.append(contentsOf: children)
+
+            for child in children where isFindPanel(child) && container.subviews.last !== child {
+                container.addSubview(child, positioned: .above, relativeTo: nil)
+                repairCount += 1
+            }
+        }
+
+        return repairCount
+    }
+
+    private static func isCodeEditFindPanel(_ view: NSView) -> Bool {
+        NSStringFromClass(type(of: view)).hasSuffix(".FindPanelHostingView")
     }
 }
 
@@ -170,10 +226,12 @@ struct EditorPaneView: View {
                         font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
                         wrapLines: true
                     ),
-                    behavior: .init(indentOption: .spaces(count: 4))
+                    behavior: .init(indentOption: .spaces(count: 4)),
+                    layout: .init(contentInsets: NSEdgeInsets())
                 ),
                 state: $editorState
             )
+            .background(EditorFindPanelHitTestingRepair())
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
             .onChange(of: text) {
@@ -188,6 +246,9 @@ struct EditorPaneView: View {
             }
             .onChange(of: editorState.scrollPosition) {
                 normalizeWrappedEditorScrollPosition()
+            }
+            .onChange(of: editorState.findPanelVisible) { oldValue, newValue in
+                adjustEditorForFindPanelTransition(from: oldValue, to: newValue)
             }
         } else if !showFinder {
             emptyState
@@ -258,6 +319,18 @@ struct EditorPaneView: View {
         let normalized = EditorViewportPolicy.normalizedWrappedScrollPosition(current)
         guard current != normalized else { return }
         editorState.scrollPosition = normalized
+    }
+
+    private func adjustEditorForFindPanelTransition(from oldValue: Bool?, to newValue: Bool?) {
+        guard let newValue else { return }
+        let current = editorState.scrollPosition
+        let adjusted = EditorViewportPolicy.adjustedScrollPosition(
+            current,
+            findPanelWasVisible: oldValue ?? false,
+            findPanelIsVisible: newValue
+        )
+        guard current != adjusted else { return }
+        editorState.scrollPosition = adjusted
     }
 
     @ViewBuilder
@@ -669,6 +742,37 @@ struct EditorPaneView: View {
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
+        }
+    }
+}
+
+private struct EditorFindPanelHitTestingRepair: NSViewRepresentable {
+    func makeNSView(context: Context) -> RepairObserverView {
+        RepairObserverView()
+    }
+
+    func updateNSView(_ nsView: RepairObserverView, context: Context) {
+        nsView.scheduleRepair()
+    }
+
+    final class RepairObserverView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            scheduleRepair()
+        }
+
+        func scheduleRepair() {
+            NSObject.cancelPreviousPerformRequests(
+                withTarget: self,
+                selector: #selector(repairFindPanelHitTesting),
+                object: nil
+            )
+            perform(#selector(repairFindPanelHitTesting), with: nil, afterDelay: 0)
+        }
+
+        @objc private func repairFindPanelHitTesting() {
+            guard let contentView = window?.contentView else { return }
+            EditorFindPanelHitTestingPolicy.bringFindPanelsToFront(in: contentView)
         }
     }
 }
