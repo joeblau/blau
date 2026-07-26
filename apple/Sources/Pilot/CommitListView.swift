@@ -13,6 +13,7 @@ struct InspectorTabSelector: View {
             }
         }
         .pickerStyle(.segmented)
+        .font(.title3)
         .labelsHidden()
     }
 }
@@ -37,7 +38,7 @@ struct InspectorSectionHeader: View {
                 .accessibilityHidden(true)
 
             Text(title)
-                .scaledFont(size: 11, weight: .medium, design: titleDesign)
+                .font(.system(.callout, design: titleDesign, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.middle)
 
@@ -61,7 +62,7 @@ struct InspectorSectionHeader: View {
             }
         }
         .foregroundStyle(.secondary)
-        .frame(height: 17)
+        .frame(minHeight: 17)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity)
@@ -117,6 +118,7 @@ struct InspectorPanelView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .uiZoomedDynamicType()
     }
 }
 
@@ -151,11 +153,13 @@ struct FilesystemListView: View {
 }
 
 private struct FileSystemOutlineView: NSViewRepresentable {
+    @Environment(\.uiZoom) private var uiZoom
+
     let entries: [FileSystemEntry]
     let rootPath: String
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(entries: entries, rootPath: rootPath)
+        Coordinator(entries: entries, rootPath: rootPath, uiZoom: uiZoom)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -186,13 +190,23 @@ private struct FileSystemOutlineView: NSViewRepresentable {
         outlineView.outlineTableColumn = column
 
         scrollView.documentView = outlineView
-        context.coordinator.reload(outlineView: outlineView, entries: entries, rootPath: rootPath)
+        context.coordinator.reload(
+            outlineView: outlineView,
+            entries: entries,
+            rootPath: rootPath,
+            uiZoom: uiZoom
+        )
         return scrollView
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let outlineView = nsView.documentView as? NSOutlineView else { return }
-        context.coordinator.reload(outlineView: outlineView, entries: entries, rootPath: rootPath)
+        context.coordinator.reload(
+            outlineView: outlineView,
+            entries: entries,
+            rootPath: rootPath,
+            uiZoom: uiZoom
+        )
     }
 
     @MainActor
@@ -200,13 +214,20 @@ private struct FileSystemOutlineView: NSViewRepresentable {
         private var nodes: [FileSystemNode]
         private var expandedIDs: Set<String> = []
         private var rootURL: URL
+        private var rowFont: NSFont
 
-        init(entries: [FileSystemEntry], rootPath: String) {
+        init(entries: [FileSystemEntry], rootPath: String, uiZoom: Double) {
             self.nodes = entries.map(FileSystemNode.init(entry:))
             self.rootURL = URL(fileURLWithPath: rootPath, isDirectory: true)
+            self.rowFont = Self.fileTreeFont(uiZoom: uiZoom)
         }
 
-        func reload(outlineView: NSOutlineView, entries: [FileSystemEntry], rootPath: String) {
+        func reload(
+            outlineView: NSOutlineView,
+            entries: [FileSystemEntry],
+            rootPath: String,
+            uiZoom: Double
+        ) {
             let newRootURL = URL(fileURLWithPath: rootPath, isDirectory: true)
             if rootURL.path == newRootURL.path {
                 captureExpandedIDs(from: outlineView)
@@ -215,6 +236,11 @@ private struct FileSystemOutlineView: NSViewRepresentable {
             }
             rootURL = newRootURL
             nodes = entries.map(FileSystemNode.init(entry:))
+            rowFont = Self.fileTreeFont(uiZoom: uiZoom)
+            outlineView.rowHeight = max(
+                20,
+                ceil(rowFont.ascender - rowFont.descender + rowFont.leading) + 4
+            )
             outlineView.reloadData()
             restoreExpandedNodes(in: outlineView, nodes: nodes)
         }
@@ -250,7 +276,7 @@ private struct FileSystemOutlineView: NSViewRepresentable {
             let view = (outlineView.makeView(withIdentifier: identifier, owner: nil) as? FileSystemOutlineCellView)
                 ?? FileSystemOutlineCellView()
             view.identifier = identifier
-            view.configure(with: node.entry)
+            view.configure(with: node.entry, font: rowFont)
             return view
         }
 
@@ -304,6 +330,14 @@ private struct FileSystemOutlineView: NSViewRepresentable {
             let entries = GitCommitStore.listFilesystemEntries(at: directoryURL, rootURL: rootURL)
             node.children = entries.map(FileSystemNode.init(entry:))
             node.hasLoadedChildren = true
+        }
+
+        private static func fileTreeFont(uiZoom: Double) -> NSFont {
+            let preferredFont = NSFont.preferredFont(forTextStyle: .callout)
+            return NSFontManager.shared.convert(
+                preferredFont,
+                toSize: preferredFont.pointSize * CGFloat(uiZoom)
+            )
         }
     }
 }
@@ -368,7 +402,7 @@ private final class FileSystemOutlineCellView: NSTableCellView {
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
 
-        titleField.font = .systemFont(ofSize: 11)
+        titleField.font = .preferredFont(forTextStyle: .callout)
         titleField.lineBreakMode = .byTruncatingMiddle
         titleField.translatesAutoresizingMaskIntoConstraints = false
         titleField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -395,8 +429,9 @@ private final class FileSystemOutlineCellView: NSTableCellView {
         fatalError()
     }
 
-    func configure(with entry: FileSystemEntry) {
+    func configure(with entry: FileSystemEntry, font: NSFont) {
         titleField.stringValue = entry.name
+        titleField.font = font
         toolTip = entry.relativePath
         iconView.image = fileIcon(for: entry.path)
     }
@@ -450,22 +485,24 @@ struct CommitListView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(commit.message)
-                    .scaledFont(size: 11)
+                    .font(.callout)
                     .lineLimit(2)
 
                 HStack(spacing: 4) {
                     Text(commit.id)
-                        .scaledFont(size: 10, design: .monospaced)
+                        .font(.system(.subheadline, design: .monospaced))
                         .foregroundStyle(.secondary)
                     Text("·")
+                        .font(.subheadline)
                         .foregroundStyle(.quaternary)
                     Text(commit.author)
-                        .scaledFont(size: 10)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Text("·")
+                        .font(.subheadline)
                         .foregroundStyle(.quaternary)
                     Text(commit.date)
-                        .scaledFont(size: 10)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -525,29 +562,31 @@ struct ActionsListView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(action.displayTitle)
-                        .scaledFont(size: 11)
+                        .font(.callout)
                         .lineLimit(2)
 
                     HStack(spacing: 4) {
                         Text(action.name)
-                            .scaledFont(size: 10, weight: .medium)
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(.secondary)
                         Text("·")
+                            .font(.subheadline)
                             .foregroundStyle(.quaternary)
                         Text(action.headBranch)
-                            .scaledFont(size: 10, design: .monospaced)
+                            .font(.system(.subheadline, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
 
                     HStack(spacing: 4) {
                         Text(String(action.headSha.prefix(7)))
-                            .scaledFont(size: 10, design: .monospaced)
+                            .font(.system(.subheadline, design: .monospaced))
                             .foregroundStyle(.tertiary)
                         if !action.elapsed.isEmpty {
                             Text("·")
+                                .font(.subheadline)
                                 .foregroundStyle(.quaternary)
                             Text(action.elapsed)
-                                .scaledFont(size: 10)
+                                .font(.subheadline)
                                 .foregroundStyle(.tertiary)
                         }
                     }
@@ -585,7 +624,11 @@ struct ActionsListView: View {
         default:
             switch status {
             case "in_progress":
-                WorkflowBuildingIndicator()
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+                    .tint(.orange)
+                    .colorMultiply(.orange)
             case "queued", "waiting", "pending":
                 Image(systemName: "clock.circle")
                     .scaledFont(size: 12)
@@ -614,52 +657,5 @@ private struct RepositoryTableHeader: View {
             isRefreshDisabled: isRefreshDisabled,
             refresh: refresh
         )
-    }
-}
-
-private struct WorkflowBuildingIndicator: View {
-    private static let baseGold = Color(red: 0.79, green: 0.62, blue: 0.25)
-    private static let highlightGold = Color(red: 0.95, green: 0.81, blue: 0.43)
-
-    var body: some View {
-        TimelineView(.animation) { context in
-            let elapsed = context.date.timeIntervalSinceReferenceDate
-            let orbitRotation = Angle.degrees(elapsed * 170)
-            let pulse = 0.92 + (sin(elapsed * 3.0) * 0.05)
-
-            ZStack {
-                Circle()
-                    .stroke(Self.baseGold.opacity(0.14), lineWidth: 1.3)
-                    .frame(width: 13, height: 13)
-
-                Circle()
-                    .trim(from: 0.10, to: 0.48)
-                    .stroke(
-                        AngularGradient(
-                            colors: [
-                                Self.baseGold.opacity(0.08),
-                                Self.baseGold,
-                                Self.highlightGold,
-                                Self.baseGold.opacity(0.18)
-                            ],
-                            center: .center
-                        ),
-                        style: StrokeStyle(lineWidth: 1.8, lineCap: .round)
-                    )
-                    .frame(width: 13, height: 13)
-                    .rotationEffect(orbitRotation)
-                    .shadow(color: Self.baseGold.opacity(0.25), radius: 1)
-
-                Circle()
-                    .stroke(Self.baseGold.opacity(0.95), lineWidth: 2.15)
-                    .frame(width: 7.5, height: 7.5)
-                    .scaleEffect(pulse)
-
-                Circle()
-                    .fill(Self.highlightGold.opacity(0.95))
-                    .frame(width: 1.8, height: 1.8)
-            }
-            .frame(width: 14, height: 14)
-        }
     }
 }

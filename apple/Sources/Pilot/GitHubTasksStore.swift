@@ -201,14 +201,14 @@ private struct GitHubTaskRow: View {
         HStack(alignment: .top, spacing: 8) {
             Button(action: sendImplementPrompt) {
                 Text("#\(task.number)")
-                    .scaledFont(size: 12, weight: .semibold, design: .monospaced)
+                    .font(.system(.body, design: .monospaced, weight: .semibold))
                     .foregroundStyle(sent ? Color.green : Color.accentColor)
             }
             .buttonStyle(.plain)
             .help("Run an \u{201C}implement #\(task.number)\u{201D} task in the active terminal")
 
             Text(task.title)
-                .scaledFont(size: 12)
+                .font(.body)
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())

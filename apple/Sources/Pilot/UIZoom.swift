@@ -33,6 +33,12 @@ enum UIZoomLadder {
         return steps[max(index - 1, 0)]
     }
 
+    static func stepOffset(for current: Double) -> Int {
+        guard let currentIndex = nearestIndex(to: current),
+              let defaultIndex = nearestIndex(to: `default`) else { return 0 }
+        return currentIndex - defaultIndex
+    }
+
     private static func nearestIndex(to value: Double) -> Int? {
         guard !steps.isEmpty else { return nil }
         var bestIndex = 0
@@ -45,6 +51,26 @@ enum UIZoomLadder {
             }
         }
         return bestIndex
+    }
+}
+
+private extension DynamicTypeSize {
+    func offset(by offset: Int) -> DynamicTypeSize {
+        let sizes = Self.allCases
+        guard let currentIndex = sizes.firstIndex(of: self) else { return self }
+        let adjustedIndex = min(max(currentIndex + offset, 0), sizes.count - 1)
+        return sizes[adjustedIndex]
+    }
+}
+
+private struct UIZoomedDynamicTypeModifier: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.uiZoom) private var uiZoom
+
+    func body(content: Content) -> some View {
+        content.dynamicTypeSize(
+            dynamicTypeSize.offset(by: UIZoomLadder.stepOffset(for: uiZoom))
+        )
     }
 }
 
@@ -61,6 +87,12 @@ private struct ScaledFontModifier: ViewModifier {
 }
 
 extension View {
+    /// Keep semantic Apple text styles responsive to Pilot's text-size ladder.
+    /// The system's current Dynamic Type size remains the baseline.
+    func uiZoomedDynamicType() -> some View {
+        modifier(UIZoomedDynamicTypeModifier())
+    }
+
     /// Apply a font that scales with the IDE's `uiZoom` environment.
     /// Use anywhere you'd otherwise write `.font(.system(size: N, …))`.
     func scaledFont(

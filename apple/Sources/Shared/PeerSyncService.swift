@@ -28,12 +28,16 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
     private var advertiser: MCNearbyServiceAdvertiser?
     private var browser: MCNearbyServiceBrowser?
     private var reconnectWork: DispatchWorkItem?
+    private var pairingTimeoutWork: DispatchWorkItem?
+    private var running = false
     private var authenticator: PeerSyncAuthenticator
     private var pendingPairing: PendingPairing?
     private var activePeer: MCPeerID?
 
     private static let serviceType = "blau-sync"
     private static let identityDiscoveryKey = "identity"
+    private static let invitationTimeout: TimeInterval = 60
+    private static let pairingTimeout: TimeInterval = 45
 
     private struct InvitationContext: Codable {
         let publicKey: String
@@ -41,6 +45,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
 
     private struct PendingPairing {
         let request: PeerSyncPairingRequest
+        let peerID: MCPeerID
         let publicKey: String
         let completion: (Bool) -> Void
     }
@@ -112,6 +117,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
 
     private func startTransport() {
         stopTransport()
+        running = true
         switch role {
         case .advertiser:
             updateStatus("Advertising sync service")
@@ -121,21 +127,24 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
                 serviceType: Self.serviceType
             )
             adv.delegate = self
-            adv.startAdvertisingPeer()
             advertiser = adv
+            adv.startAdvertisingPeer()
 
         case .browser:
             updateStatus("Browsing for Pilot sync service")
             let br = MCNearbyServiceBrowser(peer: peerID, serviceType: Self.serviceType)
             br.delegate = self
-            br.startBrowsingForPeers()
             browser = br
+            br.startBrowsingForPeers()
         }
     }
 
     private func stopTransport() {
+        running = false
         reconnectWork?.cancel()
         reconnectWork = nil
+        pairingTimeoutWork?.cancel()
+        pairingTimeoutWork = nil
         advertiser?.stopAdvertisingPeer()
         advertiser = nil
         browser?.stopBrowsingForPeers()
@@ -155,14 +164,17 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
     /// Debounced reconnection — cancels any pending restart before scheduling a new one.
     /// Both roles restart their respective transport so either side can recover.
     private func scheduleReconnect() {
+        guard running else { return }
         reconnectWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.reconnectWork = nil
+            guard self.running else { return }
             // Don't reconnect if we already have peers
             guard self.session.connectedPeers.isEmpty else { return }
             switch self.role {
             case .advertiser:
+                self.updateStatus("Restarting sync advertisement")
                 self.advertiser?.stopAdvertisingPeer()
                 let adv = MCNearbyServiceAdvertiser(
                     peer: self.peerID,
@@ -172,14 +184,15 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
                     serviceType: Self.serviceType
                 )
                 adv.delegate = self
-                adv.startAdvertisingPeer()
                 self.advertiser = adv
+                adv.startAdvertisingPeer()
             case .browser:
+                self.updateStatus("Restarting Pilot discovery")
                 self.browser?.stopBrowsingForPeers()
                 let br = MCNearbyServiceBrowser(peer: self.peerID, serviceType: Self.serviceType)
                 br.delegate = self
-                br.startBrowsingForPeers()
                 self.browser = br
+                br.startBrowsingForPeers()
             }
         }
         reconnectWork = work
@@ -214,6 +227,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
     }
 
     private func requestPairing(
+        peerID: MCPeerID,
         displayName: String,
         publicKey: String,
         isKeyChange: Bool,
@@ -236,13 +250,15 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         )
         pendingPairing = PendingPairing(
             request: request,
+            peerID: peerID,
             publicKey: publicKey,
             completion: completion
         )
+        schedulePairingTimeout(for: request.id)
         Task { @MainActor [weak self] in
             self?.statusText = isKeyChange
                 ? "Approval required for sync identity change"
-                : "Approval required to pair (displayName)"
+                : "Approval required to pair \(displayName)"
             self?.pairingRequest = request
         }
     }
@@ -251,6 +267,8 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         guard let pending = pendingPairing,
               pending.request.id == id else { return }
         pendingPairing = nil
+        pairingTimeoutWork?.cancel()
+        pairingTimeoutWork = nil
         guard approved, authenticator.trust(peerPublicKeyBase64: pending.publicKey) else {
             pending.completion(false)
             updateStatus("Sync pairing rejected")
@@ -261,6 +279,41 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         }
         pending.completion(true)
         updateStatus("Sync device approved")
+    }
+
+    private func schedulePairingTimeout(for requestID: UUID) {
+        pairingTimeoutWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.running,
+                  let pending = self.pendingPairing,
+                  pending.request.id == requestID else { return }
+            self.pairingTimeoutWork = nil
+            self.pendingPairing = nil
+            pending.completion(false)
+            Task { @MainActor [weak self] in
+                guard self?.pairingRequest?.id == requestID else { return }
+                self?.pairingRequest = nil
+                self?.statusText = "Sync pairing timed out; searching again"
+            }
+            self.scheduleReconnect()
+        }
+        pairingTimeoutWork = work
+        transportQueue.asyncAfter(deadline: .now() + Self.pairingTimeout, execute: work)
+    }
+
+    private func clearPendingPairing(for peerID: MCPeerID, status: String) {
+        guard let pending = pendingPairing,
+              pending.peerID == peerID else { return }
+        pendingPairing = nil
+        pairingTimeoutWork?.cancel()
+        pairingTimeoutWork = nil
+        pending.completion(false)
+        Task { @MainActor [weak self] in
+            guard self?.pairingRequest?.id == pending.request.id else { return }
+            self?.pairingRequest = nil
+            self?.statusText = status
+        }
     }
 }
 
@@ -356,7 +409,11 @@ extension PeerSyncService: MCNearbyServiceAdvertiserDelegate {
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peerID: MCPeerID, withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
         let reply = InvitationReply(invitationHandler)
         transportQueue.async { [weak self] in
-            self?.handleInvitation(
+            guard let self, self.advertiser === advertiser else {
+                reply.call(false, session: nil)
+                return
+            }
+            self.handleInvitation(
                 from: peerID,
                 context: context,
                 reply: reply
@@ -365,7 +422,13 @@ extension PeerSyncService: MCNearbyServiceAdvertiserDelegate {
     }
 
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
-        updateStatus("Sync advertise failed: \(error.localizedDescription)")
+        transportQueue.async { [weak self] in
+            guard let self, self.advertiser === advertiser else { return }
+            self.updateStatus("Sync advertise failed: \(error.localizedDescription)")
+            self.advertiser?.stopAdvertisingPeer()
+            self.advertiser = nil
+            self.scheduleReconnect()
+        }
     }
 }
 
@@ -374,7 +437,8 @@ extension PeerSyncService: MCNearbyServiceAdvertiserDelegate {
 extension PeerSyncService: MCNearbyServiceBrowserDelegate {
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String: String]?) {
         transportQueue.async { [weak self] in
-            self?.handleFoundPeer(
+            guard let self, self.browser === browser else { return }
+            self.handleFoundPeer(
                 peerID,
                 publicKey: info?[Self.identityDiscoveryKey],
                 browser: browser
@@ -383,11 +447,24 @@ extension PeerSyncService: MCNearbyServiceBrowserDelegate {
     }
 
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
-        updateStatus("Lost Pilot sync peer \(peerID.displayName)")
+        transportQueue.async { [weak self] in
+            guard let self, self.browser === browser else { return }
+            self.clearPendingPairing(
+                for: peerID,
+                status: "Lost Pilot sync peer \(peerID.displayName)"
+            )
+            self.scheduleReconnect()
+        }
     }
 
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
-        updateStatus("Sync browse failed: \(error.localizedDescription)")
+        transportQueue.async { [weak self] in
+            guard let self, self.browser === browser else { return }
+            self.updateStatus("Sync browse failed: \(error.localizedDescription)")
+            self.browser?.stopBrowsingForPeers()
+            self.browser = nil
+            self.scheduleReconnect()
+        }
     }
 }
 
@@ -418,6 +495,7 @@ private extension PeerSyncService {
                 return
             }
             requestPairing(
+                peerID: peerID,
                 displayName: peerID.displayName,
                 publicKey: candidate,
                 isKeyChange: isKeyChange
@@ -453,12 +531,13 @@ private extension PeerSyncService {
                 peerID,
                 to: session,
                 withContext: invitationContext(),
-                timeout: 10
+                timeout: Self.invitationTimeout
             )
 
         case .approvalRequired(let isKeyChange):
             guard let candidate else { return }
             requestPairing(
+                peerID: peerID,
                 displayName: peerID.displayName,
                 publicKey: candidate,
                 isKeyChange: isKeyChange
@@ -468,7 +547,7 @@ private extension PeerSyncService {
                     peerID,
                     to: self.session,
                     withContext: self.invitationContext(),
-                    timeout: 10
+                    timeout: Self.invitationTimeout
                 )
             }
 

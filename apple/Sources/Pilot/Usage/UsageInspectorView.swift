@@ -117,10 +117,10 @@ private struct ProviderCard: View {
             Image(systemName: systemImage)
                 .foregroundStyle(tint)
             Text(title)
-                .scaledFont(size: 12, weight: .semibold)
+                .font(.body.weight(.semibold))
             if case .usage(let usage) = state, let plan = usage.planLabel {
                 Text(plan)
-                    .scaledFont(size: 9, weight: .bold)
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(tint)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
@@ -149,11 +149,11 @@ private struct ProviderCard: View {
         case .usage(let usage):
             if usage.windows.isEmpty && usage.credits == nil {
                 Text("No usage reported for this window.")
-                    .scaledFont(size: 11)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
                 VStack(spacing: 10) {
-                    ForEach(usage.windows) { window in
+                    ForEach(usage.windowsInDisplayOrder) { window in
                         windowRow(window)
                     }
                 }
@@ -169,10 +169,10 @@ private struct ProviderCard: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(window.name)
-                    .scaledFont(size: 11, weight: .medium)
+                    .font(.callout.weight(.medium))
                 Spacer()
                 Text("\(Int((window.utilization * 100).rounded()))%")
-                    .scaledFont(size: 11, weight: .semibold, design: .rounded)
+                    .font(.system(.callout, design: .rounded, weight: .semibold))
                     .foregroundStyle(barColor(window.utilization))
             }
             ProgressView(value: min(max(window.utilization, 0), 1))
@@ -183,7 +183,7 @@ private struct ProviderCard: View {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let countdown = UsageResetCountdown.text(until: resetsAt, now: context.date)
                     Text(countdown)
-                        .scaledFont(size: 11, weight: .medium)
+                        .font(.callout.weight(.medium))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .contentTransition(.numericText(countsDown: true))
@@ -246,11 +246,11 @@ private struct ProviderCard: View {
     private func creditLine(label: String, value: String) -> some View {
         HStack {
             Text(label)
-                .scaledFont(size: 11, weight: .medium)
+                .font(.callout.weight(.medium))
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .scaledFont(size: 11, design: .monospaced)
+                .font(.system(.callout, design: .monospaced))
         }
     }
 
@@ -269,12 +269,12 @@ private struct ProviderCard: View {
     private func setupPrompt(message: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(message)
-                .scaledFont(size: 11)
+                .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button(action: openSetup) {
                 Label("Set up", systemImage: "arrow.up.forward")
-                    .scaledFont(size: 11)
+                    .font(.callout)
             }
             .buttonStyle(.link)
         }

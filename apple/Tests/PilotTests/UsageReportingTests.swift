@@ -249,6 +249,17 @@ struct UsageReportingTests {
         #expect(fiveHour.resetsAt == UsageStore.date("2027-01-16T08:00:00Z"))
     }
 
+    @Test("Usage windows display hourly limits first and weekly limits last")
+    func usageWindowDisplayOrder() {
+        let usage = ProviderUsage(planLabel: nil, windows: [
+            UsageWindow(id: "weekly", name: "Weekly limit", utilization: 0.7, resetsAt: nil),
+            UsageWindow(id: "other", name: "Fast models", utilization: 0.4, resetsAt: nil),
+            UsageWindow(id: "five-hour", name: "5h limit", utilization: 0.2, resetsAt: nil),
+        ])
+
+        #expect(usage.windowsInDisplayOrder.map(\.id) == ["five-hour", "other", "weekly"])
+    }
+
     @Test(
         "Kimi maps membership levels to public plan names",
         arguments: [

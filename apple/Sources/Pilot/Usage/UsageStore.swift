@@ -36,6 +36,32 @@ struct ProviderUsage: Equatable, Sendable {
     var planLabel: String?
     var windows: [UsageWindow] = []
     var credits: CreditInfo?
+
+    /// Present short rolling limits first and weekly summaries last. Providers
+    /// do not consistently return their windows in duration order (Kimi, for
+    /// example, returns the weekly summary before its five-hour limit).
+    var windowsInDisplayOrder: [UsageWindow] {
+        windows.enumerated()
+            .sorted { lhs, rhs in
+                let lhsRank = lhs.element.displayOrderRank
+                let rhsRank = rhs.element.displayOrderRank
+                return lhsRank == rhsRank ? lhs.offset < rhs.offset : lhsRank < rhsRank
+            }
+            .map(\.element)
+    }
+}
+
+private extension UsageWindow {
+    var displayOrderRank: Int {
+        let normalizedName = name.lowercased()
+        if normalizedName.contains("hour") || normalizedName.contains("h limit") {
+            return 0
+        }
+        if normalizedName.contains("week") {
+            return 2
+        }
+        return 1
+    }
 }
 
 /// Per-provider fetch state for the inspector.

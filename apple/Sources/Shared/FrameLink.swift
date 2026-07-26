@@ -196,6 +196,7 @@ public final class FrameSender: @unchecked Sendable {
             self.listener?.cancel()
             self.listener = nil
             for state in self.connections.values {
+                state.authenticationDeadline?.cancel()
                 state.connection.cancel()
             }
             self.connections.removeAll()
@@ -425,13 +426,14 @@ public final class FrameSender: @unchecked Sendable {
             return
         }
         let id = ObjectIdentifier(connection)
-        connections[id] = ConnectionState(
+        let connectionState = ConnectionState(
             connection: connection,
             security: FrameLinkSecureSession(
                 localKey: localKey,
                 trustedPeerPublicKey: trustedPeerPublicKey
             )
         )
+        connections[id] = connectionState
         frameLinkLog.log("FrameSender: candidate connection accepted for authentication")
 
         connection.stateUpdateHandler = { [weak self] state in
@@ -444,8 +446,14 @@ public final class FrameSender: @unchecked Sendable {
                     return
                 }
                 self.sendRecord(hello, using: connectionState)
+                self.scheduleAuthenticationDeadline(
+                    for: id,
+                    state: connectionState,
+                    after: 60
+                )
                 self.receiveNext(from: id)
             case .failed, .cancelled:
+                self.connections[id]?.authenticationDeadline?.cancel()
                 let wasAuthenticated = self.connections[id]?.security.isAuthenticated == true
                 self.connections.removeValue(forKey: id)
                 if self.pendingPairing?.id == id {
@@ -458,6 +466,7 @@ public final class FrameSender: @unchecked Sendable {
             }
         }
 
+        scheduleAuthenticationDeadline(for: id, state: connectionState, after: 10)
         connection.start(queue: queue)
     }
 
@@ -479,10 +488,7 @@ public final class FrameSender: @unchecked Sendable {
             }
 
             if error != nil || isComplete {
-                let wasAuthenticated = state.security.isAuthenticated
-                self.connections.removeValue(forKey: id)
-                state.connection.cancel()
-                if wasAuthenticated { self.onClientCountChanged?(0) }
+                self.rejectConnection(id, state: state, recordInvalid: false)
                 return
             }
 
@@ -511,12 +517,13 @@ public final class FrameSender: @unchecked Sendable {
                 }
                 pendingPairing = (id, request)
                 onPairingRequestChanged?(request)
+                scheduleAuthenticationDeadline(for: id, state: state, after: 60)
 
             case .waiting:
                 break
 
             case .authenticated:
-                didAuthenticateClient()
+                didAuthenticateClient(id: id, state: state)
 
             case .plaintext(let payload):
                 processInboundPacket(payload, from: id, state: state)
@@ -588,10 +595,15 @@ public final class FrameSender: @unchecked Sendable {
             try? pairingStore.setPeerPublicKey(pending.request.publicKey)
         }
         sendRecord(approval.proof, using: state)
-        if approval.authenticated { didAuthenticateClient() }
+        if approval.authenticated {
+            didAuthenticateClient(id: pending.id, state: state)
+        }
     }
 
-    private func didAuthenticateClient() {
+    private func didAuthenticateClient(id: ObjectIdentifier, state: ConnectionState) {
+        guard connections[id] === state else { return }
+        state.authenticationDeadline?.cancel()
+        state.authenticationDeadline = nil
         frameLinkLog.log("FrameSender: Plotter identity authenticated")
         onClientCountChanged?(1)
         // A freshly authenticated client needs a keyframe to decode.
@@ -623,8 +635,32 @@ public final class FrameSender: @unchecked Sendable {
         }
     }
 
-    private func rejectConnection(_ id: ObjectIdentifier, state: ConnectionState) {
+    private func scheduleAuthenticationDeadline(
+        for id: ObjectIdentifier,
+        state: ConnectionState,
+        after delay: TimeInterval
+    ) {
+        state.authenticationDeadline?.cancel()
+        let work = DispatchWorkItem { [weak self, weak state] in
+            guard let self,
+                  let state,
+                  self.connections[id] === state,
+                  !state.security.isAuthenticated else { return }
+            frameLinkLog.error("FrameSender: expiring unauthenticated Plotter candidate")
+            self.rejectConnection(id, state: state, recordInvalid: false)
+        }
+        state.authenticationDeadline = work
+        queue.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func rejectConnection(
+        _ id: ObjectIdentifier,
+        state: ConnectionState,
+        recordInvalid: Bool = true
+    ) {
         let wasAuthenticated = state.security.isAuthenticated
+        state.authenticationDeadline?.cancel()
+        state.authenticationDeadline = nil
         connections.removeValue(forKey: id)
         state.connection.cancel()
         if pendingPairing?.id == id {
@@ -632,7 +668,7 @@ public final class FrameSender: @unchecked Sendable {
             onPairingRequestChanged?(nil)
         }
         if wasAuthenticated { onClientCountChanged?(0) }
-        recordInvalidPacket()
+        if recordInvalid { recordInvalidPacket() }
     }
 
     private func recordInvalidPacket() {
@@ -651,6 +687,7 @@ public final class FrameSender: @unchecked Sendable {
         var smoothedRTTMs: Double = 0
         var nextProbe: UInt64 = 0
         var probes: [UInt64: TimeInterval] = [:]
+        var authenticationDeadline: DispatchWorkItem?
 
         init(connection: NWConnection, security: FrameLinkSecureSession) {
             self.connection = connection
@@ -668,6 +705,10 @@ public final class FrameReceiver: @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.blau.framelink.receiver")
     private var browser: NWBrowser?
     private var connection: NWConnection?
+    private var discoveredEndpoints: [NWEndpoint] = []
+    private var browserRestartWork: DispatchWorkItem?
+    private var connectionRetryWork: DispatchWorkItem?
+    private var connectionDeadlineWork: DispatchWorkItem?
     private var decoder = FrameLink.StreamDecoder(maxPayloadBytes: FrameLink.maxSecureRecordBytes)
     private var running = false
     private var framesReceived = 0
@@ -723,8 +764,18 @@ public final class FrameReceiver: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self else { return }
             self.running = false
+            self.browserRestartWork?.cancel()
+            self.browserRestartWork = nil
+            self.connectionRetryWork?.cancel()
+            self.connectionRetryWork = nil
+            self.connectionDeadlineWork?.cancel()
+            self.connectionDeadlineWork = nil
+            self.browser?.stateUpdateHandler = nil
+            self.browser?.browseResultsChangedHandler = nil
             self.browser?.cancel()
             self.browser = nil
+            self.discoveredEndpoints.removeAll()
+            self.connection?.stateUpdateHandler = nil
             self.connection?.cancel()
             self.connection = nil
             self.decoder.reset()
@@ -822,12 +873,14 @@ public final class FrameReceiver: @unchecked Sendable {
 
         browser.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
+            guard self.browser === browser else { return }
             switch state {
             case .ready:
                 self.updateStatus("Browsing for Pilot frame stream")
             case .failed, .cancelled:
                 self.updateStatus("Frame browser stopped")
                 self.browser = nil
+                self.discoveredEndpoints.removeAll()
                 self.scheduleBrowserRestart()
             case .waiting(let error):
                 self.updateStatus("Frame browser waiting: \(error.localizedDescription)")
@@ -838,14 +891,13 @@ public final class FrameReceiver: @unchecked Sendable {
 
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             guard let self else { return }
-            if results.isEmpty {
+            guard self.browser === browser else { return }
+            self.discoveredEndpoints = results.map(\.endpoint)
+            if self.discoveredEndpoints.isEmpty {
                 self.updateStatus("No Pilot frame stream found")
                 return
             }
-            // Only connect to the first result if we don't already have a link.
-            guard self.connection == nil, let first = results.first else { return }
-            self.updateStatus("Found Pilot frame stream")
-            self.connect(to: first.endpoint)
+            self.connectIfPossible()
         }
 
         self.browser = browser
@@ -853,10 +905,39 @@ public final class FrameReceiver: @unchecked Sendable {
     }
 
     private func scheduleBrowserRestart() {
+        browserRestartWork?.cancel()
         guard running else { return }
-        queue.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.startBrowserLocked()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.running, self.browser == nil else { return }
+            self.browserRestartWork = nil
+            self.startBrowserLocked()
         }
+        browserRestartWork = work
+        queue.asyncAfter(deadline: .now() + 1, execute: work)
+    }
+
+    private func connectIfPossible() {
+        guard running,
+              connection == nil,
+              let endpoint = discoveredEndpoints.first else { return }
+        connectionRetryWork?.cancel()
+        connectionRetryWork = nil
+        updateStatus("Found Pilot frame stream")
+        connect(to: endpoint)
+    }
+
+    private func scheduleConnectionRetry() {
+        connectionRetryWork?.cancel()
+        guard running,
+              connection == nil,
+              !discoveredEndpoints.isEmpty else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.running, self.connection == nil else { return }
+            self.connectionRetryWork = nil
+            self.connectIfPossible()
+        }
+        connectionRetryWork = work
+        queue.asyncAfter(deadline: .now() + 1, execute: work)
     }
 
     private func connect(to endpoint: NWEndpoint) {
@@ -864,18 +945,20 @@ public final class FrameReceiver: @unchecked Sendable {
         updateStatus("Connecting to Pilot frame stream")
         connection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
+            guard self.connection === connection else { return }
             switch state {
             case .ready:
                 guard let hello = self.security.begin() else {
-                    self.teardownConnection()
+                    self.teardownConnection(connection)
                     return
                 }
                 self.updateStatus("Authenticating Pilot frame stream")
                 self.sendRecord(hello)
-                self.receiveNext()
+                self.scheduleConnectionDeadline(for: connection, after: 60)
+                self.receiveNext(from: connection)
             case .failed, .cancelled:
                 self.updateStatus("Frame stream disconnected")
-                self.teardownConnection()
+                self.teardownConnection(connection)
             case .waiting(let error):
                 self.updateStatus("Frame stream waiting: \(error.localizedDescription)")
             default:
@@ -885,10 +968,41 @@ public final class FrameReceiver: @unchecked Sendable {
 
         self.connection = connection
         decoder.reset()
+        scheduleConnectionDeadline(for: connection, after: 10)
         connection.start(queue: queue)
     }
 
-    private func teardownConnection() {
+    private func scheduleConnectionDeadline(
+        for connection: NWConnection,
+        after delay: TimeInterval
+    ) {
+        connectionDeadlineWork?.cancel()
+        let work = DispatchWorkItem { [weak self, weak connection] in
+            guard let self,
+                  let connection,
+                  self.running,
+                  self.connection === connection,
+                  !self.security.isAuthenticated else { return }
+            self.updateStatus("Pilot frame connection timed out; retrying")
+            self.teardownConnection(connection)
+        }
+        connectionDeadlineWork = work
+        queue.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func teardownConnection(
+        _ attemptedConnection: NWConnection? = nil,
+        retry: Bool = true
+    ) {
+        if let attemptedConnection,
+           connection !== attemptedConnection {
+            return
+        }
+        connectionRetryWork?.cancel()
+        connectionRetryWork = nil
+        connectionDeadlineWork?.cancel()
+        connectionDeadlineWork = nil
+        connection?.stateUpdateHandler = nil
         connection?.cancel()
         connection = nil
         decoder.reset()
@@ -896,25 +1010,29 @@ public final class FrameReceiver: @unchecked Sendable {
         pairingRequest = nil
         onPairingRequestChanged?(nil)
         onConnectedChanged?(false)
-        // Browser may still be alive; if not, restart browsing to find a peer.
+        guard retry else { return }
         if running, browser == nil {
             scheduleBrowserRestart()
+        } else {
+            // NWBrowser does not emit another results callback when the same
+            // Pilot endpoint remains advertised. Retry the cached endpoint.
+            scheduleConnectionRetry()
         }
     }
 
-    private func receiveNext() {
-        connection?.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) {
+    private func receiveNext(from connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) {
             [weak self] data, _, isComplete, error in
-            guard let self else { return }
+            guard let self, self.connection === connection else { return }
 
             if let data, !data.isEmpty {
                 switch self.decoder.append(data) {
                 case .success(let records):
-                    self.processSecureRecords(records)
+                    self.processSecureRecords(records, from: connection)
                 case .failure:
                     self.recordInvalidPacket()
                     self.updateStatus("Rejected invalid frame stream")
-                    self.teardownConnection()
+                    self.teardownConnection(connection)
                     return
                 }
             }
@@ -925,20 +1043,20 @@ public final class FrameReceiver: @unchecked Sendable {
                 } else {
                     self.updateStatus("Frame stream closed")
                 }
-                self.teardownConnection()
+                self.teardownConnection(connection)
                 return
             }
 
-            self.receiveNext()
+            self.receiveNext(from: connection)
         }
     }
 
-    private func processSecureRecords(_ records: [Data]) {
+    private func processSecureRecords(_ records: [Data], from connection: NWConnection) {
         for record in records {
             guard let opened = security.receive(record, displayName: "Pilot") else {
                 recordInvalidPacket()
                 updateStatus("Rejected unauthenticated frame stream")
-                teardownConnection()
+                teardownConnection(connection)
                 return
             }
             switch opened {
@@ -947,12 +1065,13 @@ public final class FrameReceiver: @unchecked Sendable {
 
             case .pairingRequired(let request):
                 guard pairingRequest == nil else {
-                    teardownConnection()
+                    teardownConnection(connection)
                     return
                 }
                 pairingRequest = request
                 onPairingRequestChanged?(request)
                 updateStatus("Approval required to pair Pilot")
+                scheduleConnectionDeadline(for: connection, after: 60)
 
             case .waiting:
                 break
@@ -974,7 +1093,7 @@ public final class FrameReceiver: @unchecked Sendable {
               let approval = security.approvePending(publicKey: request.publicKey) else {
             security.rejectPending()
             updateStatus("Pilot pairing rejected")
-            teardownConnection()
+            teardownConnection(retry: false)
             return
         }
         if !ProcessInfo.processInfo.environment.keys.contains("XCTestConfigurationFilePath") {
@@ -985,6 +1104,8 @@ public final class FrameReceiver: @unchecked Sendable {
     }
 
     private func didAuthenticatePilot() {
+        connectionDeadlineWork?.cancel()
+        connectionDeadlineWork = nil
         updateStatus("Frame stream authenticated")
         onConnectedChanged?(true)
         flushPendingOutbound()
