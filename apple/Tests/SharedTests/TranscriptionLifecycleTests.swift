@@ -74,6 +74,33 @@ struct TranscriptionLifecycleTests {
         #expect(retry)
     }
 
+    @Test("released recording attempts cannot start late without a workspace")
+    func nilWorkspaceRecordingAttempt() throws {
+        var state = CopilotRecordingAttemptState()
+        let firstID = UUID()
+        let first = state.begin(workspaceID: nil, id: firstID)
+
+        #expect(state.current == first)
+        let endedFirstValue = state.end()
+        let endedFirst = try #require(endedFirstValue)
+        #expect(endedFirst.workspaceID == nil)
+        #expect(!endedFirst.didStart)
+        #expect(state.markStarted(id: firstID) == nil)
+
+        let secondID = UUID()
+        state.begin(workspaceID: nil, id: secondID)
+        #expect(state.markStarted(id: firstID) == nil)
+        let startedSecondValue = state.markStarted(id: secondID)
+        let startedSecond = try #require(startedSecondValue)
+        #expect(startedSecond.didStart)
+
+        let endedSecondValue = state.end()
+        let endedSecond = try #require(endedSecondValue)
+        #expect(endedSecond.id == secondID)
+        #expect(endedSecond.workspaceID == nil)
+        #expect(endedSecond.didStart)
+    }
+
     @Test("0.18 model layout migrates only with the Argmax tokenizer component")
     func legacyCacheMigration() throws {
         let fixture = try ModelCacheFixture()
