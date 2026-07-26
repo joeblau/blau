@@ -5,11 +5,25 @@ import assert from 'node:assert/strict';
 
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 
-test('the built placeholder page renders the wordmark without scripts or inline styles', async () => {
+test('the built landing page renders the wordmark and every section', async () => {
   const html = await readFile(`${dist}index.html`, 'utf8');
-  assert.match(html, /<title>blau<\/title>/);
-  assert.match(html, /<h1>blau<\/h1>/);
-  assert.doesNotMatch(html, /<script/);
-  assert.doesNotMatch(html, /<style\b/);
-  assert.doesNotMatch(html, /\sstyle=/);
+  assert.match(html, /<title>blau — /);
+  assert.match(html, /<h1\b/);
+  assert.match(html, />blau</);
+  for (const id of ['features', 'devices', 'security']) {
+    assert.ok(html.includes(`id="${id}"`), `missing #${id} section`);
+  }
+  assert.match(html, /data-theme-toggle/);
+});
+
+test('the built landing page keeps CSP-compatible output', async () => {
+  const html = await readFile(`${dist}index.html`, 'utf8');
+  assert.doesNotMatch(html, /<style\b/i);
+  assert.doesNotMatch(html, /\sstyle\s*=/i);
+  assert.doesNotMatch(html, /\son[a-z]+\s*=/i);
+  const scriptTags = html.match(/<script\b[^>]*>/gi) ?? [];
+  assert.ok(scriptTags.length > 0, 'expected the bundled interaction script');
+  for (const tag of scriptTags) {
+    assert.match(tag, /\bsrc="\/_astro\//, `script must be an external bundle: ${tag}`);
+  }
 });

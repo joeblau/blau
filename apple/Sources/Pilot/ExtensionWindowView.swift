@@ -366,6 +366,16 @@ final class ExtensionWorkspaceController {
         return workspacesBySourceID[selectedSourceID]
     }
 
+    /// Every live companion workspace in a stable order. Extendo mounts all of
+    /// them and toggles visibility (main-window style) so terminals, browsers,
+    /// and editors keep their runtime state across workspace switches instead
+    /// of re-bootstrapping on every tab change.
+    var mountedWorkspaces: [(sourceID: UUID, workspace: Workspace)] {
+        workspacesBySourceID
+            .sorted { $0.key.uuidString < $1.key.uuidString }
+            .map { (sourceID: $0.key, workspace: $0.value) }
+    }
+
     func closeSelectedPane() {
         guard let workspace = selectedWorkspace,
               let pane = workspace.selectedPane else { return }
@@ -575,25 +585,34 @@ struct ExtensionWindowView: View {
             : nil
         let isUsagePresented = extensionWorkspace?.isInspectorPresented == true
             && extensionWorkspace?.inspectorTab == .usage
-        let selectedBrowserState = BrowserToolbarSelection.state(for: extensionWorkspace?.selectedPane)
         let selectedTerminalPane = TerminalToolbarSelection.pane(for: extensionWorkspace?.selectedPane)
 
         NavigationStack {
             ZStack {
-                Group {
-                    if let workspace = extensionWorkspace {
-                        WorkspaceView(
-                            workspace: workspace,
-                            isActive: true,
-                            projectID: source?.id ?? workspace.id,
-                            surface: .extension,
-                            onPaneDrop: { payload, targetPane in
-                                store.movePane(payload, to: workspace, before: targetPane)
-                            }
-                        )
-                            .id(source?.id)
-                            .accessibilityIdentifier("extension.workspace-surface")
-                    } else if sourceWorkspace != nil {
+                // Keep every visited companion workspace mounted and toggle
+                // visibility, exactly like the main window's workspace stack.
+                // The previous single-surface `.id(source?.id)` recreated the
+                // whole pane tree on each switch, re-bootstrapping terminals.
+                ForEach(controller.mountedWorkspaces, id: \.sourceID) { mounted in
+                    let isActive = mounted.workspace.id == extensionWorkspace?.id
+                    WorkspaceView(
+                        workspace: mounted.workspace,
+                        isActive: isActive,
+                        projectID: mounted.sourceID,
+                        surface: .extension,
+                        onPaneDrop: { payload, targetPane in
+                            store.movePane(payload, to: mounted.workspace, before: targetPane)
+                        }
+                    )
+                        .zIndex(isActive ? 1 : 0)
+                        .opacity(isActive ? 1 : 0)
+                        .allowsHitTesting(isActive)
+                        .accessibilityHidden(!isActive)
+                        .accessibilityIdentifier("extension.workspace-surface")
+                }
+
+                if extensionWorkspace == nil {
+                    if sourceWorkspace != nil {
                         ProgressView()
                             .controlSize(.small)
                     } else {
@@ -644,20 +663,8 @@ struct ExtensionWindowView: View {
             )
         )
         .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                if let selectedBrowserState {
-                    BrowserBackForwardToolbarControls(state: selectedBrowserState)
-                }
-            }
             ToolbarItem(placement: .principal) {
-                if let selectedBrowserState {
-                    BrowserAddressToolbarControl(
-                        state: selectedBrowserState,
-                        addressMinWidth: 180,
-                        addressIdealWidth: 320,
-                        addressMaxWidth: 480
-                    )
-                } else if let selectedTerminalPane {
+                if let selectedTerminalPane {
                     TerminalFastCommandToolbarField(pane: selectedTerminalPane)
                         .id(selectedTerminalPane.id)
                 }
@@ -669,17 +676,12 @@ struct ExtensionWindowView: View {
                 }
             }
             ToolbarItemGroup(placement: .secondaryAction) {
-                if let selectedBrowserState {
-                    BrowserToolsToolbarControls(state: selectedBrowserState)
-                } else if let pane = extensionWorkspace?.selectedPane, !pane.isCollapsed {
-                    extensionCaptureControls(for: pane)
+                if let pane = extensionWorkspace?.selectedPane {
+                    PaneToolbarControls(pane: pane)
                 }
             }
             ToolbarItem(placement: .primaryAction) {
-                WorkspacePaneLauncher(
-                    workspace: extensionWorkspace,
-                    isCompact: selectedBrowserState != nil
-                )
+                WorkspacePaneLauncher(workspace: extensionWorkspace)
             }
             .sharedBackgroundVisibility(.hidden)
             ToolbarSpacer(.fixed, placement: .primaryAction)
@@ -800,32 +802,4 @@ struct ExtensionWindowView: View {
         tasksStore.load(directory: repoPath)
     }
 
-    /// Capture controls stay bound to the Extension pane's own persisted state
-    /// and remain reachable after streaming starts. Browser controls are split
-    /// between navigation and secondary toolbar placements above.
-    @ViewBuilder
-    private func extensionCaptureControls(for pane: Pane) -> some View {
-        switch pane.kind {
-        case .browser:
-            EmptyView()
-        case .device:
-            DeviceToolbarControls(paneID: pane.id)
-        case .simulator:
-            Button {
-                SimulatorRegistry.shared.session(for: pane.id).chooseAnotherDevice()
-            } label: {
-                Label("Choose Simulator", systemImage: "list.bullet")
-            }
-            .help("Pick a different simulator")
-        case .android:
-            Button {
-                AndroidDeviceRegistry.shared.session(for: pane.id).chooseAnotherDevice()
-            } label: {
-                Label("Choose Android Device", systemImage: "list.bullet")
-            }
-            .help("Pick a different Android device")
-        case .terminal, .editor:
-            EmptyView()
-        }
-    }
 }

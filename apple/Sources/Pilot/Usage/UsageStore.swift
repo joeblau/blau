@@ -646,9 +646,15 @@ final class UsageStore {
         return usage
     }
 
-    /// Kimi's usage endpoint reports an internal membership level rather than
-    /// the public plan title. Prefer an explicit title when the service includes
-    /// one, then translate the membership enum used by the current response.
+    /// Kimi's usage endpoint reports no public plan title, and its
+    /// `membership.level` is a coarse legacy field — a Vivace account returns
+    /// `LEVEL_STANDARD` (verified against the live endpoint), so the old
+    /// level→plan mapping mislabeled paid tiers. The reliable tier signal is
+    /// the Kimi Code credit multiplier in `parallel.limit`: the official plan
+    /// table's Kimi Code credits row is 1×/5×/15×/30× for
+    /// Moderato/Allegretto/Allegro/Vivace. Prefer an explicit title when the
+    /// service includes one, then the multiplier, then the free level; hide
+    /// the badge rather than show a wrong one.
     nonisolated private static func kimiPlanLabel(_ root: [String: Any]) -> String? {
         let user = dictionary(root, keys: ["user"]) ?? [:]
         let membership = dictionary(user, keys: ["membership"])
@@ -662,19 +668,22 @@ final class UsageStore {
             return title
         }
 
+        if let parallel = dictionary(root, keys: ["parallel"]),
+           let limit = number(parallel, keys: ["limit"]) {
+            switch limit {
+            case 1: return "Moderato"
+            case 5: return "Allegretto"
+            case 15: return "Allegro"
+            case 30: return "Vivace"
+            default: break
+            }
+        }
+
         let level = string(membership, keys: ["level", "membershipLevel", "membership_level"])
             ?? string(user, keys: ["membershipLevel", "membership_level"])
         switch level?.uppercased() {
         case "LEVEL_FREE", "FREE":
             return "Adagio"
-        case "LEVEL_STANDARD", "STANDARD":
-            return "Moderato"
-        case "LEVEL_PLUS", "PLUS":
-            return "Allegretto"
-        case "LEVEL_PREMIUM", "PREMIUM":
-            return "Allegro"
-        case "LEVEL_ELITE", "ELITE":
-            return "Vivace"
         default:
             return nil
         }
