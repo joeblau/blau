@@ -4,7 +4,10 @@ interface Props {
   description?: string;
 }
 
-const { title, description = 'blau' } = Astro.props;
+const {
+  title,
+  description = 'blau is the agentic development environment for Apple platforms — a native macOS cockpit with agent-grade terminals, and your iPhone, iPad, and Watch as encrypted control surfaces.',
+} = Astro.props;
 ---
 
 <!doctype html>
@@ -14,7 +17,15 @@ const { title, description = 'blau' } = Astro.props;
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <meta name="generator" content={Astro.generator} />
-    <meta name="theme-color" content="#05070a" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f7fa" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#05070a" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="blau" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content="https://blau.app/" />
+    <meta name="twitter:card" content="summary" />
     <title>{title}</title>
   </head>
   <body>

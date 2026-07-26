@@ -320,6 +320,50 @@ struct TranscriptionLifecycleTests {
         #expect(!service.hasCachedModel)
     }
 
+    @Test("a failed start clears the previous transcript instead of leaking it")
+    func failedStartClearsStaleTranscript() async throws {
+        let fixture = try ModelCacheFixture()
+        defer { fixture.remove() }
+        let permission = PermissionGate()
+        let updates = UpdateBox()
+        let stream = ControlledStream(behavior: .readyUntilStopped)
+        let service = TranscriptionService(
+            testingCache: fixture.cache,
+            modelLoader: { preparation, _ in
+                guard case .loadCached(let cached) = preparation else {
+                    throw TestFailure.unexpectedDownload
+                }
+                return TranscriptionLoadedModel(kit: nil, cacheEntry: cached)
+            },
+            permissionRequest: { await permission.value },
+            streamFactory: { _, update in
+                updates.update = update
+                return TranscriptionStreamHandle(
+                    run: { try await stream.run(update: update) },
+                    stop: { await stream.stop() }
+                )
+            }
+        )
+
+        // First cycle: a successful recording leaves a transcript behind.
+        #expect(await service.start())
+        updates.update?(TranscriptionStreamUpdate(
+            isRecording: true,
+            confirmedText: "ship it",
+            partialText: ""
+        ))
+        await waitUntil { service.finalText == "ship it" }
+        await service.stop()
+        #expect(service.combinedText == "ship it")
+
+        // Second cycle dies at the permission gate. The stale transcript must
+        // not survive — a walkie-talkie release would otherwise re-send it.
+        await permission.deny()
+        #expect(await service.start() == false)
+        #expect(service.combinedText.isEmpty)
+        #expect(service.modelErrorMessage != nil)
+    }
+
     private func makeService(
         fixture: ModelCacheFixture,
         loader: ControlledModelLoader? = nil,
@@ -357,6 +401,16 @@ struct TranscriptionLifecycleTests {
 
 private enum TestFailure: Error {
     case unexpectedDownload
+}
+
+private actor PermissionGate {
+    private var allowed = true
+    var value: Bool { allowed }
+    func deny() { allowed = false }
+}
+
+private final class UpdateBox: @unchecked Sendable {
+    var update: (@Sendable (TranscriptionStreamUpdate) -> Void)?
 }
 
 private actor ControlledModelLoader {

@@ -11,6 +11,11 @@ struct ContentView: View {
     @State private var workspaces: [WorkspaceSummary] = []
     @State private var selectedID: UUID?
     @State private var recordingWorkspaceID: UUID?
+    /// Set only once Pilot has been sent `.voiceRecord(.start)` — the proof a
+    /// recording actually went live. Hold-end uses it to decide whether a
+    /// `.stop`/transcript pair is owed; without it a cancelled model download
+    /// would emit a phantom stop and re-send the previous cycle's transcript.
+    @State private var recordingStartedWorkspaceID: UUID?
     @State private var preHoldWorkspaceID: UUID?
     @State private var transcription = TranscriptionService()
     /// Bumped after each recording cycle to re-arm volume observation, since
@@ -196,22 +201,30 @@ struct ContentView: View {
                 // release; hold-up (Enter) already fired on hold-start.
                 guard direction == .down else { return }
                 pendingRecordingWorkspaceID = nil
-                let workspaceID = recordingWorkspaceID ?? selectedID
+                let attemptedWorkspaceID = recordingWorkspaceID
+                let startedWorkspaceID = recordingStartedWorkspaceID
                 recordingWorkspaceID = nil
+                recordingStartedWorkspaceID = nil
                 preHoldWorkspaceID = nil
+                // No recording was attempted (the model-download alert showed
+                // instead): leave an approved download running and send
+                // nothing — Pilot never got a .start, so a .stop would be a
+                // phantom and the transcript would be the last cycle's.
+                guard attemptedWorkspaceID != nil || startedWorkspaceID != nil else { return }
                 Task {
                     await transcription.stop()
                     // Re-arm volume observation now that stop() has
                     // deactivated the shared audio session; otherwise the
                     // hardware buttons stay dead after the first recording.
                     rearmTrigger += 1
+                    guard let startedWorkspaceID else { return }
                     syncService.send(.voiceRecord(
-                        VoiceRecordCommand(control: .stop, workspaceID: workspaceID)
+                        VoiceRecordCommand(control: .stop, workspaceID: startedWorkspaceID)
                     ))
                     let text = transcription.combinedText
                     guard !text.isEmpty else { return }
                     syncService.send(.transcribedSpeech(
-                        TranscribedSpeech(workspaceID: workspaceID, text: text)
+                        TranscribedSpeech(workspaceID: startedWorkspaceID, text: text)
                     ))
                 }
             },
@@ -231,6 +244,7 @@ struct ContentView: View {
             }
             // Show Pilot's listening state only after the model and microphone
             // are actually ready; cancelled downloads never create a false state.
+            recordingStartedWorkspaceID = workspaceID
             syncService.send(.voiceRecord(
                 VoiceRecordCommand(control: .start, workspaceID: workspaceID)
             ))

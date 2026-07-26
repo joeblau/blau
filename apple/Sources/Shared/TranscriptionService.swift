@@ -376,6 +376,13 @@ final class TranscriptionService: @unchecked Sendable {
         transcriptionGeneration += 1
         let generation = transcriptionGeneration
 
+        // Clear the previous cycle's transcript up front. When this happens
+        // after a model load or a permission prompt, a failed start leaves
+        // `combinedText` holding the last recording — and a walkie-talkie
+        // release would re-send that stale text to the terminal.
+        partialText = ""
+        finalText = ""
+
         if !isModelLoaded {
             guard await loadModel(allowRestrictedNetwork: allowRestrictedNetwork) else { return false }
         }
@@ -392,8 +399,6 @@ final class TranscriptionService: @unchecked Sendable {
 
         activateAudioSession()
         audioSessionGeneration = generation
-        partialText = ""
-        finalText = ""
 
         let readiness = TranscriptionReadiness()
         let stopRelay = TranscriptionStopRelay()

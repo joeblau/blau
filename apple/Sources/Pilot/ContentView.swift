@@ -7,35 +7,17 @@ import SwiftUI
 /// keeping independent runtime IDs for every terminal, browser, and device.
 struct WorkspacePaneLauncher: View {
     let workspace: Workspace?
-    let isCompact: Bool
 
-    init(workspace: Workspace?, isCompact: Bool = false) {
-        self.workspace = workspace
-        self.isCompact = isCompact
-    }
-
-    @ViewBuilder
     var body: some View {
-        if isCompact {
-            Menu {
-                paneButtons
-            } label: {
-                Label("New Pane", systemImage: "plus.rectangle.on.rectangle")
-            }
-            .disabled(workspace == nil)
-            .help("Open a view in this workspace")
-            .accessibilityIdentifier("workspace.pane-launcher")
-        } else {
-            HStack(spacing: 0) {
-                paneButtons
-            }
-            .buttonStyle(.plain)
-            .menuStyle(.borderlessButton)
-            .padding(.horizontal, 4)
-            .glassEffect(.regular, in: Capsule())
-            .disabled(workspace == nil)
-            .accessibilityIdentifier("workspace.pane-launcher")
+        HStack(spacing: 0) {
+            paneButtons
         }
+        .buttonStyle(.plain)
+        .menuStyle(.borderlessButton)
+        .padding(.horizontal, 4)
+        .glassEffect(.regular, in: Capsule())
+        .disabled(workspace == nil)
+        .accessibilityIdentifier("workspace.pane-launcher")
     }
 
     @ViewBuilder
@@ -416,14 +398,168 @@ struct BrowserToolsToolbarControls: View {
     }
 }
 
-/// Complete browser toolbar used by Main. Extension installs the same two
-/// pieces as distinct toolbar items to retain the address field at small sizes.
+/// Complete browser toolbar shared by Main and Extendo.
 struct BrowserToolbarControls: View {
     let state: BrowserState
 
     var body: some View {
         BrowserNavigationToolbarControls(state: state)
         BrowserToolsToolbarControls(state: state)
+    }
+}
+
+/// Keeps every pane-specific toolbar identical between Main and Extendo.
+/// Both windows install this view in the same toolbar placement, so control
+/// order, overflow behavior, and future additions stay synchronized.
+struct PaneToolbarControls: View {
+    let pane: Pane
+
+    @ViewBuilder
+    var body: some View {
+        if !pane.isCollapsed {
+            switch pane.kind {
+            case .browser:
+                if let state = BrowserToolbarSelection.state(for: pane) {
+                    BrowserToolbarControls(state: state)
+                }
+            case .device:
+                DeviceToolbarControls(paneID: pane.id)
+            case .simulator:
+                SimulatorToolbarControls(paneID: pane.id)
+            case .android:
+                AndroidToolbarControls(paneID: pane.id)
+            case .terminal, .editor:
+                EmptyView()
+            }
+        }
+    }
+}
+
+struct SimulatorToolbarControls: View {
+    let paneID: UUID
+
+    var body: some View {
+        let session = SimulatorRegistry.shared.session(for: paneID)
+        let isStreaming = session.status == .streaming
+
+        Button {
+            session.toggleRecording()
+        } label: {
+            Label(
+                session.isRecording ? "Stop Recording" : "Record Screen",
+                systemImage: session.isRecording ? "stop.circle.fill" : "record.circle"
+            )
+            .foregroundStyle(session.isRecording ? .red : .primary)
+        }
+        .disabled(!isStreaming)
+        .help(session.isRecording ? "Stop recording" : "Record the simulator screen")
+
+        Button {
+            session.goHome()
+        } label: {
+            Label("Home", systemImage: "square.grid.3x3.fill")
+        }
+        .disabled(!isStreaming)
+        .help("Go to the simulator Home screen")
+
+        Button {
+            session.takeScreenshot()
+        } label: {
+            Label("Take Screenshot", systemImage: "camera.viewfinder")
+        }
+        .disabled(!isStreaming)
+        .help("Save a screenshot of the simulator screen to the Desktop")
+
+        Button {
+            session.copyScreenshotToClipboard()
+        } label: {
+            Label("Copy Screenshot", systemImage: "clipboard")
+        }
+        .disabled(!isStreaming)
+        .help("Copy a screenshot of the simulator screen to the clipboard")
+
+        Button {
+            session.chooseAnotherDevice()
+        } label: {
+            Label("Choose Device", systemImage: "list.bullet")
+        }
+        .help("Pick a different simulator")
+
+        Button {
+            session.shutdownSimulator()
+        } label: {
+            Label("Shutdown Simulator", systemImage: "power")
+        }
+        .disabled(session.bootedUDID == nil)
+        .help("Power off the booted simulator")
+    }
+}
+
+struct AndroidToolbarControls: View {
+    let paneID: UUID
+
+    var body: some View {
+        let session = AndroidDeviceRegistry.shared.session(for: paneID)
+        let isStreaming = session.status == .streaming
+
+        Button {
+            session.toggleRecording()
+        } label: {
+            Label(
+                session.isRecording ? "Stop Recording" : "Record Screen",
+                systemImage: session.isRecording ? "stop.circle.fill" : "record.circle"
+            )
+            .foregroundStyle(session.isRecording ? .red : .primary)
+        }
+        .disabled(!isStreaming && !session.isRecording)
+        .help(session.isRecording ? "Stop recording" : "Record the Android screen")
+
+        Button {
+            session.takeScreenshot()
+        } label: {
+            Label("Take Screenshot", systemImage: "camera.viewfinder")
+        }
+        .disabled(!isStreaming)
+        .help("Save a screenshot of the Android screen to the Desktop")
+
+        Button {
+            session.copyScreenshotToClipboard()
+        } label: {
+            Label("Copy Screenshot", systemImage: "clipboard")
+        }
+        .disabled(!isStreaming)
+        .help("Copy a screenshot of the Android screen to the clipboard")
+
+        Button {
+            session.sendKeycode(AndroidKeyMap.Keycode.back)
+        } label: {
+            Label("Back", systemImage: "arrow.uturn.backward")
+        }
+        .disabled(!isStreaming)
+        .help("Android Back")
+
+        Button {
+            session.sendKeycode(AndroidKeyMap.Keycode.home)
+        } label: {
+            Label("Home", systemImage: "square.grid.3x3.fill")
+        }
+        .disabled(!isStreaming)
+        .help("Android Home")
+
+        Button {
+            session.sendKeycode(AndroidKeyMap.Keycode.appSwitch)
+        } label: {
+            Label("App Switch", systemImage: "square.on.square")
+        }
+        .disabled(!isStreaming)
+        .help("Android recent apps")
+
+        Button {
+            session.chooseAnotherDevice()
+        } label: {
+            Label("Choose Device", systemImage: "list.bullet")
+        }
+        .help("Pick a different Android device")
     }
 }
 
@@ -539,6 +675,13 @@ struct ContentView: View {
                 .padding(.vertical, 8)
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 220)
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button(action: store.addWorkspace) {
+                        Label("New Workspace", systemImage: "plus")
+                    }
+                }
+            }
         } detail: {
             ZStack {
                 if workspaces.isEmpty {
@@ -699,27 +842,8 @@ struct ContentView: View {
             ToolbarItemGroup(placement: .secondaryAction) {
                 if !store.isNotesMode,
                    !store.isRemoteDesktopMode,
-                   let pane = store.selectedWorkspace?.selectedPane,
-                   let browserState = BrowserToolbarSelection.state(for: pane) {
-                    BrowserToolbarControls(state: browserState)
-                } else if !store.isNotesMode,
-                          !store.isRemoteDesktopMode,
-                          let pane = store.selectedWorkspace?.selectedPane,
-                          !pane.isCollapsed,
-                          pane.kind == .device {
-                    deviceToolbar(paneID: pane.id)
-                } else if !store.isNotesMode,
-                          !store.isRemoteDesktopMode,
-                          let pane = store.selectedWorkspace?.selectedPane,
-                          !pane.isCollapsed,
-                          pane.kind == .simulator {
-                    simulatorToolbar(paneID: pane.id)
-                } else if !store.isNotesMode,
-                          !store.isRemoteDesktopMode,
-                          let pane = store.selectedWorkspace?.selectedPane,
-                          !pane.isCollapsed,
-                          pane.kind == .android {
-                    androidToolbar(paneID: pane.id)
+                   let pane = store.selectedWorkspace?.selectedPane {
+                    PaneToolbarControls(pane: pane)
                 }
             }
             ToolbarItem(placement: .primaryAction) {
@@ -961,133 +1085,6 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private func deviceToolbar(paneID: UUID) -> some View {
-        DeviceToolbarControls(paneID: paneID)
-    }
-
-    @ViewBuilder
-    private func simulatorToolbar(paneID: UUID) -> some View {
-        let session = SimulatorRegistry.shared.session(for: paneID)
-        let isStreaming = session.status == .streaming
-
-        Button {
-            session.toggleRecording()
-        } label: {
-            Label(
-                session.isRecording ? "Stop Recording" : "Record Screen",
-                systemImage: session.isRecording ? "stop.circle.fill" : "record.circle"
-            )
-            .foregroundStyle(session.isRecording ? .red : .primary)
-        }
-        .disabled(!isStreaming)
-        .help(session.isRecording ? "Stop recording" : "Record the simulator screen")
-
-        Button {
-            session.goHome()
-        } label: {
-            Label("Home", systemImage: "square.grid.3x3.fill")
-        }
-        .disabled(!isStreaming)
-        .help("Go to the simulator Home screen")
-
-        Button {
-            session.takeScreenshot()
-        } label: {
-            Label("Take Screenshot", systemImage: "camera.viewfinder")
-        }
-        .disabled(!isStreaming)
-        .help("Save a screenshot of the simulator screen to the Desktop")
-
-        Button {
-            session.copyScreenshotToClipboard()
-        } label: {
-            Label("Copy Screenshot", systemImage: "clipboard")
-        }
-        .disabled(!isStreaming)
-        .help("Copy a screenshot of the simulator screen to the clipboard")
-
-        Button {
-            session.chooseAnotherDevice()
-        } label: {
-            Label("Choose Device", systemImage: "list.bullet")
-        }
-        .help("Pick a different simulator")
-
-        Button {
-            session.shutdownSimulator()
-        } label: {
-            Label("Shutdown Simulator", systemImage: "power")
-        }
-        .disabled(session.bootedUDID == nil)
-        .help("Power off the booted simulator")
-    }
-
-    @ViewBuilder
-    private func androidToolbar(paneID: UUID) -> some View {
-        let session = AndroidDeviceRegistry.shared.session(for: paneID)
-        let isStreaming = session.status == .streaming
-
-        Button {
-            session.toggleRecording()
-        } label: {
-            Label(
-                session.isRecording ? "Stop Recording" : "Record Screen",
-                systemImage: session.isRecording ? "stop.circle.fill" : "record.circle"
-            )
-            .foregroundStyle(session.isRecording ? .red : .primary)
-        }
-        .disabled(!isStreaming && !session.isRecording)
-        .help(session.isRecording ? "Stop recording" : "Record the Android screen")
-
-        Button {
-            session.takeScreenshot()
-        } label: {
-            Label("Take Screenshot", systemImage: "camera.viewfinder")
-        }
-        .disabled(!isStreaming)
-        .help("Save a screenshot of the Android screen to the Desktop")
-
-        Button {
-            session.copyScreenshotToClipboard()
-        } label: {
-            Label("Copy Screenshot", systemImage: "clipboard")
-        }
-        .disabled(!isStreaming)
-        .help("Copy a screenshot of the Android screen to the clipboard")
-
-        Button {
-            session.sendKeycode(AndroidKeyMap.Keycode.back)
-        } label: {
-            Label("Back", systemImage: "arrow.uturn.backward")
-        }
-        .disabled(!isStreaming)
-        .help("Android Back")
-
-        Button {
-            session.sendKeycode(AndroidKeyMap.Keycode.home)
-        } label: {
-            Label("Home", systemImage: "square.grid.3x3.fill")
-        }
-        .disabled(!isStreaming)
-        .help("Android Home")
-
-        Button {
-            session.sendKeycode(AndroidKeyMap.Keycode.appSwitch)
-        } label: {
-            Label("App Switch", systemImage: "square.on.square")
-        }
-        .disabled(!isStreaming)
-        .help("Android recent apps")
-
-        Button {
-            session.chooseAnotherDevice()
-        } label: {
-            Label("Choose Device", systemImage: "list.bullet")
-        }
-        .help("Pick a different Android device")
-    }
-
     private var selectedWorkspaceInspectorTabBinding: Binding<InspectorTab> {
         Binding(
             get: { self.store.selectedWorkspace?.inspectorTab ?? .actions },
@@ -1173,9 +1170,10 @@ struct ContentView: View {
     }
 }
 
-/// `.primaryAction` is semantically correct for New Workspace, but macOS places
-/// primary actions on the trailing side of the toolbar. Keep the native sidebar
-/// toggle/tracking separator while moving only New Workspace ahead of it.
+/// SwiftUI inserts a flexible toolbar spacer before sidebar-scoped navigation
+/// items on macOS, pushing New Workspace to the sidebar divider. Keep the
+/// native sidebar toggle/tracking separator, but move only New Workspace ahead
+/// of that spacer so it sits immediately after the traffic lights.
 private struct LeadingWorkspaceToolbarItem: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         InstallerView()

@@ -209,6 +209,7 @@ struct UsageReportingTests {
             "user": [
                 "membership": ["level": "LEVEL_STANDARD"],
             ],
+            "parallel": ["limit": "30"],
             "usage": [
                 "used": "25",
                 "limit": 100,
@@ -234,7 +235,7 @@ struct UsageReportingTests {
             ],
         ], receivedAt: receivedAt)
 
-        #expect(usage.planLabel == "Moderato")
+        #expect(usage.planLabel == "Vivace")
         #expect(usage.windows.count == 3)
         let weekly = try #require(usage.windows.first { $0.name == "Weekly limit" })
         #expect(abs(weekly.utilization - 0.25) < 0.000_001)
@@ -261,23 +262,49 @@ struct UsageReportingTests {
     }
 
     @Test(
-        "Kimi maps membership levels to public plan names",
+        "Kimi maps the Code credit multiplier to public plan names",
         arguments: [
-            ("LEVEL_FREE", "Adagio"),
-            ("LEVEL_STANDARD", "Moderato"),
-            ("LEVEL_PLUS", "Allegretto"),
-            ("LEVEL_PREMIUM", "Allegro"),
-            ("LEVEL_ELITE", "Vivace"),
+            (1.0, "Moderato"),
+            (5.0, "Allegretto"),
+            (15.0, "Allegro"),
+            (30.0, "Vivace"),
         ]
     )
-    func kimiMembershipPlan(level: String, expected: String) {
+    func kimiParallelLimitPlan(limit: Double, expected: String) {
+        // Matches the live response shape: `level` stays LEVEL_STANDARD for
+        // every paid tier, so `parallel.limit` carries the tier.
         let usage = UsageStore.parseKimiUsage([
             "user": [
-                "membership": ["level": level],
+                "membership": ["level": "LEVEL_STANDARD"],
             ],
+            "parallel": ["limit": String(Int(limit))],
         ])
 
         #expect(usage.planLabel == expected)
+    }
+
+    @Test("Kimi free membership still maps to Adagio")
+    func kimiFreePlan() {
+        let usage = UsageStore.parseKimiUsage([
+            "user": [
+                "membership": ["level": "LEVEL_FREE"],
+            ],
+        ])
+
+        #expect(usage.planLabel == "Adagio")
+    }
+
+    @Test("Kimi paid membership without a multiplier shows no badge")
+    func kimiPaidPlanWithoutMultiplier() {
+        // LEVEL_STANDARD alone must NOT guess a tier — a Vivace account
+        // returns exactly this, and a wrong badge is worse than none.
+        let usage = UsageStore.parseKimiUsage([
+            "user": [
+                "membership": ["level": "LEVEL_STANDARD"],
+            ],
+        ])
+
+        #expect(usage.planLabel == nil)
     }
 
     @Test("Kimi prefers an explicit plan title and hides unknown internal levels")
