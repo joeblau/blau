@@ -83,6 +83,30 @@ extension View {
                 .quaternary.opacity(0.4),
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
+            .transition(
+                .opacity.combined(
+                    with: .scale(scale: 0.96, anchor: .top)
+                )
+            )
+    }
+
+    /// Animate identity changes in inspector card collections while leaving
+    /// content-only refreshes (elapsed time, status, usage, and so on) alone.
+    func inspectorListAnimation<Value: Equatable>(value: Value) -> some View {
+        modifier(InspectorListAnimationModifier(value: value))
+    }
+}
+
+private struct InspectorListAnimationModifier<Value: Equatable>: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let value: Value
+
+    func body(content: Content) -> some View {
+        content.animation(
+            reduceMotion ? nil : .snappy(duration: 0.28),
+            value: value
+        )
     }
 }
 
@@ -459,11 +483,7 @@ struct CommitListView: View {
                 store.fetchCommits(policy: .manual)
             }
 
-            if store.commits.isEmpty && !store.isLoading {
-                ContentUnavailableView("No Commits",
-                                       systemImage: "clock.arrow.circlepath",
-                                       description: Text("Select a workspace with a git repo root path."))
-            } else {
+            ZStack {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(store.commits) { commit in
@@ -473,8 +493,18 @@ struct CommitListView: View {
                     }
                     .padding(12)
                 }
+
+                if store.commits.isEmpty && !store.isLoading {
+                    ContentUnavailableView(
+                        "No Commits",
+                        systemImage: "clock.arrow.circlepath",
+                        description: Text("Select a workspace with a git repo root path.")
+                    )
+                    .transition(.opacity)
+                }
             }
         }
+        .inspectorListAnimation(value: store.commits.map(\.id))
     }
 
     private func commitRow(_ commit: GitCommit) -> some View {
@@ -532,12 +562,7 @@ struct ActionsListView: View {
                 store.fetchWorkflowRuns(policy: .manual)
             }
 
-            if store.actions.isEmpty && !store.isLoading {
-                ContentUnavailableView("No Actions",
-                                       systemImage: "gearshape.2",
-                                       description: Text("Select a workspace with a GitHub repo root path."))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
+            ZStack {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(store.actions) { action in
@@ -547,8 +572,18 @@ struct ActionsListView: View {
                     }
                     .padding(12)
                 }
+
+                if store.actions.isEmpty && !store.isLoading {
+                    ContentUnavailableView(
+                        "No Actions",
+                        systemImage: "gearshape.2",
+                        description: Text("Select a workspace with a GitHub repo root path.")
+                    )
+                    .transition(.opacity)
+                }
             }
         }
+        .inspectorListAnimation(value: store.actions.map(\.id))
     }
 
     private func actionRow(_ action: GitAction) -> some View {

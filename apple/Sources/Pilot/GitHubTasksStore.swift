@@ -127,6 +127,8 @@ final class GitHubTasksStore {
 struct GitHubTasksView: View {
     var store: GitHubTasksStore
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -155,40 +157,54 @@ struct GitHubTasksView: View {
         // Prefer showing data: once we have issues, keep showing them even if
         // a later poll errors out, so the inspector never blinks to an error
         // screen mid-poll.
-        if !store.tasks.isEmpty {
-            ScrollViewReader { proxy in
+        ScrollViewReader { proxy in
+            ZStack {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(store.tasks) { task in
                             GitHubTaskRow(task: task)
                                 .inspectorListCard()
                                 .id(task.id)
-                                // Fade in rather than sliding from the top edge
-                                // when a newly fetched issue appears.
-                                .transition(.opacity)
                         }
                     }
                     .padding(12)
                 }
-                .animation(.snappy, value: store.tasks)
-                // Keep a newly injected first issue visible.
-                .onChange(of: store.tasks.first?.id) { _, newFirstID in
-                    guard let newFirstID else { return }
+
+                if store.tasks.isEmpty {
+                    if store.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .transition(.opacity)
+                    } else if let error = store.errorMessage {
+                        ContentUnavailableView(
+                            "No Issues",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text(error)
+                        )
+                        .transition(.opacity)
+                    } else {
+                        ContentUnavailableView(
+                            "No Open Issues",
+                            systemImage: "checkmark.circle",
+                            description: Text("This repo has no open GitHub issues.")
+                        )
+                        .transition(.opacity)
+                    }
+                }
+            }
+            .inspectorListAnimation(value: store.tasks.map(\.id))
+            // Keep a newly injected first issue visible.
+            .onChange(of: store.tasks.first?.id) { _, newFirstID in
+                guard let newFirstID else { return }
+                if reduceMotion {
+                    proxy.scrollTo(newFirstID, anchor: .top)
+                } else {
                     withAnimation(.snappy) {
                         proxy.scrollTo(newFirstID, anchor: .top)
                     }
                 }
             }
-        } else if store.isLoading {
-            ProgressView()
-                .controlSize(.small)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = store.errorMessage {
-            ContentUnavailableView("No Issues", systemImage: "exclamationmark.triangle",
-                                   description: Text(error))
-        } else {
-            ContentUnavailableView("No Open Issues", systemImage: "checkmark.circle",
-                                   description: Text("This repo has no open GitHub issues."))
         }
     }
 }
