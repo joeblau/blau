@@ -9,7 +9,7 @@ struct GitCommit: Identifiable {
 }
 
 struct GitAction: Identifiable {
-    let id: UUID = UUID()
+    let id: Int
     let name: String
     let displayTitle: String
     let headBranch: String
@@ -194,6 +194,7 @@ final class GitCommitStore {
         var actions: [GitAction] = []
         var runs: [GitRun] = []
         for item in items.prefix(10) {
+            guard let databaseID = item["databaseId"] as? Int else { continue }
             let name = item["name"] as? String ?? ""
             let title = item["displayTitle"] as? String ?? ""
             let branch = item["headBranch"] as? String ?? ""
@@ -202,6 +203,7 @@ final class GitCommitStore {
             let createdAt = item["createdAt"] as? String ?? ""
 
             actions.append(GitAction(
+                id: databaseID,
                 name: name,
                 displayTitle: title,
                 headBranch: branch,
@@ -227,7 +229,7 @@ final class GitCommitStore {
 
             let updatedAt = item["updatedAt"] as? String ?? ""
             runs.append(GitRun(
-                id: item["databaseId"] as? Int ?? 0,
+                id: databaseID,
                 name: name,
                 title: title,
                 branch: branch,
