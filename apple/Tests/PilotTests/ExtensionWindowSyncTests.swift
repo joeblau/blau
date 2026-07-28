@@ -407,7 +407,7 @@ struct ExtensionWindowSyncTests {
             sourceSurface: .main
         )
 
-        #expect(fixture.store.movePane(mainPayload, to: extensionWorkspace, before: extensionTarget))
+        #expect(fixture.store.movePane(mainPayload, to: extensionWorkspace, onto: extensionTarget))
         #expect(!fixture.alpha.panes.contains(where: { $0.id == browser.id }))
         #expect(extensionWorkspace.panes.contains(where: { $0 === browser }))
         #expect(browser.workspace === extensionWorkspace)
@@ -421,7 +421,7 @@ struct ExtensionWindowSyncTests {
             projectID: fixture.alpha.id,
             sourceSurface: .main
         )
-        #expect(!fixture.store.movePane(solePanePayload, to: extensionWorkspace, before: extensionTarget))
+        #expect(!fixture.store.movePane(solePanePayload, to: extensionWorkspace, onto: extensionTarget))
 
         let extensionPayload = WorkspacePaneDragPayload(
             paneID: browser.id,
@@ -429,15 +429,15 @@ struct ExtensionWindowSyncTests {
             projectID: fixture.alpha.id,
             sourceSurface: .extension
         )
-        #expect(fixture.store.movePane(extensionPayload, to: fixture.alpha, before: soleMainPane))
+        #expect(fixture.store.movePane(extensionPayload, to: fixture.alpha, onto: soleMainPane))
         #expect(fixture.alpha.panes.contains(where: { $0 === browser }))
         #expect(!extensionWorkspace.panes.contains(where: { $0.id == browser.id }))
         #expect(browser.workspace === fixture.alpha)
         #expect(browser.browserState === browserState)
     }
 
-    @Test("Dropping a pane forward keeps it before the target")
-    func localPaneReorderUsesPostRemovalTargetIndex() throws {
+    @Test("Pane drops reorder adjacent panes in both directions")
+    func localPaneReorderWorksInBothDirections() throws {
         let defaults = DefaultsSnapshot()
         defer { defaults.restore() }
         let fixture = try makeFixture()
@@ -448,15 +448,26 @@ struct ExtensionWindowSyncTests {
         fixture.alpha.addPane(kind: .editor, side: .right)
         let editor = try #require(fixture.alpha.selectedPane)
 
-        let payload = WorkspacePaneDragPayload(
+        let terminalPayload = WorkspacePaneDragPayload(
             paneID: terminal.id,
             sourceWorkspaceID: fixture.alpha.id,
             projectID: fixture.alpha.id,
             sourceSurface: .main
         )
 
-        #expect(fixture.store.movePane(payload, to: fixture.alpha, before: editor))
+        #expect(fixture.store.movePane(terminalPayload, to: fixture.alpha, onto: browser))
         #expect(fixture.alpha.sortedPanes.map(\.id) == [browser.id, terminal.id, editor.id])
+        #expect(fixture.alpha.sortedPanes.map(\.sortOrder) == [0, 1, 2])
+
+        let editorPayload = WorkspacePaneDragPayload(
+            paneID: editor.id,
+            sourceWorkspaceID: fixture.alpha.id,
+            projectID: fixture.alpha.id,
+            sourceSurface: .main
+        )
+
+        #expect(fixture.store.movePane(editorPayload, to: fixture.alpha, onto: terminal))
+        #expect(fixture.alpha.sortedPanes.map(\.id) == [browser.id, editor.id, terminal.id])
         #expect(fixture.alpha.sortedPanes.map(\.sortOrder) == [0, 1, 2])
     }
 
@@ -484,7 +495,7 @@ struct ExtensionWindowSyncTests {
             projectID: fixture.alpha.id,
             sourceSurface: .main
         )
-        #expect(fixture.store.movePane(terminalPayload, to: extensionWorkspace, before: extensionTarget))
+        #expect(fixture.store.movePane(terminalPayload, to: extensionWorkspace, onto: extensionTarget))
         #expect(fixture.alpha.selectedPaneID == editor.id)
         #expect(!editor.isCollapsed)
 
@@ -494,7 +505,7 @@ struct ExtensionWindowSyncTests {
             projectID: fixture.alpha.id,
             sourceSurface: .main
         )
-        #expect(fixture.store.movePane(editorPayload, to: extensionWorkspace, before: extensionTarget))
+        #expect(fixture.store.movePane(editorPayload, to: extensionWorkspace, onto: extensionTarget))
         #expect(fixture.alpha.selectedPaneID == collapsedBrowser.id)
         #expect(!collapsedBrowser.isCollapsed)
         #expect(collapsedBrowser.sizeFraction == 1)
@@ -533,7 +544,7 @@ struct ExtensionWindowSyncTests {
             sourceSurface: .main
         )
 
-        #expect(fixture.store.movePane(payload, to: extensionWorkspace, before: extensionTarget))
+        #expect(fixture.store.movePane(payload, to: extensionWorkspace, onto: extensionTarget))
         #expect(fixture.alpha.selectedPaneID == selectedBrowser.id)
         #expect(fixture.alpha.frontmostTerminalPaneID == survivingTerminal.id)
         #expect(fixture.alpha.rootPath.isEmpty)

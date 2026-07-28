@@ -517,7 +517,7 @@ final class WorkspaceStore {
     /// between Main and Extension. Keeping the Pane identity preserves tmux and
     /// capture-session registry keys; no runtime teardown occurs during a move.
     @discardableResult
-    func movePane(_ payload: WorkspacePaneDragPayload, to destination: Workspace, before target: Pane) -> Bool {
+    func movePane(_ payload: WorkspacePaneDragPayload, to destination: Workspace, onto target: Pane) -> Bool {
         let allWorkspaces = (try? modelContext.fetch(FetchDescriptor<Workspace>())) ?? []
         let links = extensionWorkspaceLinks
         guard let source = allWorkspaces.first(where: { $0.id == payload.sourceWorkspaceID }),
@@ -533,12 +533,13 @@ final class WorkspaceStore {
         if source === destination {
             guard pane !== target else { return false }
             var ordered = source.sortedPanes
-            guard let sourceIndex = ordered.firstIndex(where: { $0 === pane }) else { return false }
+            guard let sourceIndex = ordered.firstIndex(where: { $0 === pane }),
+                  let targetIndex = ordered.firstIndex(where: { $0 === target }) else { return false }
             ordered.remove(at: sourceIndex)
-            // Resolve the target after removal. Its old index is one too high
-            // whenever the dragged pane started before it.
-            guard let targetIndex = ordered.firstIndex(where: { $0 === target }) else { return false }
-            ordered.insert(pane, at: targetIndex)
+            // Put the dragged pane in the target's original slot. This places
+            // it after the target when moving right and before the target when
+            // moving left, so adjacent drops work in both directions.
+            ordered.insert(pane, at: min(targetIndex, ordered.endIndex))
             renumberPanes(ordered)
             if !pane.isCollapsed { source.selectedPaneID = pane.id }
             guard modelContext.saveReporting(

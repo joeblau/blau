@@ -704,7 +704,7 @@ struct ContentView: View {
                                 projectID: workspace.id,
                                 surface: .main,
                                 onPaneDrop: { payload, targetPane in
-                                    store.movePane(payload, to: workspace, before: targetPane)
+                                    store.movePane(payload, to: workspace, onto: targetPane)
                                 }
                             )
                                 .zIndex(isActive ? 1 : 0)
