@@ -601,7 +601,7 @@ struct ExtensionWindowView: View {
                         projectID: mounted.sourceID,
                         surface: .extension,
                         onPaneDrop: { payload, targetPane in
-                            store.movePane(payload, to: mounted.workspace, before: targetPane)
+                            store.movePane(payload, to: mounted.workspace, onto: targetPane)
                         }
                     )
                         .zIndex(isActive ? 1 : 0)
