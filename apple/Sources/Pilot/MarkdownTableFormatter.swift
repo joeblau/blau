@@ -221,3 +221,75 @@ enum MarkdownTableFormatter {
         }
     }
 }
+
+/// Stable-sorts root checklist items by completion while treating every
+/// indented descendant as part of its root item. This keeps nested checklists
+/// structurally intact when the editor reflows completed work.
+enum MarkdownTaskFormatter {
+    private struct TaskLine {
+        let text: String
+        let indentation: Int
+        let isDone: Bool
+    }
+
+    private static let taskLine = try! NSRegularExpression(
+        pattern: #"^([ \t]*)[-*+][ \t]+\[([ xX])\]"#
+    )
+
+    /// Returns reordered text, or `nil` when the checklist is already settled.
+    static func reflow(_ text: String) -> String? {
+        // Runs on every keystroke, so avoid splitting ordinary notes.
+        guard text.contains("[x]") || text.contains("[X]") else { return nil }
+
+        var lines = text.components(separatedBy: "\n")
+        var changed = false
+        var index = 0
+
+        while index < lines.count {
+            guard parse(lines[index]) != nil else {
+                index += 1
+                continue
+            }
+
+            var end = index
+            var group: [TaskLine] = []
+            while end < lines.count, let task = parse(lines[end]) {
+                group.append(task)
+                end += 1
+            }
+
+            let baseline = group.map(\.indentation).min() ?? 0
+            var blocks: [[TaskLine]] = []
+            for task in group {
+                if task.indentation == baseline || blocks.isEmpty {
+                    blocks.append([task])
+                } else {
+                    blocks[blocks.endIndex - 1].append(task)
+                }
+            }
+
+            let sortedBlocks = blocks.filter { !$0[0].isDone } + blocks.filter { $0[0].isDone }
+            let sortedLines = sortedBlocks.flatMap { $0.map(\.text) }
+            if sortedLines != Array(lines[index..<end]) {
+                lines.replaceSubrange(index..<end, with: sortedLines)
+                changed = true
+            }
+            index = end
+        }
+
+        return changed ? lines.joined(separator: "\n") : nil
+    }
+
+    private static func parse(_ line: String) -> TaskLine? {
+        let range = NSRange(location: 0, length: (line as NSString).length)
+        guard let match = taskLine.firstMatch(in: line, range: range) else { return nil }
+        let markerRange = match.range(at: 2)
+        guard markerRange.location != NSNotFound else { return nil }
+        let marker = (line as NSString).substring(with: markerRange)
+        return TaskLine(
+            text: line,
+            indentation: match.range(at: 1).length,
+            isDone: marker.lowercased() == "x"
+        )
+    }
+}
