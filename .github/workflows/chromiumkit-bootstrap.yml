@@ -17,7 +17,6 @@ jobs:
     environment: chromiumkit-release
     timeout-minutes: 240
     env:
-      CEF_DOWNLOAD_CACHE: ${{ runner.temp }}/chromiumkit-download-cache
       BLAU_CHROMIUM_CODESIGN_TIMESTAMP: YES
       MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -27,6 +26,10 @@ jobs:
       APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Scope the CEF download cache to this run
+        run: |
+          printf 'CEF_DOWNLOAD_CACHE=%s\n' \
+            "$RUNNER_TEMP/chromiumkit-download-cache" >> "$GITHUB_ENV"
       - name: Require release credentials
         env:
           GITHUB_RELEASE_POLICY_TOKEN: ${{ secrets.GITHUB_RELEASE_POLICY_TOKEN }}
