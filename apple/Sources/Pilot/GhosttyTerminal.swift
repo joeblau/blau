@@ -1560,13 +1560,13 @@ extension GhosttyMetalView: @MainActor NSTextInputClient {
     /// Send text directly to the surface, handling special characters.
     /// Used for text that arrives outside the normal keyDown path.
     private func sendTextToSurface(_ text: String) {
-        guard let surface else { return }
+        guard surface != nil else { return }
         var buffer = ""
         var prevWasCR = false
-
         func flush() {
             guard !buffer.isEmpty else { return }
             buffer.withCString { ptr in
+                guard let surface = self.surface else { return }
                 var key = ghostty_input_key_s()
                 key.action = GHOSTTY_ACTION_PRESS
                 key.keycode = 0

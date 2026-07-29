@@ -1,26 +1,13 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import Nav from '../components/Nav.astro';
 import Hero from '../components/Hero.astro';
-import Features from '../components/Features.astro';
-import Devices from '../components/Devices.astro';
-import Security from '../components/Security.astro';
-import Cta from '../components/Cta.astro';
-import Footer from '../components/Footer.astro';
 ---
 
-<Layout title="blau — Agentic Development Environment for Apple platforms">
-  <Nav />
+<Layout
+  title="blau | Agentic development for Apple platforms"
+  description="blau is a native Apple development cockpit with encrypted control surfaces across Mac, iPhone, iPad, and Apple Watch."
+>
   <main>
     <Hero />
-    <Features />
-    <Devices />
-    <Security />
-    <Cta />
   </main>
-  <Footer />
 </Layout>
-
-<script>
-  import '../scripts/interactions';
-</script>
