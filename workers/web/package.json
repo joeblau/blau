@@ -15,6 +15,7 @@
     "rollback": "wrangler rollback"
   },
   "dependencies": {
+    "@fontsource-variable/nunito": "5.3.0",
     "astro": "7.1.3"
   },
   "devDependencies": {

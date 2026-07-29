@@ -815,6 +815,7 @@ final class UsageStore {
             "Accept": "application/json",
             "User-Agent": "grok/\(clientVersion)",
             "x-grok-client-version": clientVersion,
+            "x-grok-client-mode": "tui",
         ]
         let url = URL(string: "https://cli-chat-proxy.grok.com/v1/billing?format=credits")!
         do {
@@ -829,7 +830,10 @@ final class UsageStore {
         _ root: [String: Any],
         fallbackPlan: String? = nil
     ) -> ProviderUsage {
-        let rawPlan = string(root, keys: ["subscriptionTier", "subscription_tier"])
+        // Current Grok releases wrap the billing payload in `config`; older
+        // releases returned these fields at the top level.
+        let payload = dictionary(root, keys: ["config"]) ?? root
+        let rawPlan = string(payload, keys: ["subscriptionTier", "subscription_tier"])
             ?? fallbackPlan
         let planLabel: String?
         switch rawPlan?.lowercased() {
@@ -841,18 +845,18 @@ final class UsageStore {
             planLabel = plan.replacingOccurrences(of: "_", with: " ").capitalized
         }
         var usage = ProviderUsage(planLabel: planLabel)
-        let currentPeriod = dictionary(root, keys: ["currentPeriod", "current_period"])
-        let billingCycle = dictionary(root, keys: ["billingCycle", "billing_cycle"])
+        let currentPeriod = dictionary(payload, keys: ["currentPeriod", "current_period"])
+        let billingCycle = dictionary(payload, keys: ["billingCycle", "billing_cycle"])
         let periodStart = date(value(currentPeriod ?? [:], keys: ["start"]))
-            ?? date(value(root, keys: ["billingPeriodStart", "billing_period_start"]))
+            ?? date(value(payload, keys: ["billingPeriodStart", "billing_period_start"]))
             ?? date(value(billingCycle ?? [:], keys: ["billingPeriodStart", "billing_period_start"]))
         let periodEnd = date(value(currentPeriod ?? [:], keys: ["end"]))
-            ?? date(value(root, keys: ["billingPeriodEnd", "billing_period_end"]))
+            ?? date(value(payload, keys: ["billingPeriodEnd", "billing_period_end"]))
             ?? date(value(billingCycle ?? [:], keys: ["billingPeriodEnd", "billing_period_end"]))
-        let limit = cents(root, keys: ["monthlyLimit", "monthly_limit"])
-        let includedUsed = cents(root, keys: ["includedUsed", "included_used"])
-            ?? cents(dictionary(root, keys: ["usage"]) ?? [:], keys: ["totalUsed", "total_used"])
-        let percent = number(root, keys: ["creditUsagePercent", "credit_usage_percent"])
+        let limit = cents(payload, keys: ["monthlyLimit", "monthly_limit"])
+        let includedUsed = cents(payload, keys: ["includedUsed", "included_used"])
+            ?? cents(dictionary(payload, keys: ["usage"]) ?? [:], keys: ["totalUsed", "total_used"])
+        let percent = number(payload, keys: ["creditUsagePercent", "credit_usage_percent"])
             ?? (limit.flatMap { limit in
                 guard limit > 0, let includedUsed else { return nil }
                 return includedUsed / limit * 100.0
@@ -878,13 +882,13 @@ final class UsageStore {
             ))
         }
 
-        if let prepaid = cents(root, keys: ["prepaidBalance", "prepaid_balance"]) {
+        if let prepaid = cents(payload, keys: ["prepaidBalance", "prepaid_balance"]) {
             usage.credits = CreditInfo(
                 balance: prepaid / 100.0,
                 unit: .currency("USD")
             )
-        } else if let cap = cents(root, keys: ["onDemandCap", "on_demand_cap"]), cap > 0 {
-            let used = cents(root, keys: ["onDemandUsed", "on_demand_used"])
+        } else if let cap = cents(payload, keys: ["onDemandCap", "on_demand_cap"]), cap > 0 {
+            let used = cents(payload, keys: ["onDemandUsed", "on_demand_used"])
             usage.credits = CreditInfo(
                 balance: nil,
                 unit: .currency("USD"),

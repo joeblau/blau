@@ -140,6 +140,28 @@ struct UsageReportingTests {
         #expect(usage.credits?.unit == .currency("USD"))
     }
 
+    @Test("Grok unwraps the current billing config response")
+    func grokWrappedBillingConfig() throws {
+        let usage = UsageStore.parseGrokUsage([
+            "config": [
+                "creditUsagePercent": 2.0,
+                "currentPeriod": [
+                    "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                    "start": "2026-07-25T21:30:04.363559+00:00",
+                    "end": "2026-08-01T21:30:04.363559+00:00",
+                ],
+                "prepaidBalance": ["val": 0],
+            ],
+        ], fallbackPlan: "oidc")
+
+        #expect(usage.planLabel == "SuperGrok")
+        let window = try #require(usage.windows.first)
+        #expect(window.name == "Weekly")
+        #expect(abs(window.utilization - 0.02) < 0.000_001)
+        #expect(window.resetsAt == UsageStore.date("2026-08-01T21:30:04.363559+00:00"))
+        #expect(usage.credits?.balance == 0)
+    }
+
     @Test("Grok auth prefers the current OIDC scope")
     func grokAuthScopePreference() throws {
         let data = try #require("""
