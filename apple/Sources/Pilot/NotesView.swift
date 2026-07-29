@@ -1224,45 +1224,16 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
         return true
     }
 
-    private static let anyTaskLine = try! NSRegularExpression(pattern: #"^[ \t]*[-*+][ \t]+\[[ xX]\]"#)
-    private static let doneTaskLine = try! NSRegularExpression(pattern: #"^[ \t]*[-*+][ \t]+\[[xX]\]"#)
-
-    private func isTaskLine(_ line: String) -> Bool {
-        Self.anyTaskLine.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
-    }
-
-    private func isDoneTaskLine(_ line: String) -> Bool {
-        Self.doneTaskLine.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
-    }
-
-    /// Auto-sort every contiguous task group so incomplete tasks stay on top and
-    /// completed ones sink to the bottom. A no-op unless some group is actually
-    /// out of order, so it never disturbs normal typing; the caret follows its
-    /// line to the new position.
+    /// Auto-sort every contiguous task group so incomplete root tasks stay on
+    /// top and completed roots sink to the bottom. Indented subtasks move with
+    /// their root as one block, so checking a child never detaches or reorders
+    /// it. A no-op unless some group is actually out of order; the caret follows
+    /// its line to the new position.
     func reorderCompletedTasks() {
         guard !isReordering, let textStorage else { return }
         let ns = string as NSString
         guard ns.length > 0 else { return }
-        // Runs on every keystroke — skip the full line-split for the common
-        // case of a note with no completed checkbox anywhere.
-        guard string.contains("[x]") || string.contains("[X]") else { return }
-
-        var lines = (ns as String).components(separatedBy: "\n")
-        var changed = false
-        var i = 0
-        while i < lines.count {
-            guard isTaskLine(lines[i]) else { i += 1; continue }
-            var j = i
-            while j < lines.count, isTaskLine(lines[j]) { j += 1 }
-            let group = Array(lines[i..<j])
-            let sorted = group.filter { !isDoneTaskLine($0) } + group.filter { isDoneTaskLine($0) }
-            if sorted != group {
-                lines.replaceSubrange(i..<j, with: sorted)
-                changed = true
-            }
-            i = j
-        }
-        guard changed else { return }
+        guard let newText = MarkdownTaskFormatter.reflow(string) else { return }
 
         // Remember the caret's line + column so it can follow the moved line.
         let sel = selectedRange()
@@ -1270,7 +1241,6 @@ final class MultiCursorTextView: NSTextView, NSViewToolTipOwner {
         let caretLine = ns.substring(with: caretLineRange).trimmingCharacters(in: .newlines)
         let caretColumn = sel.location - caretLineRange.location
 
-        let newText = lines.joined(separator: "\n")
         let full = NSRange(location: 0, length: ns.length)
         isReordering = true
         if shouldChangeText(in: full, replacementString: newText) {

@@ -66,3 +66,49 @@ struct MarkdownTableFormatterTests {
         #expect(MarkdownTableFormatter.reflow(out!) == nil)
     }
 }
+
+@Suite("Markdown task reflow")
+struct MarkdownTaskFormatterTests {
+    @Test("Completing a subtask keeps it attached to its parent")
+    func completedSubtaskStaysInPlace() {
+        let checklist = """
+        - [ ] Is there a token launch checklist
+          - [x] Whitelisting
+        - [ ] Any security intros we need
+        """
+
+        #expect(MarkdownTaskFormatter.reflow(checklist) == nil)
+    }
+
+    @Test("Completed root tasks move with all of their subtasks")
+    func completedRootMovesAsAGroup() {
+        let checklist = """
+        - [x] Launch checklist
+          - [ ] Whitelisting
+          - [x] Security review
+        - [ ] Prepare announcement
+        """
+        let expected = """
+        - [ ] Prepare announcement
+        - [x] Launch checklist
+          - [ ] Whitelisting
+          - [x] Security review
+        """
+
+        #expect(MarkdownTaskFormatter.reflow(checklist) == expected)
+    }
+
+    @Test("Flat completed tasks still sink below incomplete tasks")
+    func flatTasksStillReorder() {
+        let checklist = """
+        - [x] Ship
+        - [ ] Test
+        """
+        let expected = """
+        - [ ] Test
+        - [x] Ship
+        """
+
+        #expect(MarkdownTaskFormatter.reflow(checklist) == expected)
+    }
+}
