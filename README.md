@@ -145,3 +145,7 @@ the project and rejects drift. Use [CLAUDE.md](CLAUDE.md) as portable repository
 guidance for contributors and coding agents. Work is tracked in
 [GitHub Issues](https://github.com/joeblau/blau/issues), not by adding stale
 source line references to [TODOS.md](TODOS.md).
+
+## Optional Chromium browser
+
+Pilot's Chromium-backed browser panel is opt-in; clean Debug and Release builds continue to use WebKit without downloading CEF. Validate the immutable artifact lock with `bash apple/bin/package-chromiumkit.sh manifest`, then follow the [Chromium browser guide](docs/chromium-browser.md) and [ChromiumKit setup](apple/Packages/ChromiumKit/README.md) to install, build, run `apple/bin/test-chromium-runtime.sh`, sign, and validate the Chromium configuration.

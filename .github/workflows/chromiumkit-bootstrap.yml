@@ -1,0 +1,248 @@
+name: ChromiumKit Signed Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  attestations: read
+  contents: write
+
+concurrency:
+  group: chromiumkit-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-validate-release:
+    runs-on: macos-26
+    environment: chromiumkit-release
+    timeout-minutes: 240
+    env:
+      CEF_DOWNLOAD_CACHE: ${{ runner.temp }}/chromiumkit-download-cache
+      BLAU_CHROMIUM_CODESIGN_TIMESTAMP: YES
+      MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Require release credentials
+        env:
+          GITHUB_RELEASE_POLICY_TOKEN: ${{ secrets.GITHUB_RELEASE_POLICY_TOKEN }}
+        run: |
+          for name in \
+            MACOS_CERTIFICATE_P12 \
+            MACOS_CERTIFICATE_PASSWORD \
+            MACOS_SIGNING_IDENTITY \
+            APPLE_TEAM_ID \
+            APPLE_ID \
+            APPLE_APP_PASSWORD \
+            GITHUB_RELEASE_POLICY_TOKEN; do
+            [[ -n "${!name:-}" ]] || {
+              printf 'Missing required release secret: %s\n' "$name" >&2
+              exit 1
+            }
+          done
+      - name: Require immutable release enforcement
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_RELEASE_POLICY_TOKEN }}
+        run: |
+          gh api \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$GITHUB_REPOSITORY/immutable-releases" |
+            jq -e '.enabled == true'
+          gh release verify --help >/dev/null
+          gh release verify-asset --help >/dev/null
+      - name: Verify supported Xcode and lock
+        run: |
+          xcodebuild -version
+          xcodebuild -version | grep -E '^Xcode 26\.'
+          bash apple/bin/package-chromiumkit.sh manifest
+          bash apple/bin/verify-chromiumkit-support.sh
+      - name: Import Developer ID identity
+        env:
+          KEYCHAIN_PASSWORD: ${{ runner.temp }}-${{ github.run_id }}
+        run: |
+          keychain="$RUNNER_TEMP/chromium-signing.keychain-db"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode \
+            > "$RUNNER_TEMP/chromium-signing.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security import "$RUNNER_TEMP/chromium-signing.p12" \
+            -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security find-identity -v -p codesigning "$keychain"
+      - name: Package twice from pinned archives
+        run: |
+          bash apple/bin/package-chromiumkit.sh build "$RUNNER_TEMP/chromium-one"
+          bash apple/bin/package-chromiumkit.sh build "$RUNNER_TEMP/chromium-two"
+      - name: Verify reproducibility and provenance
+        run: |
+          for asset in \
+            ChromiumKitCEF.runtime.zip \
+            ChromiumKitCEF.release.json \
+            ChromiumKitCEF.checksums.txt; do
+            cmp "$RUNNER_TEMP/chromium-one/$asset" \
+              "$RUNNER_TEMP/chromium-two/$asset"
+          done
+          cd "$RUNNER_TEMP/chromium-one"
+          shasum -a 256 -c ChromiumKitCEF.checksums.txt
+          jq -e \
+            '.schemaVersion == 1 and
+             .cef.version == "150.0.14+g7c1aa68+chromium-150.0.7871.129" and
+             .architectures == ["arm64", "x86_64"] and
+             (.installedFiles | length == 6) and
+             (.installedBytes > .artifactBytes)' \
+            ChromiumKitCEF.release.json
+      - name: Install verified runtime and generate project
+        run: |
+          apple/bin/update-chromiumkit-artifact.sh \
+            --release-directory "$RUNNER_TEMP/chromium-one"
+          apple/bin/install-xcodegen.sh generate \
+            --spec apple/project.yml --project apple
+      - name: Run signed real-engine smoke and performance budgets
+        env:
+          BLAU_CHROMIUM_TEST_CODE_SIGN_IDENTITY: ${{ env.MACOS_SIGNING_IDENTITY }}
+          BLAU_CHROMIUM_TEST_DEVELOPMENT_TEAM: ${{ env.APPLE_TEAM_ID }}
+        run: |
+          for architecture in arm64 x86_64; do
+            DEVELOPER_DIR="$(xcode-select -p)" \
+              BLAU_CHROMIUM_TEST_ARCHITECTURE="$architecture" \
+              apple/bin/test-chromium-runtime.sh
+          done
+      - name: Archive signed universal Pilot
+        run: |
+          xcodebuild archive \
+            -project apple/blau.xcodeproj \
+            -scheme Pilot \
+            -configuration Chromium \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$RUNNER_TEMP/Pilot.xcarchive" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="$MACOS_SIGNING_IDENTITY" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+          apple/bin/validate-chromium-archive.sh \
+            "$RUNNER_TEMP/Pilot.xcarchive"
+      - name: Notarize, staple, and validate
+        run: |
+          ditto -c -k --keepParent \
+            "$RUNNER_TEMP/Pilot.xcarchive/Products/Applications/Pilot.app" \
+            "$RUNNER_TEMP/Pilot-notarization.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/Pilot-notarization.zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple \
+            "$RUNNER_TEMP/Pilot.xcarchive/Products/Applications/Pilot.app"
+          apple/bin/validate-chromium-archive.sh \
+            --require-notarization "$RUNNER_TEMP/Pilot.xcarchive"
+      - name: Prepare immutable release assets
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_id="$(jq -r '.releaseID' \
+            apple/Packages/ChromiumKit/cef-artifacts.json)"
+          tag="chromiumkit-$release_id"
+          gh release view "$tag" >/dev/null 2>&1 && {
+            printf 'Immutable release already exists: %s\n' "$tag" >&2
+            exit 1
+          }
+          ditto -c -k --keepParent "$RUNNER_TEMP/Pilot.xcarchive" \
+            "$RUNNER_TEMP/Pilot.xcarchive.zip"
+          cp "$RUNNER_TEMP/chromium-one/"ChromiumKitCEF.* \
+            "$RUNNER_TEMP/"
+          cd "$RUNNER_TEMP"
+          shasum -a 256 \
+            ChromiumKitCEF.runtime.zip \
+            ChromiumKitCEF.release.json \
+            ChromiumKitCEF.checksums.txt \
+            Pilot.xcarchive.zip > chromiumkit-release-assets.sha256
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+      - name: Publish immutable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.release.outputs.tag }}" \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.release.outputs.tag }}" \
+            --notes 'Pinned, reproducible, signed, notarized ChromiumKit release.' \
+            "$RUNNER_TEMP/ChromiumKitCEF.runtime.zip" \
+            "$RUNNER_TEMP/ChromiumKitCEF.release.json" \
+            "$RUNNER_TEMP/ChromiumKitCEF.checksums.txt" \
+            "$RUNNER_TEMP/Pilot.xcarchive.zip" \
+            "$RUNNER_TEMP/chromiumkit-release-assets.sha256"
+      - name: Verify published attestation and asset bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.release.outputs.tag }}"
+          verified=0
+          for attempt in {1..12}; do
+            if gh release verify "$tag"; then
+              verified=1
+              break
+            fi
+            sleep 5
+          done
+          [[ "$verified" == 1 ]] || {
+            printf 'Release attestation did not become available: %s\n' \
+              "$tag" >&2
+            exit 1
+          }
+
+          expected_assets='[
+            "ChromiumKitCEF.checksums.txt",
+            "ChromiumKitCEF.release.json",
+            "ChromiumKitCEF.runtime.zip",
+            "Pilot.xcarchive.zip",
+            "chromiumkit-release-assets.sha256"
+          ]'
+          gh api \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$tag" |
+            jq -e \
+              --arg commit "$GITHUB_SHA" \
+              --argjson expected "$expected_assets" \
+              '.immutable == true and
+               .draft == false and
+               .prerelease == false and
+               .target_commitish == $commit and
+               ([.assets[].name] | sort) == ($expected | sort) and
+               all(.assets[];
+                 .state == "uploaded" and
+                 (.digest | startswith("sha256:"))
+               )'
+
+          for asset in \
+            ChromiumKitCEF.runtime.zip \
+            ChromiumKitCEF.release.json \
+            ChromiumKitCEF.checksums.txt \
+            Pilot.xcarchive.zip \
+            chromiumkit-release-assets.sha256; do
+            gh release verify-asset "$tag" "$RUNNER_TEMP/$asset"
+          done
+
+          downloaded="$RUNNER_TEMP/published-release"
+          mkdir "$downloaded"
+          gh release download "$tag" --dir "$downloaded"
+          (
+            cd "$downloaded"
+            shasum -a 256 -c chromiumkit-release-assets.sha256
+          )
+          for asset in \
+            ChromiumKitCEF.runtime.zip \
+            ChromiumKitCEF.release.json \
+            ChromiumKitCEF.checksums.txt \
+            Pilot.xcarchive.zip \
+            chromiumkit-release-assets.sha256; do
+            cmp "$RUNNER_TEMP/$asset" "$downloaded/$asset"
+          done

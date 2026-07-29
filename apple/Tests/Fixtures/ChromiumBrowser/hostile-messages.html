@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Hostile messages fixture</title>
+  <link rel="stylesheet" href="/assets/fixture.css">
+  <script defer src="/assets/fixture.js"></script>
+</head>
+<body>
+  <main>
+    <h1>Untrusted page messages</h1>
+    <button id="send" type="button">Send hostile payloads</button>
+    <pre id="log">idle</pre>
+  </main>
+  <script>
+    document.querySelector("#send").addEventListener("click", () => {
+      const payloads = [
+        null,
+        "__proto__",
+        { constructor: { prototype: { polluted: true } } },
+        { command: "openDevTools", nonce: -1 },
+        { command: "loadURL", url: "file:///etc/passwd" },
+        "x".repeat(65536)
+      ];
+      for (const payload of payloads) {
+        window.postMessage({ channel: "pilot", payload }, "*");
+        if (typeof window.cefQuery === "function") {
+          try {
+            window.cefQuery({ request: JSON.stringify(payload) });
+          } catch (_) {
+            // A rejected bridge call is an expected policy outcome.
+          }
+        }
+      }
+      document.querySelector("#log").textContent = "payloads-sent";
+    });
+  </script>
+</body>
+</html>

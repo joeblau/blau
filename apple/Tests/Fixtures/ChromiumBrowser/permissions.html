@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Permissions fixture</title>
+  <link rel="stylesheet" href="/assets/fixture.css">
+  <script defer src="/assets/fixture.js"></script>
+</head>
+<body>
+  <main>
+    <h1>Permission requests</h1>
+    <button data-permission="camera" type="button">Camera</button>
+    <button data-permission="microphone" type="button">Microphone</button>
+    <button data-permission="geolocation" type="button">Geolocation</button>
+    <button data-permission="notifications" type="button">Notifications</button>
+    <pre id="log">idle</pre>
+  </main>
+  <script>
+    const log = document.querySelector("#log");
+    const finish = (name, result) => {
+      log.textContent += `\n${name}:${result}`;
+    };
+    document.querySelector('[data-permission="camera"]').onclick = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach((track) => track.stop());
+        finish("camera", "granted");
+      } catch (error) {
+        finish("camera", error.name);
+      }
+    };
+    document.querySelector('[data-permission="microphone"]').onclick = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+        finish("microphone", "granted");
+      } catch (error) {
+        finish("microphone", error.name);
+      }
+    };
+    document.querySelector('[data-permission="geolocation"]').onclick = () => {
+      navigator.geolocation.getCurrentPosition(
+        () => finish("geolocation", "granted"),
+        (error) => finish("geolocation", `error-${error.code}`)
+      );
+    };
+    document.querySelector('[data-permission="notifications"]').onclick =
+      async () => finish("notifications", await Notification.requestPermission());
+  </script>
+</body>
+</html>

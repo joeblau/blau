@@ -2,140 +2,6 @@ import AppKit
 import SwiftData
 import SwiftUI
 
-/// The connected pane launcher shared by Pilot's main and extension windows.
-/// Supplying the owning workspace lets Extension reuse the exact controls while
-/// keeping independent runtime IDs for every terminal, browser, and device.
-struct WorkspacePaneLauncher: View {
-    let workspace: Workspace?
-
-    var body: some View {
-        HStack(spacing: 0) {
-            paneButtons
-        }
-        .buttonStyle(.plain)
-        .menuStyle(.borderlessButton)
-        .padding(.horizontal, 4)
-        .glassEffect(.regular, in: Capsule())
-        .disabled(workspace == nil)
-        .accessibilityIdentifier("workspace.pane-launcher")
-    }
-
-    @ViewBuilder
-    private var paneButtons: some View {
-        Button {
-            workspace?.addPane(kind: .terminal, side: .right)
-        } label: {
-            launcherLabel("New Terminal", systemImage: PaneKind.terminal.systemImageName)
-        }
-        .frame(width: 36, height: 36)
-
-        Button {
-            workspace?.addPane(kind: .browser, side: .right)
-        } label: {
-            launcherLabel("New Browser", systemImage: PaneKind.browser.systemImageName)
-        }
-        .frame(width: 36, height: 36)
-
-        Menu {
-            Button {
-                workspace?.addPane(kind: .simulator, side: .right)
-            } label: {
-                Label("Simulator", systemImage: PaneKind.simulator.systemImageName)
-            }
-            .keyboardShortcut("s", modifiers: [.command, .shift])
-
-            Button {
-                workspace?.addPane(kind: .device, side: .right)
-            } label: {
-                Label("Device Stream", systemImage: PaneKind.device.systemImageName)
-            }
-            .keyboardShortcut("i", modifiers: [.command, .shift])
-        } label: {
-            launcherLabel("Apple", systemImage: "apple.logo")
-        }
-        .menuIndicator(.hidden)
-        .frame(width: 36, height: 36)
-        .help("Open an Apple Simulator or QuickTime device stream")
-        .accessibilityIdentifier("workspace.apple-pane-launcher")
-
-        Menu {
-            Button {
-                addAndroidPane(target: .simulator)
-            } label: {
-                Label("Android Simulator", systemImage: "apps.iphone")
-            }
-
-            Button {
-                addAndroidPane(target: .device)
-            } label: {
-                Label("Android Device", systemImage: "smartphone")
-            }
-        } label: {
-            launcherLabel("Android") {
-                Image("AndroidRobot")
-            }
-        }
-        .menuIndicator(.hidden)
-        .frame(width: 36, height: 36)
-        .help("Open an Android Simulator or device stream")
-        .accessibilityIdentifier("workspace.android-pane-launcher")
-
-        Button {
-            workspace?.addPane(kind: .editor, side: .right)
-        } label: {
-            launcherLabel("Open Editor", systemImage: PaneKind.editor.systemImageName)
-        }
-        .frame(width: 36, height: 36)
-        .keyboardShortcut("e", modifiers: .command)
-        .disabled(workspace?.effectiveRootPath == nil)
-        .help(
-            workspace?.effectiveRootPath == nil
-                ? "Set a workspace root path to open the editor"
-                : "Open a file editor with fuzzy file search"
-        )
-
-        Button {
-            if let rootPath = workspace?.effectiveRootPath {
-                NSWorkspace.shared.open(URL(fileURLWithPath: rootPath))
-            }
-        } label: {
-            launcherLabel("Open in Finder", systemImage: "folder")
-        }
-        .frame(width: 36, height: 36)
-        .disabled(workspace?.effectiveRootPath == nil)
-        .help(
-            workspace?.effectiveRootPath == nil
-                ? "Set a workspace root path to open it in Finder"
-                : "Open the workspace folder in Finder"
-        )
-    }
-
-    private func addAndroidPane(target: AndroidPaneTarget) {
-        guard let pane = workspace?.addPane(kind: .android, side: .right) else { return }
-        AndroidDeviceRegistry.shared.configure(target: target, for: pane.id)
-    }
-
-    private func launcherLabel(_ title: String, systemImage: String) -> some View {
-        launcherLabel(title) {
-            Image(systemName: systemImage)
-        }
-    }
-
-    private func launcherLabel<Icon: View>(
-        _ title: String,
-        @ViewBuilder icon: () -> Icon
-    ) -> some View {
-        Label {
-            Text(title)
-        } icon: {
-            icon()
-        }
-        .labelStyle(.iconOnly)
-        .frame(width: 36, height: 36)
-        .contentShape(Rectangle())
-    }
-}
-
 /// Shared ⌘1…⌘9 workspace-number mapping plus Main-window key
 /// equivalents. Extension uses the same visible ordering from a scene menu so
 /// focused AppKit panes cannot swallow its shortcuts.
@@ -188,16 +54,16 @@ struct BrowserBackForwardToolbarControls: View {
 
     var body: some View {
         ControlGroup {
-            Button { state.requestNavigationCommand("blau://back") } label: {
+            Button { state.perform(.back) } label: {
                 Label("Back", systemImage: "chevron.left")
             }
-            .disabled(!state.canGoBack)
+            .disabled(!state.supports(.navigation) || !state.canGoBack)
             .accessibilityIdentifier("browser.back")
 
-            Button { state.requestNavigationCommand("blau://forward") } label: {
+            Button { state.perform(.forward) } label: {
                 Label("Forward", systemImage: "chevron.right")
             }
-            .disabled(!state.canGoForward)
+            .disabled(!state.supports(.navigation) || !state.canGoForward)
             .accessibilityIdentifier("browser.forward")
         }
         .controlGroupStyle(.navigation)
@@ -234,6 +100,9 @@ struct BrowserAddressToolbarControl: View {
             .scaledFont(size: 13, weight: .medium)
             .focused($isAddressFocused)
             .onSubmit { state.navigate() }
+            .onChange(of: isAddressFocused) { _, isFocused in
+                state.isAddressEditing = isFocused
+            }
             .padding(.leading, 12)
             .padding(.trailing, 32)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -264,9 +133,9 @@ struct BrowserAddressToolbarControl: View {
     private var browserReloadButton: some View {
         Button {
             if state.isLoading {
-                state.requestNavigationCommand("blau://stop")
+                state.perform(.stop)
             } else {
-                state.requestNavigationCommand("blau://reload")
+                state.perform(.reload)
             }
         } label: {
             ZStack {
@@ -275,13 +144,20 @@ struct BrowserAddressToolbarControl: View {
                     .opacity(state.isLoading ? 0 : 1)
 
                 if state.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
+                    if state.engine == .chromium,
+                       state.estimatedProgress > 0 {
+                        ProgressView(value: state.estimatedProgress)
+                            .controlSize(.small)
+                    } else {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
                 }
             }
             .frame(width: 14, height: 14)
         }
         .buttonStyle(.plain)
+        .disabled(!state.supports(.navigation))
         .help(state.isLoading ? "Stop" : "Reload")
         .accessibilityIdentifier("browser.reload")
     }
@@ -305,6 +181,8 @@ struct BrowserToolsToolbarControls: View {
 
     @State private var isConfirmingWebsiteDataReset = false
     @State private var isClearingWebsiteData = false
+    @State private var isShowingFind = false
+    @State private var findText = ""
 
     var body: some View {
 
@@ -321,6 +199,7 @@ struct BrowserToolsToolbarControls: View {
         } label: {
             Label("Profile", systemImage: "person.circle")
         }
+        .disabled(!state.supports(.websiteDataReset))
         .accessibilityIdentifier("browser.profile")
         .alert("Clear All Browser Data?", isPresented: $isConfirmingWebsiteDataReset) {
             Button("Cancel", role: .cancel) {}
@@ -333,6 +212,49 @@ struct BrowserToolsToolbarControls: View {
                     + "service workers, and other website data for every browser pane. "
                     + "The current page will reload in a clean browser."
             )
+        }
+
+        if state.engine == .chromium {
+            ControlGroup {
+                Button {
+                    findText = state.findQuery
+                    isShowingFind = true
+                } label: {
+                    Label("Find in Page", systemImage: "magnifyingglass")
+                }
+                .disabled(!hasLoadedPage)
+                .help("Find in Page")
+                .accessibilityIdentifier("browser.find")
+                .popover(isPresented: $isShowingFind, arrowEdge: .bottom) {
+                    chromiumFindPopover
+                }
+
+                Button {
+                    state.requestPrint()
+                } label: {
+                    Label("Print", systemImage: "printer")
+                }
+                .disabled(!hasLoadedPage)
+                .help("Print Page")
+                .accessibilityIdentifier("browser.print")
+
+                Button {
+                    state.requestSavePage()
+                } label: {
+                    Label("Save Page", systemImage: "square.and.arrow.down")
+                }
+                .disabled(!hasLoadedPage)
+                .help("Save Page")
+                .accessibilityIdentifier("browser.save-page")
+            }
+            .controlGroupStyle(.navigation)
+
+            if let progress = state.downloadProgress {
+                ProgressView(value: progress)
+                    .frame(width: 44)
+                    .help(state.downloadStatusText)
+                    .accessibilityIdentifier("browser.download-progress")
+            }
         }
 
         ControlGroup {
@@ -352,16 +274,18 @@ struct BrowserToolsToolbarControls: View {
             } label: {
                 Label("Appearance", systemImage: appearanceIcon)
             }
+            .disabled(!state.supports(.appearanceOverride))
             .help("Browser appearance: System, Light, or Dark")
             .accessibilityIdentifier("browser.appearance")
 
             // A plain Button, not a Toggle: toggles inside a `.navigation`
             // ControlGroup vanish from the toolbar while in the on state.
             Button {
-                state.toggleAnnotateMode()
+                state.perform(.toggleAnnotation)
             } label: {
                 Label("Lasso", systemImage: "lasso")
             }
+            .disabled(!state.supports(.annotation))
             .foregroundStyle(state.annotateMode ? Color.accentColor : Color.primary)
             .help(state.annotateMode
                   ? "Turn off Lasso (⇧⌘A)"
@@ -369,15 +293,69 @@ struct BrowserToolsToolbarControls: View {
             .accessibilityIdentifier("browser.lasso")
 
             Button {
-                state.toggleDeveloperTools()
+                state.perform(.toggleDeveloperTools)
             } label: {
                 Label("Developer Tools", systemImage: "hammer")
             }
+            .disabled(!state.supports(.developerTools))
             .help(state.showDevTools ? "Close Developer Tools" : "Open Developer Tools")
             .accessibilityIdentifier("browser.developer-tools")
         }
         .controlGroupStyle(.navigation)
         .accessibilityIdentifier("browser.tools")
+    }
+
+    private var chromiumFindPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("Find", text: $findText)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit {
+                    state.requestFind(findText)
+                }
+                .accessibilityIdentifier("browser.find-field")
+
+            HStack {
+                Text(findResultSummary)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    state.requestFind(findText, forward: false, findNext: true)
+                } label: {
+                    Label("Previous Match", systemImage: "chevron.up")
+                }
+                .labelStyle(.iconOnly)
+                .disabled(findText.isEmpty)
+                .accessibilityIdentifier("browser.find-previous")
+
+                Button {
+                    state.requestFind(findText, forward: true, findNext: true)
+                } label: {
+                    Label("Next Match", systemImage: "chevron.down")
+                }
+                .labelStyle(.iconOnly)
+                .disabled(findText.isEmpty)
+                .accessibilityIdentifier("browser.find-next")
+
+                Button("Done") {
+                    isShowingFind = false
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 320)
+        .onDisappear {
+            state.stopFinding()
+        }
+    }
+
+    private var findResultSummary: String {
+        guard state.findMatchCount > 0 else { return "No matches" }
+        return "\(state.activeFindMatchOrdinal) of \(state.findMatchCount)"
+    }
+
+    private var hasLoadedPage: Bool {
+        !state.urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var appearanceIcon: String {
@@ -389,6 +367,7 @@ struct BrowserToolsToolbarControls: View {
     }
 
     private func clearWebsiteData() {
+        guard state.supports(.websiteDataReset) else { return }
         isClearingWebsiteData = true
         Task { @MainActor in
             await BrowserWebsiteData.clearAll()

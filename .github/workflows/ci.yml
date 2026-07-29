@@ -28,6 +28,8 @@ jobs:
               - 'apple/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/ghosttykit-bootstrap.yml'
+              - '.github/workflows/chromiumkit-bootstrap.yml'
+              - '.github/workflows/chromiumkit-monitor.yml'
             docs:
               - '**/*.md'
               - 'bin/check-docs.sh'
@@ -96,7 +98,11 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: apple/.ci-source-packages
-          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode26-${{ hashFiles('apple/blau.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'apple/Packages/GhosttyKit/Package.swift') }}
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode26-${{ hashFiles('apple/blau.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'apple/Packages/GhosttyKit/Package.swift', 'apple/Packages/ChromiumKit/Package.swift', 'apple/Packages/ChromiumKit/cef-artifacts.json') }}
+      - name: Validate Chromium artifact lock
+        run: |
+          bash apple/bin/package-chromiumkit.sh manifest
+          bash apple/bin/test-chromiumkit-update-rollback.sh
       - name: Validate application icons
         run: apple/bin/app-icon-tool.swift validate
       - name: Verify generated Xcode project

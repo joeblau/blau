@@ -19,6 +19,24 @@ struct PaneInitRegressionTests {
         let pane = Pane(kind: .browser)
         #expect(pane.kind == .browser)
         #expect(pane.browserState != nil)
+        #expect(pane.browserState?.engine == .webKit)
+    }
+
+    @Test
+    func browserKindCanSelectChromiumExplicitly() {
+        let pane = Pane(kind: .browser, browserEngine: .chromium)
+        #expect(pane.kind == .browser)
+        #expect(pane.browserState?.engine == .chromium)
+    }
+
+    @Test
+    func workspaceBrowserCreationCarriesTheSelectedEngine() {
+        let workspace = Workspace(name: "Browser engines")
+        let pane = workspace.addBrowserPane(engine: .chromium, side: .right)
+
+        #expect(workspace.selectedPaneID == pane.id)
+        #expect(pane.kind == .browser)
+        #expect(pane.browserState?.engine == .chromium)
     }
 
     // R3: Existing — .terminal init still has no per-kind state
@@ -62,6 +80,12 @@ struct PaneInitRegressionTests {
         #expect(PaneKind.simulator.rawValue == "simulator")
         #expect(PaneKind.android.rawValue == "android")
         #expect(PaneKind.editor.rawValue == "editor")
+    }
+
+    @Test
+    func browserEngineRawValuesAreStable() {
+        #expect(BrowserEngine.webKit.rawValue == "webkit")
+        #expect(BrowserEngine.chromium.rawValue == "chromium")
     }
 
     @Test("Wrapped editors remove horizontal displacement and preserve vertical scroll")

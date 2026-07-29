@@ -1,0 +1,36 @@
+:root {
+  color-scheme: light;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  background: #f3efe4;
+  color: #18231d;
+}
+
+body {
+  margin: 0 auto;
+  max-width: 54rem;
+  padding: 2rem;
+}
+
+main {
+  background: #fffdf7;
+  border: 2px solid #18231d;
+  box-shadow: 8px 8px 0 #d7a928;
+  padding: 1.5rem;
+}
+
+a,
+button,
+input {
+  font: inherit;
+}
+
+nav {
+  display: grid;
+  gap: 0.5rem;
+}
+
+#log {
+  min-height: 4rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
