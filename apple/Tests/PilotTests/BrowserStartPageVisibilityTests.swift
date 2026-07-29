@@ -3,6 +3,113 @@ import Testing
 import WebKit
 @testable import Pilot
 
+@Suite("Browser engine persistence and commands")
+struct BrowserEngineTests {
+
+    @Test
+    func webKitIsTheBackwardCompatibleDefault() {
+        let state = BrowserState()
+        #expect(state.engine == .webKit)
+
+        state.engineRaw = "unknown-future-engine"
+        #expect(state.engine == .webKit)
+    }
+
+    @Test
+    func chromiumSelectionRoundTripsThroughThePersistedRawValue() {
+        let state = BrowserState(engine: .chromium)
+        #expect(state.engineRaw == BrowserEngine.chromium.rawValue)
+        #expect(state.engine == .chromium)
+
+        state.engine = .webKit
+        #expect(state.engineRaw == BrowserEngine.webKit.rawValue)
+    }
+
+    @Test
+    func chromiumStartsWithOnlyEngineNeutralCapabilities() {
+        #expect(BrowserEngine.chromium.supports(.navigation))
+        #expect(BrowserEngine.chromium.supports(.addressFocus))
+        #expect(!BrowserEngine.chromium.supports(.appearanceOverride))
+        #expect(BrowserEngine.chromium.supports(.developerTools))
+        #expect(!BrowserEngine.chromium.supports(.annotation))
+        #expect(!BrowserEngine.chromium.supports(.websiteDataReset))
+    }
+
+    @Test
+    func chromiumNavigationUsesTheSharedPendingRequestContract() {
+        let state = BrowserState(engine: .chromium)
+        let initialRequestID = state.navigationRequestID
+
+        #expect(state.perform(.reload))
+        #expect(state.pendingURL?.absoluteString == "blau://reload")
+        #expect(state.navigationRequestID == initialRequestID + 1)
+
+        #expect(state.perform(.focusAddress))
+        #expect(state.needsAddressFocus)
+
+        #expect(!state.perform(.toggleAnnotation))
+        #expect(!state.annotateMode)
+    }
+
+    @Test
+    func committedNavigationDoesNotOverwriteANewerAddressDraft() throws {
+        let state = BrowserState(engine: .chromium)
+        state.urlText = "https://submitted.example"
+        state.isAddressEditing = true
+        state.navigate()
+        state.urlText = "https://new-draft.example"
+
+        state.acceptCommittedURL(
+            try #require(URL(string: "https://submitted.example/redirect"))
+        )
+        #expect(state.urlText == "https://new-draft.example")
+
+        state.isAddressEditing = false
+        state.acceptCommittedURL(
+            try #require(URL(string: "https://committed.example"))
+        )
+        #expect(state.urlText == "https://committed.example")
+    }
+
+    @Test
+    func chromiumPaneCommandsAndRetryRemainPaneLocal() {
+        let first = BrowserState(engine: .chromium)
+        let second = BrowserState(engine: .chromium)
+
+        #expect(first.perform(.back))
+        #expect(first.pendingURL?.absoluteString == "blau://back")
+        #expect(second.pendingURL == nil)
+
+        let retryID = first.runtimeRetryRequestID
+        first.requestRuntimeRetry()
+        #expect(first.runtimeRetryRequestID == retryID + 1)
+        #expect(first.engine == .chromium)
+        #expect(second.runtimeRetryRequestID == 0)
+    }
+
+    @Test("Screenshot demo state includes Chromium without a network URL")
+    @MainActor
+    func demoStateKeepsChromiumOfflineAndDeterministic() throws {
+        let workspaces = WorkspaceStore.makeDemoWorkspaces()
+
+        #expect(workspaces.map(\.name) == ["blau", "web", "infra"])
+        #expect(workspaces.map(\.workspaceSortOrder) == [0, 1, 2])
+        #expect(workspaces.map(\.isPinned) == [true, false, false])
+
+        let web = try #require(
+            workspaces.first(where: { $0.name == "web" })
+        )
+        let chromiumStates = web.panes.compactMap(\.browserState).filter {
+            $0.engine == .chromium
+        }
+        #expect(chromiumStates.count == 1)
+        let chromium = try #require(chromiumStates.first)
+        #expect(chromium.urlText.isEmpty)
+        #expect(chromium.pendingURL == nil)
+        #expect(!chromium.isLoading)
+    }
+}
+
 @Suite("Browser start page visibility")
 struct BrowserStartPageVisibilityTests {
 
@@ -183,6 +290,31 @@ struct BrowserLassoTests {
         #expect(BrowserWebShortcutPolicy.keepsNativeEditingShortcut(
             characters: "z",
             hasShift: true
+        ))
+    }
+
+    @Test
+    func reloadShortcutTargetsOnlyTheSelectedBrowser() {
+        #expect(BrowserWebShortcutPolicy.handlesReload(
+            isPaneSelected: true,
+            hasCommand: true,
+            hasControl: false,
+            hasOption: false,
+            characters: "r"
+        ))
+        #expect(!BrowserWebShortcutPolicy.handlesReload(
+            isPaneSelected: false,
+            hasCommand: true,
+            hasControl: false,
+            hasOption: false,
+            characters: "r"
+        ))
+        #expect(!BrowserWebShortcutPolicy.handlesReload(
+            isPaneSelected: true,
+            hasCommand: true,
+            hasControl: true,
+            hasOption: false,
+            characters: "r"
         ))
     }
 

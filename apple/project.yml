@@ -8,6 +8,11 @@ options:
   xcodeVersion: "26.0"
   generateEmptyDirectories: true
 
+configs:
+  Debug: debug
+  Release: release
+  Chromium: release
+
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -81,6 +86,44 @@ schemes:
           parallelizable: false
 
 targets:
+  # Build ChromiumKit as a configuration-scoped Xcode target. SwiftPM package
+  # manifest environment is cached by Xcode, so using it to select the CEF
+  # implementation can leak a prior Chromium resolution into Debug/Release.
+  ChromiumKit:
+    type: framework.static
+    platform: macOS
+    sources:
+      - path: Packages/ChromiumKit/Sources/ChromiumKit/ChromiumKit.mm
+      - path: Packages/ChromiumKit/Sources/ChromiumKit/include/ChromiumKit/ChromiumKit.h
+        buildPhase: headers
+        headerVisibility: public
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.blau.chromiumkit
+        PRODUCT_NAME: ChromiumKit
+        CLANG_CXX_LANGUAGE_STANDARD: "c++20"
+        CLANG_ENABLE_MODULES: true
+        DEFINES_MODULE: true
+        GENERATE_INFOPLIST_FILE: true
+        SKIP_INSTALL: true
+      configs:
+        Chromium:
+          ENABLE_USER_SCRIPT_SANDBOXING: false
+          GCC_PREPROCESSOR_DEFINITIONS:
+            - "$(inherited)"
+            - "BLAU_CHROMIUM_CEF_ENABLED=1"
+          HEADER_SEARCH_PATHS:
+            - "$(inherited)"
+            - "$(PROJECT_DIR)/Packages/ChromiumKit/Artifacts/CEF"
+    preBuildScripts:
+      - name: Verify Installed ChromiumKit Runtime
+        basedOnDependencyAnalysis: false
+        script: |
+          if [[ "$CONFIGURATION" != "Chromium" ]]; then
+            exit 0
+          fi
+          "$SRCROOT/bin/verify-installed-chromiumkit.sh"
+
   Pilot:
     type: application
     platform: macOS
@@ -93,18 +136,24 @@ targets:
           - "TranscriptionService.swift"
     dependencies:
       - package: GhosttyKit
+      - target: ChromiumKit
+        embed: false
+      - target: PilotChromiumHelperTemplate
+        embed: false
       - package: CodeEditSourceEditor
         product: CodeEditSourceEditor
       - package: CodeEditLanguages
         product: CodeEditLanguages
       - package: RoyalVNCKit
         product: RoyalVNCKit
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.pilot
         PRODUCT_NAME: Pilot
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: 1
+        CLANG_CXX_LANGUAGE_STANDARD: "c++20"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Sources/Pilot/Pilot.entitlements
         GENERATE_INFOPLIST_FILE: false
@@ -120,6 +169,75 @@ targets:
         Debug:
           CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "Apple Development"
+        Chromium:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: false
+          ENABLE_HARDENED_RUNTIME: true
+          ARCHS: "arm64 x86_64"
+          ONLY_ACTIVE_ARCH: false
+          ENABLE_USER_SCRIPT_SANDBOXING: false
+          BLAU_CHROMIUM_CODESIGN_TIMESTAMP: YES
+          GCC_PREPROCESSOR_DEFINITIONS:
+            - "$(inherited)"
+            - "BLAU_CHROMIUM_CEF_ENABLED=1"
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS:
+            - "$(inherited)"
+            - BLAU_CHROMIUM_CEF_ENABLED
+          HEADER_SEARCH_PATHS:
+            - "$(inherited)"
+            - "$(PROJECT_DIR)/Packages/ChromiumKit/Artifacts/CEF"
+          LIBRARY_SEARCH_PATHS:
+            - "$(inherited)"
+            - "$(PROJECT_DIR)/Packages/ChromiumKit/Artifacts/CEF/lib"
+          OTHER_LDFLAGS:
+            - "$(inherited)"
+            - "-lcef_dll_wrapper"
+    postBuildScripts:
+      - name: Assemble Chromium Runtime
+        basedOnDependencyAnalysis: false
+        script: |
+          if [[ "$CONFIGURATION" != "Chromium" ]]; then
+            exit 0
+          fi
+          "$SRCROOT/bin/assemble-chromium-runtime.sh" \
+            "$TARGET_BUILD_DIR/$WRAPPER_NAME" \
+            "$BUILT_PRODUCTS_DIR/PilotChromiumHelperTemplate.app" \
+            "$EXPANDED_CODE_SIGN_IDENTITY"
+
+  PilotChromiumHelperTemplate:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/PilotChromiumHelper
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.blau.pilot.helper-template
+        PRODUCT_NAME: PilotChromiumHelperTemplate
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: 1
+        CLANG_CXX_LANGUAGE_STANDARD: "c++20"
+        GENERATE_INFOPLIST_FILE: false
+        INFOPLIST_FILE: Sources/PilotChromiumHelper/Info.plist
+        SKIP_INSTALL: true
+        CODE_SIGN_INJECT_BASE_ENTITLEMENTS: false
+      configs:
+        Chromium:
+          CODE_SIGN_STYLE: Automatic
+          ENABLE_HARDENED_RUNTIME: true
+          ARCHS: "arm64 x86_64"
+          ONLY_ACTIVE_ARCH: false
+          GCC_PREPROCESSOR_DEFINITIONS:
+            - "$(inherited)"
+            - "BLAU_CHROMIUM_CEF_ENABLED=1"
+          HEADER_SEARCH_PATHS:
+            - "$(inherited)"
+            - "$(PROJECT_DIR)/Packages/ChromiumKit/Artifacts/CEF"
+          LIBRARY_SEARCH_PATHS:
+            - "$(inherited)"
+            - "$(PROJECT_DIR)/Packages/ChromiumKit/Artifacts/CEF/lib"
+          OTHER_LDFLAGS:
+            - "$(inherited)"
+            - "-lcef_dll_wrapper"
 
   Copilot:
     type: application
@@ -228,14 +346,26 @@ targets:
     platform: macOS
     sources:
       - Tests/PilotTests
+      - path: Tests/Fixtures/ChromiumBrowser
+        type: folder
+        buildPhase: resources
+      - path: Packages/ChromiumKit/performance-budgets.json
+        buildPhase: resources
     dependencies:
       - target: Pilot
+      - target: ChromiumKit
+        embed: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.pilot.tests
         GENERATE_INFOPLIST_FILE: true
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Pilot.app/Contents/MacOS/Pilot"
         BUNDLE_LOADER: "$(TEST_HOST)"
+      configs:
+        Chromium:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS:
+            - "$(inherited)"
+            - BLAU_CHROMIUM_REAL_ENGINE_TESTS
 
   CopilotUITests:
     type: bundle.ui-testing

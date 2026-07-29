@@ -13,6 +13,11 @@ struct PilotSchemaMigrationTests {
         static var stages: [MigrationStage] { [] }
     }
 
+    private enum V2OnlyPlan: SchemaMigrationPlan {
+        static var schemas: [any VersionedSchema.Type] { [PilotSchemaV2.self] }
+        static var stages: [MigrationStage] { [] }
+    }
+
     @Test("Notes written at V1 stay readable through the live class after migration")
     func v1NotesRemainReadableAfterMigration() throws {
         let directory = FileManager.default.temporaryDirectory
@@ -39,7 +44,7 @@ struct PilotSchemaMigrationTests {
         // The exact read path of the launch crash this guards: fetch through
         // the LIVE Note class (its frozen V1 twin also exists in the binary)
         // and pull `body` through the SwiftData getter.
-        let container = try makeV2Container(at: storeURL)
+        let container = try makeCurrentContainer(at: storeURL)
         let context = container.mainContext
         let notes = try context.fetch(FetchDescriptor<Note>())
         #expect(notes.count == 1)
@@ -48,8 +53,78 @@ struct PilotSchemaMigrationTests {
         #expect(notes.first?.displayTitle == "Keeps this note")
     }
 
-    @Test("V1 canonical workspace state survives V2 migration and accepts extension links")
-    func v1StoreMigratesToV2WithoutLosingWorkspaceState() throws {
+    @Test("V2 browsers default to WebKit in V3 and Chromium survives reopen")
+    func v2BrowserEngineMigratesAndChromiumRoundTrips() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "pilot-browser-engine-migration-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("Pilot.store")
+
+        let browserPaneID = try autoreleasepool {
+            let schema = Schema(versionedSchema: PilotSchemaV2.self)
+            let container = try ModelContainer(
+                for: schema,
+                migrationPlan: V2OnlyPlan.self,
+                configurations: ModelConfiguration(schema: schema, url: storeURL)
+            )
+            let workspace = PilotSchemaV2.Workspace()
+            workspace.name = "V2 Browser Workspace"
+            let browser = PilotSchemaV2.Pane()
+            browser.kindRaw = PaneKind.browser.rawValue
+            browser.workspace = workspace
+            let browserState = PilotSchemaV2.BrowserState()
+            browserState.urlText = "https://example.com/restored"
+            browser.browserState = browserState
+            workspace.panes = [browser]
+            workspace.selectedPaneID = browser.id
+            container.mainContext.insert(workspace)
+            try container.mainContext.save()
+            return browser.id
+        }
+
+        try autoreleasepool {
+            let schema = Schema(versionedSchema: PilotSchemaV3.self)
+            let container = try ModelContainer(
+                for: schema,
+                migrationPlan: PilotMigrationPlan.self,
+                configurations: ModelConfiguration(schema: schema, url: storeURL)
+            )
+            let panes = try container.mainContext.fetch(FetchDescriptor<Pane>())
+            let browser = try #require(panes.first { $0.id == browserPaneID })
+            let state = try #require(browser.browserState)
+            #expect(state.engine == .webKit)
+            #expect(state.urlText == "https://example.com/restored")
+
+            state.engine = .chromium
+            try container.mainContext.save()
+        }
+
+        try autoreleasepool {
+            let schema = Schema(versionedSchema: PilotSchemaV3.self)
+            let container = try ModelContainer(
+                for: schema,
+                migrationPlan: PilotMigrationPlan.self,
+                configurations: ModelConfiguration(schema: schema, url: storeURL)
+            )
+            let panes = try container.mainContext.fetch(FetchDescriptor<Pane>())
+            let browser = try #require(panes.first { $0.id == browserPaneID })
+            #expect(browser.browserState?.engine == .chromium)
+            #expect(
+                browser.browserState?.urlText
+                    == "https://example.com/restored"
+            )
+        }
+    }
+
+    @Test("V1 canonical workspace state survives migration and accepts extension links")
+    func v1StoreMigratesWithoutLosingWorkspaceState() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("pilot-schema-migration-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -57,8 +132,11 @@ struct PilotSchemaMigrationTests {
 
         let storeURL = directory.appendingPathComponent("Pilot.store")
         let fixture = try writeV1Fixture(to: storeURL)
-        let extensionWorkspaceID = try migrateToV2AndInsertLink(at: storeURL, fixture: fixture)
-        try verifyInsertedLinkAfterReopeningV2(
+        let extensionWorkspaceID = try migrateToCurrentSchemaAndInsertLink(
+            at: storeURL,
+            fixture: fixture
+        )
+        try verifyInsertedLinkAfterReopeningCurrentSchema(
             at: storeURL,
             fixture: fixture,
             extensionWorkspaceID: extensionWorkspaceID
@@ -133,12 +211,12 @@ struct PilotSchemaMigrationTests {
         }
     }
 
-    private func migrateToV2AndInsertLink(
+    private func migrateToCurrentSchemaAndInsertLink(
         at storeURL: URL,
         fixture: FixtureIDs
     ) throws -> UUID {
         try autoreleasepool {
-            let container = try makeV2Container(at: storeURL)
+            let container = try makeCurrentContainer(at: storeURL)
             let context = container.mainContext
             let canonical = try canonicalWorkspace(in: context, id: fixture.workspaceID)
 
@@ -165,13 +243,13 @@ struct PilotSchemaMigrationTests {
         }
     }
 
-    private func verifyInsertedLinkAfterReopeningV2(
+    private func verifyInsertedLinkAfterReopeningCurrentSchema(
         at storeURL: URL,
         fixture: FixtureIDs,
         extensionWorkspaceID: UUID
     ) throws {
         try autoreleasepool {
-            let container = try makeV2Container(at: storeURL)
+            let container = try makeCurrentContainer(at: storeURL)
             let context = container.mainContext
 
             let canonical = try canonicalWorkspace(in: context, id: fixture.workspaceID)
@@ -186,8 +264,8 @@ struct PilotSchemaMigrationTests {
         }
     }
 
-    private func makeV2Container(at storeURL: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: PilotSchemaV2.self)
+    private func makeCurrentContainer(at storeURL: URL) throws -> ModelContainer {
+        let schema = Schema(versionedSchema: PilotSchemaV3.self)
         let configuration = ModelConfiguration(schema: schema, url: storeURL)
         return try ModelContainer(
             for: schema,

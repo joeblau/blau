@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "releaseID": "150.0.14-g7c1aa68-chromium-150.0.7871.129-blau.1",
+  "cef": {
+    "version": "150.0.14+g7c1aa68+chromium-150.0.7871.129",
+    "commit": "7c1aa68455db1f1fad159c2b83070ad318212b3d",
+    "chromiumCommit": "e69b30bba288603e514cffb4c79c359cac68e923",
+    "sandboxCompatibilityCommit": "6c5b35ad81055c14",
+    "requiredXcodeMajorVersion": 26
+  },
+  "sourceArchives": [
+    {
+      "architecture": "arm64",
+      "distributionDirectory": "cef_binary_150.0.14+g7c1aa68+chromium-150.0.7871.129_macosarm64_minimal",
+      "url": "https://cef-builds.spotifycdn.com/cef_binary_150.0.14%2Bg7c1aa68%2Bchromium-150.0.7871.129_macosarm64_minimal.tar.bz2",
+      "bytes": 124572272,
+      "sha1": "47baa745213c938861861f0f3f65c6dd03e7254e",
+      "sha256": "293048b4f49e0853f2e13394ef3d57d55da7733340e51407e38d826b8ab5a200"
+    },
+    {
+      "architecture": "x86_64",
+      "distributionDirectory": "cef_binary_150.0.14+g7c1aa68+chromium-150.0.7871.129_macosx64_minimal",
+      "url": "https://cef-builds.spotifycdn.com/cef_binary_150.0.14%2Bg7c1aa68%2Bchromium-150.0.7871.129_macosx64_minimal.tar.bz2",
+      "bytes": 130699221,
+      "sha1": "c0591785a04404e2301cb1e216b6508231445dde",
+      "sha256": "a5c202571d18ee0ab2f65771c3b00baad5e954e5cf9c69bd9ad42bdb9016ec80"
+    }
+  ],
+  "inputLayout": {
+    "framework": "Release/Chromium Embedded Framework.framework",
+    "headers": "include",
+    "wrapperSources": "libcef_dll",
+    "license": "LICENSE.txt",
+    "credits": "CREDITS.html"
+  },
+  "buildToolchain": {
+    "xcodeVersionPrefix": "26.",
+    "cmakeGenerator": "Xcode",
+    "cmakeConfiguration": "Release",
+    "macOSDeploymentTarget": "15.0",
+    "normalizedTimestamp": "200001010000"
+  },
+  "artifactLayout": {
+    "root": "Artifacts/CEF",
+    "framework": "Artifacts/CEF/Chromium Embedded Framework.framework",
+    "headers": "Artifacts/CEF/include",
+    "wrapperLibrary": "Artifacts/CEF/lib/libcef_dll_wrapper.a",
+    "license": "Artifacts/CEF/LICENSE.txt",
+    "credits": "Artifacts/CEF/CREDITS.html",
+    "receipt": "Artifacts/CEF/ChromiumKitCEF.release.json",
+    "frameworkExecutable": "Chromium Embedded Framework",
+    "architectures": [
+      "arm64",
+      "x86_64"
+    ],
+    "versionDirectory": "Versions/A",
+    "relativeSymlinks": {
+      "Chromium Embedded Framework": "Versions/A/Chromium Embedded Framework",
+      "Libraries": "Versions/A/Libraries",
+      "Resources": "Versions/A/Resources",
+      "Versions/Current": "A"
+    }
+  },
+  "helperLayout": {
+    "destination": "Contents/Frameworks",
+    "bundleIdentifierBase": "app.blau.pilot.helper",
+    "lsUIElement": true,
+    "helpers": [
+      {
+        "role": "base",
+        "bundleName": "Pilot Helper.app",
+        "executableName": "Pilot Helper",
+        "bundleIdentifierSuffix": "",
+        "entitlements": null
+      },
+      {
+        "role": "alerts",
+        "bundleName": "Pilot Helper (Alerts).app",
+        "executableName": "Pilot Helper (Alerts)",
+        "bundleIdentifierSuffix": ".alerts",
+        "entitlements": null
+      },
+      {
+        "role": "gpu",
+        "bundleName": "Pilot Helper (GPU).app",
+        "executableName": "Pilot Helper (GPU)",
+        "bundleIdentifierSuffix": ".gpu",
+        "entitlements": "Sources/PilotChromiumHelper/GPU.entitlements"
+      },
+      {
+        "role": "plugin",
+        "bundleName": "Pilot Helper (Plugin).app",
+        "executableName": "Pilot Helper (Plugin)",
+        "bundleIdentifierSuffix": ".plugin",
+        "entitlements": null
+      },
+      {
+        "role": "renderer",
+        "bundleName": "Pilot Helper (Renderer).app",
+        "executableName": "Pilot Helper (Renderer)",
+        "bundleIdentifierSuffix": ".renderer",
+        "entitlements": "Sources/PilotChromiumHelper/Renderer.entitlements"
+      }
+    ]
+  },
+  "security": {
+    "chromiumSandboxRequired": true,
+    "rejectedArguments": [
+      "--no-sandbox"
+    ],
+    "jitEntitledRoles": [
+      "gpu",
+      "renderer"
+    ],
+    "entitlementFreeRoles": [
+      "base",
+      "alerts",
+      "plugin"
+    ],
+    "nestedSigningOrder": [
+      "framework Mach-O and dylibs",
+      "framework",
+      "helpers",
+      "Pilot"
+    ],
+    "forbiddenCodesignArguments": [
+      "--deep"
+    ]
+  }
+}

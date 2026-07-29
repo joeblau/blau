@@ -7,23 +7,48 @@ import SwiftUI
 /// leaving `focusedPaneID` attached to a hidden pane.
 @MainActor
 enum BrowserCommandSelection {
-    static func selectedState(in workspace: Workspace?) -> BrowserState? {
-        BrowserToolbarSelection.state(for: workspace?.selectedPane)
+    static func selectedState(
+        in workspace: Workspace?,
+        supporting capability: BrowserCapability? = nil
+    ) -> BrowserState? {
+        guard let state = BrowserToolbarSelection.state(for: workspace?.selectedPane) else {
+            return nil
+        }
+        if let capability, !state.supports(capability) {
+            return nil
+        }
+        return state
     }
 
-    static func hasBrowser(in workspace: Workspace?) -> Bool {
-        workspace?.panes.contains { $0.kind == .browser } ?? false
+    static func hasBrowser(
+        in workspace: Workspace?,
+        supporting capability: BrowserCapability? = nil
+    ) -> Bool {
+        workspace?.panes.contains { pane in
+            guard pane.kind == .browser,
+                  let state = pane.browserState else { return false }
+            return capability.map(state.supports) ?? true
+        } ?? false
     }
 
     @discardableResult
-    static func revealBrowser(in workspace: Workspace?) -> BrowserState? {
+    static func revealBrowser(
+        in workspace: Workspace?,
+        supporting capability: BrowserCapability? = nil
+    ) -> BrowserState? {
         guard let workspace else { return nil }
+
+        func isEligible(_ pane: Pane) -> Bool {
+            guard pane.kind == .browser,
+                  let state = pane.browserState else { return false }
+            return capability.map(state.supports) ?? true
+        }
 
         let browser: Pane
         if let selectedPane = workspace.selectedPane,
-           selectedPane.kind == .browser {
+           isEligible(selectedPane) {
             browser = selectedPane
-        } else if let firstBrowser = workspace.sortedPanes.first(where: { $0.kind == .browser }) {
+        } else if let firstBrowser = workspace.sortedPanes.first(where: isEligible) {
             browser = firstBrowser
         } else {
             return nil
@@ -51,8 +76,8 @@ struct PilotBrowserCommands: Commands {
     var body: some Commands {
         CommandMenu("Browser") {
             Button(primaryCommandTitle) {
-                if let selectedBrowserState {
-                    selectedBrowserState.requestNavigationCommand("blau://reload")
+                if let selectedReloadableBrowserState {
+                    selectedReloadableBrowserState.perform(.reload)
                 } else if let selectedTerminalFastCommand {
                     Task {
                         _ = await PersistentTerminalSession.runFastCommand(
@@ -63,19 +88,22 @@ struct PilotBrowserCommands: Commands {
                 }
             }
             .keyboardShortcut("r", modifiers: .command)
-            .disabled(selectedBrowserState == nil && selectedTerminalFastCommand == nil)
+            .disabled(selectedReloadableBrowserState == nil && selectedTerminalFastCommand == nil)
 
             Button("Focus Address Bar") {
-                BrowserCommandSelection.revealBrowser(in: workspace)?.requestAddressFocus()
+                BrowserCommandSelection.revealBrowser(
+                    in: workspace,
+                    supporting: .addressFocus
+                )?.perform(.focusAddress)
             }
             .keyboardShortcut("l", modifiers: .command)
             .disabled(!hasBrowserPane)
 
-            Button(selectedBrowserState?.annotateMode == true ? "Turn Off Lasso" : "Turn On Lasso") {
-                selectedBrowserState?.toggleAnnotateMode()
+            Button(selectedAnnotatableBrowserState?.annotateMode == true ? "Turn Off Lasso" : "Turn On Lasso") {
+                selectedAnnotatableBrowserState?.perform(.toggleAnnotation)
             }
             .keyboardShortcut("a", modifiers: [.command, .shift])
-            .disabled(selectedBrowserState == nil)
+            .disabled(selectedAnnotatableBrowserState == nil)
 
             Divider()
 
@@ -87,8 +115,12 @@ struct PilotBrowserCommands: Commands {
         }
     }
 
-    private var selectedBrowserState: BrowserState? {
-        BrowserCommandSelection.selectedState(in: workspace)
+    private var selectedReloadableBrowserState: BrowserState? {
+        BrowserCommandSelection.selectedState(in: workspace, supporting: .navigation)
+    }
+
+    private var selectedAnnotatableBrowserState: BrowserState? {
+        BrowserCommandSelection.selectedState(in: workspace, supporting: .annotation)
     }
 
     private var selectedTerminalFastCommand: (pane: Pane, command: String)? {
@@ -106,7 +138,7 @@ struct PilotBrowserCommands: Commands {
     }
 
     private var hasBrowserPane: Bool {
-        BrowserCommandSelection.hasBrowser(in: workspace)
+        BrowserCommandSelection.hasBrowser(in: workspace, supporting: .addressFocus)
     }
 }
 
@@ -119,6 +151,9 @@ struct PilotBrowserCommands: Commands {
 /// selection) disables the commands.
 struct PilotPaneCreationCommands: Commands {
     @FocusedValue(Workspace.self) private var workspace
+    @ObservedObject private var chromiumDiagnostics = ChromiumDiagnosticsCenter.shared
+    @ObservedObject private var chromiumProfileAccess =
+        ChromiumProfileAccessCoordinator.shared
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
@@ -129,11 +164,29 @@ struct PilotPaneCreationCommands: Commands {
             .disabled(workspace == nil)
 
             Button("New Browser") {
-                workspace?.addPane(kind: .browser, side: .right)
+                workspace?.addBrowserPane(engine: .webKit, side: .right)
             }
             .keyboardShortcut("b", modifiers: .command)
             .disabled(workspace == nil)
+
+            Button("New Chromium Browser") {
+                workspace?.addBrowserPane(engine: .chromium, side: .right)
+            }
+            .disabled(
+                workspace == nil
+                    || !chromiumCreationEnabled
+            )
         }
+    }
+
+    private var chromiumCreationEnabled: Bool {
+        _ = chromiumDiagnostics.runtimeStatus
+        _ = chromiumProfileAccess.isClearing
+        return BrowserPaneCreationPolicy.permitsCreation(
+            for: .chromium,
+            chromiumCreationEnabled:
+                ChromiumBrowserCreationPolicy.isCreationEnabled
+        )
     }
 }
 
@@ -173,7 +226,7 @@ struct PilotApp: App {
     init() {
         // Build the schema from the newest versioned schema so the store is
         // stamped with a version and `PilotMigrationPlan` governs upgrades.
-        let schema = Schema(versionedSchema: PilotSchemaV2.self)
+        let schema = Schema(versionedSchema: PilotSchemaV3.self)
         let container: ModelContainer
         if ProcessInfo.processInfo.environment.keys.contains("XCTestConfigurationFilePath") {
             // A hosted unit-test launch must never open, back up, migrate, or
@@ -990,6 +1043,7 @@ private struct PilotSettingsView: View {
                     tint: .blue
                 )
                 SettingsSections()
+                ChromiumDiagnosticsSettingsSection()
             }
             .formStyle(.grouped)
         }
@@ -1166,13 +1220,133 @@ enum PilotSchemaV1: VersionedSchema {
     }
 }
 
-/// Adds only the Extension ownership/link model. The shipped V1 model shapes
-/// remain unchanged, making this a safe additive migration while allowing
-/// linked companion Workspace/Pane graphs to persist normally. V2 is the
-/// CURRENT version, so it points at the live classes; when a V3 arrives,
-/// these entries must be snapshotted the same way V1 was.
+/// V2 is a frozen snapshot of the shipped Extension ownership/link schema.
+/// It must remain unchanged now that V3 adds the browser-engine discriminator.
 enum PilotSchemaV2: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
+
+    static var models: [any PersistentModel.Type] {
+        [
+            Workspace.self,
+            Pane.self,
+            BrowserState.self,
+            EditorState.self,
+            Note.self,
+            RemoteDesktopConnection.self,
+            ExtensionWorkspaceLink.self,
+        ]
+    }
+
+    @Model
+    final class Workspace {
+        #Unique([\Workspace.id])
+
+        var id: UUID = UUID()
+        var name: String = ""
+        var selectedPaneID: UUID?
+        var frontmostTerminalPaneID: UUID?
+        var axisRaw: String = "vertical"
+        var isInspectorPresented: Bool = false
+        var inspectorTabRaw: String = "Actions"
+        var focusedPaneID: UUID?
+        var isPinned: Bool = false
+        var workspaceSortOrder: Int = 0
+        var rootPath: String = ""
+        var rootPathSourceRaw: String? = "automatic"
+        var actionBadgeCount: Int = 0
+
+        @Relationship(deleteRule: .cascade, inverse: \Pane.workspace)
+        var panes: [Pane] = []
+
+        init() {}
+    }
+
+    @Model
+    final class Pane {
+        #Unique([\Pane.id])
+
+        var id: UUID = UUID()
+        var kindRaw: String = "terminal"
+        var sortOrder: Int = 0
+        var currentDirectory: String = ""
+        var bellCount: Int = 0
+        var sizeFraction: Double = 0
+        var isCollapsed: Bool = false
+        var restoredSizeFraction: Double = 0
+        var wasCollapsedBeforeFocus: Bool = false
+
+        @Relationship(deleteRule: .cascade)
+        var browserState: BrowserState?
+
+        @Relationship(deleteRule: .cascade)
+        var editorState: EditorState?
+
+        var workspace: Workspace?
+
+        init() {}
+    }
+
+    @Model
+    final class BrowserState {
+        var urlText: String = ""
+        var appearanceModeRaw: String = "System"
+        var navigationRequestID: Int = 0
+        var inspectorToggleRequestID: Int = 0
+
+        init() {}
+    }
+
+    @Model
+    final class EditorState {
+        var filePath: String = ""
+
+        init() {}
+    }
+
+    @Model
+    final class Note {
+        #Unique([\Note.id])
+
+        var id: UUID = UUID()
+        var body: String = ""
+        var sortOrder: Int = 0
+        var createdAt: Date = Date()
+
+        init() {}
+    }
+
+    @Model
+    final class RemoteDesktopConnection {
+        #Unique([\RemoteDesktopConnection.id])
+
+        var id: UUID = UUID()
+        var host: String = ""
+        var port: Int = 5900
+        var nickname: String = ""
+        var username: String = ""
+        var sortOrder: Int = 0
+        var createdAt: Date = Date()
+        var lastConnectedAt: Date?
+
+        init() {}
+    }
+
+    @Model
+    final class ExtensionWorkspaceLink {
+        var sourceWorkspaceID: UUID = UUID()
+
+        @Relationship(deleteRule: .cascade)
+        var workspace: Workspace?
+
+        init() {}
+    }
+}
+
+/// Adds a persisted browser-engine discriminator. The live BrowserState
+/// supplies WebKit as the property default, so V2 stores migrate without
+/// changing the behavior of existing browser panes.
+enum PilotSchemaV3: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
 
     static var models: [any PersistentModel.Type] {
         [
@@ -1188,13 +1362,16 @@ enum PilotSchemaV2: VersionedSchema {
 }
 
 enum PilotMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [PilotSchemaV1.self, PilotSchemaV2.self] }
+    static var schemas: [any VersionedSchema.Type] {
+        [PilotSchemaV1.self, PilotSchemaV2.self, PilotSchemaV3.self]
+    }
 
     /// One stage per version-to-version upgrade; append a stage whenever a
     /// new `PilotSchemaV*` is added above.
     static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: PilotSchemaV1.self, toVersion: PilotSchemaV2.self),
+            .lightweight(fromVersion: PilotSchemaV2.self, toVersion: PilotSchemaV3.self),
         ]
     }
 }

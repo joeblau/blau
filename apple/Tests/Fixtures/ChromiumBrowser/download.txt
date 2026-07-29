@@ -1,0 +1,2 @@
+Pilot Chromium deterministic download fixture.
+SHA-independent content marker: blau-chromium-download-v1

@@ -453,19 +453,31 @@ final class WorkspaceStore {
     func seedDemoWorkspacesIfNeeded() {
         guard workspaces.isEmpty else { return }
 
-        let names = ["blau", "web", "infra"]
-        for (index, name) in names.enumerated() {
-            let workspace = Workspace(name: name)
-            workspace.workspaceSortOrder = index
-            if index == 0 {
-                workspace.isPinned = true
-            }
+        for workspace in Self.makeDemoWorkspaces() {
             modelContext.insert(workspace)
         }
         _ = modelContext.saveReporting()
         changeCount += 1
         if let workspaceID = workspaces.first?.id {
             selectWorkspace(workspaceID)
+        }
+    }
+
+    /// Deterministic, offline-only screenshot state. In particular, the
+    /// Chromium pane stays blank so demo capture never depends on a public
+    /// website or mutable network response.
+    static func makeDemoWorkspaces() -> [Workspace] {
+        let names = ["blau", "web", "infra"]
+        return names.enumerated().map { index, name in
+            let workspace = Workspace(name: name)
+            workspace.workspaceSortOrder = index
+            if index == 0 {
+                workspace.isPinned = true
+            }
+            if name == "web" {
+                workspace.addBrowserPane(engine: .chromium, side: .right)
+            }
+            return workspace
         }
     }
 

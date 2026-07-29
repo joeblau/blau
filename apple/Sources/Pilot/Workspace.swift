@@ -32,6 +32,71 @@ enum PaneKind: String, Codable, CaseIterable {
     }
 }
 
+enum BrowserEngine: String, Codable, CaseIterable, Sendable {
+    case webKit = "webkit"
+    case chromium
+
+    var displayName: String {
+        switch self {
+        case .webKit: "WebKit"
+        case .chromium: "Chromium"
+        }
+    }
+
+    var systemImageName: String {
+        switch self {
+        case .webKit: "safari"
+        case .chromium: "globe"
+        }
+    }
+
+    func supports(_ capability: BrowserCapability) -> Bool {
+        switch self {
+        case .webKit:
+            true
+        case .chromium:
+            switch capability {
+            case .navigation, .addressFocus, .developerTools:
+                true
+            case .appearanceOverride, .annotation, .websiteDataReset:
+                false
+            }
+        }
+    }
+}
+
+enum BrowserCapability: Hashable, Sendable {
+    case navigation
+    case addressFocus
+    case appearanceOverride
+    case developerTools
+    case annotation
+    case websiteDataReset
+}
+
+enum BrowserPaneCommand: Sendable {
+    case back
+    case forward
+    case reload
+    case stop
+    case focusAddress
+    case toggleDeveloperTools
+    case toggleAnnotation
+
+    var requiredCapability: BrowserCapability {
+        switch self {
+        case .back, .forward, .reload, .stop:
+            .navigation
+        case .focusAddress:
+            .addressFocus
+        case .toggleDeveloperTools:
+            .developerTools
+        case .toggleAnnotation:
+            .annotation
+        }
+    }
+}
+
 enum AppearanceMode: String, Codable, CaseIterable {
     case system = "System"
     case light = "Light"
@@ -318,6 +383,7 @@ enum TerminalProcessActivity: Equatable, Sendable {
 @Model
 final class BrowserState {
     var urlText: String = ""
+    var engineRaw: String = BrowserEngine.webKit.rawValue
     var appearanceModeRaw: String = AppearanceMode.system.rawValue
     var navigationRequestID: Int = 0
     var inspectorToggleRequestID: Int = 0
@@ -326,6 +392,8 @@ final class BrowserState {
     @Transient var canGoBack: Bool = false
     @Transient var canGoForward: Bool = false
     @Transient var isLoading: Bool = false
+    @Transient var title: String = ""
+    @Transient var estimatedProgress: Double = 0
     @Transient var showDevTools: Bool = false
     @Transient var needsInspectorToggle: Bool = false
     /// Browser Annotate mode — runtime only, off after relaunch.
@@ -333,17 +401,68 @@ final class BrowserState {
     @Transient var annotateToggleRequestID: Int = 0
     /// Set by ⌘L and consumed when this browser's address field is mounted.
     @Transient var needsAddressFocus: Bool = false
+    /// Native navigation callbacks must not replace a newer address-field draft.
+    @Transient var isAddressEditing: Bool = false
+    @Transient var pendingAddressSubmission: String? = nil
     /// Recreates the WKWebView after its persistent website data is cleared.
     @Transient var websiteDataResetRequestID: Int = 0
+    /// Recreates an unavailable Chromium surface without changing its engine.
+    @Transient var runtimeRetryRequestID: Int = 0
+    /// Chromium-only page command state. Counters make every action edge-triggered.
+    @Transient var findQuery: String = ""
+    @Transient var findForward: Bool = true
+    @Transient var findMatchCase: Bool = false
+    @Transient var findNext: Bool = false
+    @Transient var findRequestID: Int = 0
+    @Transient var stopFindingRequestID: Int = 0
+    @Transient var findMatchCount: Int = 0
+    @Transient var activeFindMatchOrdinal: Int = 0
+    @Transient var printRequestID: Int = 0
+    @Transient var savePageRequestID: Int = 0
+    @Transient var downloadStatusText: String = ""
+    @Transient var downloadProgress: Double? = nil
 
     var appearanceMode: AppearanceMode {
         get { AppearanceMode(rawValue: appearanceModeRaw) ?? .system }
         set { appearanceModeRaw = newValue.rawValue }
     }
 
-    init() {
+    var engine: BrowserEngine {
+        get { BrowserEngine(rawValue: engineRaw) ?? .webKit }
+        set { engineRaw = newValue.rawValue }
+    }
+
+    init(engine: BrowserEngine = .webKit) {
+        self.engineRaw = engine.rawValue
         // Empty by default — the pane shows the local-server start page
         // until the user navigates somewhere or picks a card.
+    }
+
+    func supports(_ capability: BrowserCapability) -> Bool {
+        engine.supports(capability)
+    }
+
+    @discardableResult
+    func perform(_ command: BrowserPaneCommand) -> Bool {
+        guard supports(command.requiredCapability) else { return false }
+
+        switch command {
+        case .back:
+            requestNavigationCommand("blau://back")
+        case .forward:
+            requestNavigationCommand("blau://forward")
+        case .reload:
+            requestNavigationCommand("blau://reload")
+        case .stop:
+            requestNavigationCommand("blau://stop")
+        case .focusAddress:
+            requestAddressFocus()
+        case .toggleDeveloperTools:
+            toggleDeveloperTools()
+        case .toggleAnnotation:
+            toggleAnnotateMode()
+        }
+        return true
     }
 
     func navigate() {
@@ -352,7 +471,20 @@ final class BrowserState {
             text = "https://\(text)"
             urlText = text
         }
+        pendingAddressSubmission = text
         issueNavigationRequest(URL(string: text))
+    }
+
+    /// Accept a committed native navigation only while it cannot destroy a
+    /// newer user draft. Redirects remain free to update the field until the
+    /// user changes the submitted text.
+    func acceptCommittedURL(_ url: URL) {
+        let currentText = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isAddressEditing || currentText == pendingAddressSubmission else {
+            return
+        }
+        urlText = url.absoluteString
+        pendingAddressSubmission = url.absoluteString
     }
 
     func requestNavigationCommand(_ command: String) {
@@ -360,6 +492,7 @@ final class BrowserState {
     }
 
     func toggleDeveloperTools() {
+        guard supports(.developerTools) else { return }
         showDevTools.toggle()
         needsInspectorToggle = true
         inspectorToggleRequestID += 1
@@ -370,10 +503,12 @@ final class BrowserState {
     }
 
     func requestAddressFocus() {
+        guard supports(.addressFocus) else { return }
         needsAddressFocus = true
     }
 
     func requestWebsiteDataReset() {
+        guard supports(.websiteDataReset) else { return }
         pendingURL = nil
         canGoBack = false
         canGoForward = false
@@ -381,9 +516,51 @@ final class BrowserState {
         websiteDataResetRequestID += 1
     }
 
+    func requestRuntimeRetry() {
+        pendingURL = nil
+        canGoBack = false
+        canGoForward = false
+        isLoading = !urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        estimatedProgress = 0
+        runtimeRetryRequestID += 1
+    }
+
+    func requestFind(
+        _ query: String,
+        forward: Bool = true,
+        matchCase: Bool = false,
+        findNext: Bool = false
+    ) {
+        guard engine == .chromium, !query.isEmpty else { return }
+        findQuery = query
+        findForward = forward
+        findMatchCase = matchCase
+        self.findNext = findNext
+        findRequestID += 1
+    }
+
+    func stopFinding() {
+        guard engine == .chromium else { return }
+        findQuery = ""
+        findMatchCount = 0
+        activeFindMatchOrdinal = 0
+        stopFindingRequestID += 1
+    }
+
+    func requestPrint() {
+        guard engine == .chromium else { return }
+        printRequestID += 1
+    }
+
+    func requestSavePage() {
+        guard engine == .chromium else { return }
+        savePageRequestID += 1
+    }
+
     /// Set lasso mode explicitly. The request ID is the WebView update trigger,
     /// so repeated writes of the current value must not generate phantom toggles.
     func setAnnotateMode(_ enabled: Bool) {
+        guard supports(.annotation) else { return }
         guard annotateMode != enabled else { return }
         annotateMode = enabled
         annotateToggleRequestID += 1
@@ -429,7 +606,12 @@ final class Pane {
         set { kindRaw = newValue.rawValue }
     }
 
-    init(kind: PaneKind = .terminal, sortOrder: Int = 0, currentDirectory: String = "") {
+    init(
+        kind: PaneKind = .terminal,
+        sortOrder: Int = 0,
+        currentDirectory: String = "",
+        browserEngine: BrowserEngine = .webKit
+    ) {
         self.id = UUID()
         self.kindRaw = kind.rawValue
         self.sortOrder = sortOrder
@@ -438,7 +620,7 @@ final class Pane {
         case .terminal:
             break
         case .browser:
-            self.browserState = BrowserState()
+            self.browserState = BrowserState(engine: browserEngine)
         case .device:
             break
         case .simulator:
@@ -453,6 +635,12 @@ final class Pane {
     var displayTitle: String {
         if kind == .editor, let path = editorState?.filePath, !path.isEmpty {
             return (path as NSString).lastPathComponent
+        }
+        if kind == .browser,
+           let title = browserState?.title
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+           !title.isEmpty {
+            return title
         }
         return kind.displayName
     }
@@ -673,12 +861,17 @@ final class Workspace {
     }
 
     @discardableResult
-    func addPane(kind: PaneKind, side: Side) -> Pane {
+    func addPane(
+        kind: PaneKind,
+        side: Side,
+        browserEngine: BrowserEngine = .webKit
+    ) -> Pane {
         let maxOrder = panes.map(\.sortOrder).max() ?? -1
         let pane = Pane(
             kind: kind,
             sortOrder: maxOrder + 1,
-            currentDirectory: kind == .terminal ? inheritedDirectoryForNewTerminal() : ""
+            currentDirectory: kind == .terminal ? inheritedDirectoryForNewTerminal() : "",
+            browserEngine: browserEngine
         )
 
         if let selectedID = selectedPaneID,
@@ -712,6 +905,11 @@ final class Workspace {
         syncDefaultRootPathIfNeeded()
         _ = modelContext?.saveReporting(operation: "Adding pane")
         return pane
+    }
+
+    @discardableResult
+    func addBrowserPane(engine: BrowserEngine = .webKit, side: Side) -> Pane {
+        addPane(kind: .browser, side: side, browserEngine: engine)
     }
 
     @discardableResult

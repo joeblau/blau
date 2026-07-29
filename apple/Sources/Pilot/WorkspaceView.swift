@@ -901,6 +901,19 @@ struct BrowserPaneView: View {
             .background(Color(nsColor: .windowBackgroundColor))
             .onAppear { captureInitialURLState() }
         } else {
+            browserSurface
+            .id("\(state.websiteDataResetRequestID):\(state.runtimeRetryRequestID)")
+            .onAppear {
+                captureInitialURLState()
+                hasLoadedAnyURL = true
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var browserSurface: some View {
+        switch state.engine {
+        case .webKit:
             WebViewRepresentable(
                 state: state,
                 navigationRequestID: state.navigationRequestID,
@@ -913,11 +926,19 @@ struct BrowserPaneView: View {
                 onSelect: onSelect,
                 targetTerminalPaneID: targetTerminalPaneID
             )
-            .id(state.websiteDataResetRequestID)
-            .onAppear {
-                captureInitialURLState()
-                hasLoadedAnyURL = true
-            }
+        case .chromium:
+            ChromiumBrowserView(
+                state: state,
+                navigationRequestID: state.navigationRequestID,
+                inspectorToggleRequestID: state.inspectorToggleRequestID,
+                findRequestID: state.findRequestID,
+                stopFindingRequestID: state.stopFindingRequestID,
+                printRequestID: state.printRequestID,
+                savePageRequestID: state.savePageRequestID,
+                isActive: isActive,
+                isSelected: isSelected,
+                onSelect: onSelect
+            )
         }
     }
 
@@ -1008,10 +1029,10 @@ struct WebViewRepresentable: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.isInspectable = true
         webView.isHidden = !isActive
-        webView.isPaneSelected = isSelected
+        webView.isPaneSelected = isActive && isSelected
         webView.onReload = { state.requestNavigationCommand("blau://reload") }
         webView.onSelect = onSelect
-        webView.pageZoom = uiZoom
+        webView.performBrowserCommand(.setZoom(uiZoom))
         context.coordinator.observeURL(of: webView)
         if let url = initialURL {
             webView.load(URLRequest(url: url))
@@ -1025,11 +1046,11 @@ struct WebViewRepresentable: NSViewRepresentable {
         _ = annotateToggleRequestID
 
         if abs(nsView.pageZoom - uiZoom) > 0.001 {
-            nsView.pageZoom = uiZoom
+            nsView.performBrowserCommand(.setZoom(uiZoom))
         }
 
         if let browserView = nsView as? BrowserWebView {
-            browserView.isPaneSelected = isSelected
+            browserView.isPaneSelected = isActive && isSelected
             browserView.onReload = { state.requestNavigationCommand("blau://reload") }
             browserView.onSelect = onSelect
         }
@@ -1038,29 +1059,16 @@ struct WebViewRepresentable: NSViewRepresentable {
 
         // Handle navigation commands
         if let pending = state.pendingURL {
-            switch pending.absoluteString {
-            case "blau://back":
-                nsView.goBack()
-                state.pendingURL = nil
-            case "blau://forward":
-                nsView.goForward()
-                state.pendingURL = nil
-            case "blau://reload":
-                nsView.reload()
-                state.pendingURL = nil
-            case "blau://stop":
-                nsView.stopLoading()
-                state.pendingURL = nil
-            default:
-                nsView.load(URLRequest(url: pending))
-                state.pendingURL = nil
-            }
+            BrowserControllerCommandRouter.route(pending, to: nsView)
+            state.pendingURL = nil
         }
 
         // Toggle Web Inspector (opens in separate window)
         if state.needsInspectorToggle {
             state.needsInspectorToggle = false
-            InspectorHelper.toggleInspector(for: nsView, show: state.showDevTools)
+            nsView.performBrowserCommand(
+                .setDeveloperToolsVisible(state.showDevTools)
+            )
         }
 
         // Browser Annotate: push the enabled state into the injected overlay.
@@ -1361,6 +1369,20 @@ struct WebViewRepresentable: NSViewRepresentable {
 }
 
 enum BrowserWebShortcutPolicy {
+    static func handlesReload(
+        isPaneSelected: Bool,
+        hasCommand: Bool,
+        hasControl: Bool,
+        hasOption: Bool,
+        characters: String
+    ) -> Bool {
+        isPaneSelected
+            && hasCommand
+            && !hasControl
+            && !hasOption
+            && characters == "r"
+    }
+
     /// Browser editing shortcuts that should stay inside WKWebView. Shifted ⌘A
     /// is deliberately excluded because Pilot owns it for Lasso.
     static func keepsNativeEditingShortcut(characters: String, hasShift: Bool) -> Bool {
@@ -1373,6 +1395,20 @@ final class BrowserWebView: WKWebView {
     var onReload: (() -> Void)?
     var onSelect: (() -> Void)?
     var isPaneSelected = false
+    private var reloadKeyMonitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            removeReloadKeyMonitor()
+        } else {
+            installReloadKeyMonitor()
+        }
+    }
+
+    isolated deinit {
+        removeReloadKeyMonitor()
+    }
 
     override func mouseDown(with event: NSEvent) {
         // The WebView swallows clicks before SwiftUI's pane-level
@@ -1391,7 +1427,13 @@ final class BrowserWebView: WKWebView {
             && !event.modifierFlags.contains(.option)
         let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
 
-        if isPaneSelected, plainCommand, chars == "r" {
+        if BrowserWebShortcutPolicy.handlesReload(
+            isPaneSelected: isPaneSelected,
+            hasCommand: true,
+            hasControl: event.modifierFlags.contains(.control),
+            hasOption: event.modifierFlags.contains(.option),
+            characters: chars
+        ) {
             onReload?()
             return true
         }
@@ -1415,5 +1457,35 @@ final class BrowserWebView: WKWebView {
         }
 
         return super.performKeyEquivalent(with: event)
+    }
+
+    /// WebKit's internal content view can consume ⌘R before AppKit asks the
+    /// outer `WKWebView` for key equivalents. A local monitor runs before that
+    /// responder-chain handoff and targets only the selected browser in the
+    /// event's window.
+    private func installReloadKeyMonitor() {
+        guard reloadKeyMonitor == nil else { return }
+        reloadKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self,
+                  event.window === self.window,
+                  BrowserWebShortcutPolicy.handlesReload(
+                      isPaneSelected: self.isPaneSelected,
+                      hasCommand: event.modifierFlags.contains(.command),
+                      hasControl: event.modifierFlags.contains(.control),
+                      hasOption: event.modifierFlags.contains(.option),
+                      characters: event.charactersIgnoringModifiers?.lowercased() ?? ""
+                  ) else {
+                return event
+            }
+            self.onReload?()
+            return nil
+        }
+    }
+
+    private func removeReloadKeyMonitor() {
+        if let reloadKeyMonitor {
+            NSEvent.removeMonitor(reloadKeyMonitor)
+        }
+        reloadKeyMonitor = nil
     }
 }
