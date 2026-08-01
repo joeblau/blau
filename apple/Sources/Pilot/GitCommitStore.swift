@@ -18,6 +18,9 @@ struct GitAction: Identifiable {
     let conclusion: String
     let elapsed: String
     let url: String
+    /// GitHub login of whoever triggered the run — the pusher for a normal
+    /// commit, or whoever hit re-run. Empty when GitHub reports no actor.
+    let actor: String
 }
 
 struct GitRun: Identifiable {
@@ -211,7 +214,8 @@ final class GitCommitStore {
                 status: statusStr,
                 conclusion: conclusionStr,
                 elapsed: createdAt.isEmpty ? "" : Self.relativeTime(from: createdAt),
-                url: item["url"] as? String ?? ""
+                url: item["url"] as? String ?? "",
+                actor: item["actor"] as? String ?? ""
             ))
 
             let status: GitRun.Status

@@ -624,6 +624,18 @@ struct ActionsListView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.tertiary)
                         }
+                        if !action.actor.isEmpty {
+                            Text("·")
+                                .font(.subheadline)
+                                .foregroundStyle(.quaternary)
+                            // Last on the line, so a long login truncates
+                            // instead of pushing off the SHA and the age.
+                            Text(action.actor)
+                                .font(.subheadline)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
                     }
                 }
 

@@ -1,13 +1,47 @@
 import AppKit
 import SwiftUI
 
+/// A GitHub account assigned to an issue. `gh` reports a login for every
+/// assignee; the display name is optional and often empty for bot accounts.
+struct GitHubTaskAssignee: Identifiable, Decodable, Equatable {
+    let login: String
+    let name: String?
+    var id: String { login }
+
+    /// The full name when GitHub has one, falling back to the handle. Used for
+    /// tooltips and VoiceOver, where the extra width costs nothing.
+    var fullDescription: String {
+        guard let name, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return login }
+        return "\(name) (\(login))"
+    }
+}
+
 /// A GitHub issue surfaced as a "task" in the inspector.
 struct GitHubTask: Identifiable, Decodable, Equatable {
     let number: Int
     let title: String
     let url: String
     let state: String
+    let assignees: [GitHubTaskAssignee]
     var id: Int { number }
+
+    private enum CodingKeys: String, CodingKey {
+        case number, title, url, state, assignees
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        number = try container.decode(Int.self, forKey: .number)
+        title = try container.decode(String.self, forKey: .title)
+        url = try container.decode(String.self, forKey: .url)
+        state = try container.decode(String.self, forKey: .state)
+        // Absent when the payload predates the assignee field. Unassigned is
+        // the safe reading; a throw here would blank the whole tab.
+        assignees = try container.decodeIfPresent(
+            [GitHubTaskAssignee].self,
+            forKey: .assignees
+        ) ?? []
+    }
 }
 
 /// Loads open GitHub issues for the active workspace's repo via the `gh` CLI.
@@ -223,14 +257,54 @@ private struct GitHubTaskRow: View {
             .buttonStyle(.plain)
             .help("Run an \u{201C}implement #\(task.number)\u{201D} task in the active terminal")
 
-            Text(task.title)
-                .font(.body)
-                .lineLimit(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture(perform: open)
-                .help("Open #\(task.number) on GitHub")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(task.title)
+                    .font(.body)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: open)
+                    .help("Open #\(task.number) on GitHub")
+
+                // Only assigned issues get a second line: an all-"Unassigned"
+                // column would be noise in a list that is mostly unassigned.
+                if !task.assignees.isEmpty {
+                    assignees
+                }
+            }
         }
+    }
+
+    private var assignees: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "person.crop.circle")
+                .scaledFont(size: 11)
+                .accessibilityHidden(true)
+
+            // Handles rather than full names: more of them fit before the line
+            // runs out. The full names live in the tooltip and the
+            // accessibility label, which no truncation reaches.
+            Text(assigneeSummary)
+                .font(.subheadline)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .foregroundStyle(.secondary)
+        .help(assigneeHelp)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(assigneeHelp)
+    }
+
+    /// Every handle on one line. The single-line tail truncation above fills the
+    /// column with as many as fit and ends in an ellipsis, so a wider inspector
+    /// shows more names without a separate overflow count to maintain.
+    private var assigneeSummary: String {
+        task.assignees.map(\.login).joined(separator: ", ")
+    }
+
+    private var assigneeHelp: String {
+        "Assigned to " + task.assignees.map(\.fullDescription)
+            .formatted(.list(type: .and))
     }
 
     /// Click the number to drop an agent-ready prompt into the active terminal:
