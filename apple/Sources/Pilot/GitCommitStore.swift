@@ -281,34 +281,15 @@ final class GitCommitStore {
     }
 
     private nonisolated static func relativeTime(from iso: String) -> String {
-        guard let date = parseISODate(iso) else { return iso }
-        return relativeTime(from: date)
+        RelativeTime.string(fromISO: iso)
     }
 
     private nonisolated static func relativeTime(from date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        formatter.locale = .autoupdatingCurrent
-        return formatter.localizedString(for: date, relativeTo: Date())
+        RelativeTime.string(from: date)
     }
 
-    // ISO8601DateFormatter is documented thread-safe, and these are never
-    // mutated after init — hence nonisolated(unsafe) is sound. Building one
-    // per parsed row (30 rows per 30s refresh) was measurable churn.
-    private nonisolated(unsafe) static let isoFractionalFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private nonisolated(unsafe) static let isoFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
-
     private nonisolated static func parseISODate(_ value: String) -> Date? {
-        isoFractionalFormatter.date(from: value) ?? isoFormatter.date(from: value)
+        RelativeTime.parseISODate(value)
     }
 
     nonisolated static func findGitRoot(from directory: String) -> String? {

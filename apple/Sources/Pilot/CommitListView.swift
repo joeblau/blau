@@ -616,6 +616,18 @@ struct ActionsListView: View {
                         Text(String(action.headSha.prefix(7)))
                             .font(.system(.subheadline, design: .monospaced))
                             .foregroundStyle(.tertiary)
+                        // Hash · user · time ago, matching the Commits and
+                        // Tasks metadata lines.
+                        if !action.actor.isEmpty {
+                            Text("·")
+                                .font(.subheadline)
+                                .foregroundStyle(.quaternary)
+                            Text(action.actor)
+                                .font(.subheadline)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
                         if !action.elapsed.isEmpty {
                             Text("·")
                                 .font(.subheadline)
@@ -623,18 +635,7 @@ struct ActionsListView: View {
                             Text(action.elapsed)
                                 .font(.subheadline)
                                 .foregroundStyle(.tertiary)
-                        }
-                        if !action.actor.isEmpty {
-                            Text("·")
-                                .font(.subheadline)
-                                .foregroundStyle(.quaternary)
-                            // Last on the line, so a long login truncates
-                            // instead of pushing off the SHA and the age.
-                            Text(action.actor)
-                                .font(.subheadline)
-                                .foregroundStyle(.tertiary)
                                 .lineLimit(1)
-                                .truncationMode(.tail)
                         }
                     }
                 }

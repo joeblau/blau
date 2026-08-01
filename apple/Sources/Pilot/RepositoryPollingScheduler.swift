@@ -368,7 +368,7 @@ actor RepositoryPollingScheduler {
                 "gh",
                 arguments: [
                     "issue", "list", "--state", "open", "--limit", "100",
-                    "--json", "number,title,url,state,assignees",
+                    "--json", "number,title,url,state,assignees,createdAt",
                 ],
                 currentDirectoryURL: root,
                 timeout: .seconds(30),

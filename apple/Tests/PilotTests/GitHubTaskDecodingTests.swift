@@ -59,10 +59,10 @@ struct GitHubTaskDecodingTests {
         #expect(tasks[0].assignees.isEmpty)
     }
 
-    /// A payload without the field must still list issues: dropping the whole
-    /// tab because one optional field is missing is the worse failure.
-    @Test("A payload missing the assignees field still decodes")
-    func missingAssigneesField() throws {
+    /// A payload without the optional fields must still list issues: dropping
+    /// the whole tab because one field is missing is the worse failure.
+    @Test("A payload missing the assignees and createdAt fields still decodes")
+    func missingOptionalFields() throws {
         let tasks = try decode(
             """
             [{ "number": 3, "title": "t", "url": "u", "state": "OPEN" }]
@@ -71,5 +71,26 @@ struct GitHubTaskDecodingTests {
 
         #expect(tasks[0].number == 3)
         #expect(tasks[0].assignees.isEmpty)
+        #expect(tasks[0].createdAt.isEmpty)
+        // No timestamp means no age text, which the row reads to drop the line.
+        #expect(tasks[0].age.isEmpty)
+    }
+
+    @Test("A createdAt timestamp formats as a relative age")
+    func createdAtFormatsAsAge() throws {
+        let stamp = ISO8601DateFormatter().string(
+            from: Date(timeIntervalSinceNow: -2 * 60 * 60)
+        )
+        let tasks = try decode(
+            """
+            [{
+              "number": 4, "title": "t", "url": "u", "state": "OPEN",
+              "assignees": [], "createdAt": "\(stamp)"
+            }]
+            """
+        )
+
+        #expect(tasks[0].age.contains("2"))
+        #expect(tasks[0].age.localizedCaseInsensitiveContains("hour"))
     }
 }

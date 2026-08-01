@@ -23,10 +23,17 @@ struct GitHubTask: Identifiable, Decodable, Equatable {
     let url: String
     let state: String
     let assignees: [GitHubTaskAssignee]
+    let createdAt: String
     var id: Int { number }
 
+    /// Formatted on demand rather than at decode time so the row stays honest
+    /// between the 30s polls that refresh the list.
+    var age: String {
+        createdAt.isEmpty ? "" : RelativeTime.string(fromISO: createdAt)
+    }
+
     private enum CodingKeys: String, CodingKey {
-        case number, title, url, state, assignees
+        case number, title, url, state, assignees, createdAt
     }
 
     init(from decoder: any Decoder) throws {
@@ -41,6 +48,7 @@ struct GitHubTask: Identifiable, Decodable, Equatable {
             [GitHubTaskAssignee].self,
             forKey: .assignees
         ) ?? []
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
     }
 }
 
@@ -266,45 +274,72 @@ private struct GitHubTaskRow: View {
                     .onTapGesture(perform: open)
                     .help("Open #\(task.number) on GitHub")
 
-                // Only assigned issues get a second line: an all-"Unassigned"
-                // column would be noise in a list that is mostly unassigned.
-                if !task.assignees.isEmpty {
-                    assignees
-                }
+                metadata
             }
         }
     }
 
-    private var assignees: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "person.crop.circle")
-                .scaledFont(size: 11)
-                .accessibilityHidden(true)
+    /// User · time ago, mirroring the hash · user · time ago line the Commits
+    /// and Actions tabs show. An issue has no hash, so the line starts at the
+    /// assignee, and the person icon keeps a bare login from reading as a
+    /// stray word.
+    @ViewBuilder
+    private var metadata: some View {
+        let age = task.age
+        if !task.assignees.isEmpty || !age.isEmpty {
+            HStack(spacing: 4) {
+                if !task.assignees.isEmpty {
+                    Image(systemName: "person.crop.circle")
+                        .scaledFont(size: 11)
+                        .accessibilityHidden(true)
 
-            // Handles rather than full names: more of them fit before the line
-            // runs out. The full names live in the tooltip and the
-            // accessibility label, which no truncation reaches.
-            Text(assigneeSummary)
-                .font(.subheadline)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                    // Handles rather than full names: they stay readable in a
+                    // narrow column. Full names live in the tooltip and the
+                    // accessibility label, which no truncation reaches.
+                    Text(assigneeSummary)
+                        .font(.subheadline)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                if !task.assignees.isEmpty && !age.isEmpty {
+                    Text("·")
+                        .font(.subheadline)
+                        .foregroundStyle(.quaternary)
+                }
+
+                if !age.isEmpty {
+                    Text(age)
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(.secondary)
+            .help(metadataHelp)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(metadataHelp)
         }
-        .foregroundStyle(.secondary)
-        .help(assigneeHelp)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(assigneeHelp)
     }
 
-    /// Every handle on one line. The single-line tail truncation above fills the
-    /// column with as many as fit and ends in an ellipsis, so a wider inspector
-    /// shows more names without a separate overflow count to maintain.
+    /// One handle plus an overflow count, so even a four-way assignment leaves
+    /// room for the age at the end of the line.
     private var assigneeSummary: String {
-        task.assignees.map(\.login).joined(separator: ", ")
+        guard let first = task.assignees.first else { return "" }
+        let others = task.assignees.count - 1
+        return others > 0 ? "\(first.login) (+\(others))" : first.login
     }
 
-    private var assigneeHelp: String {
-        "Assigned to " + task.assignees.map(\.fullDescription)
-            .formatted(.list(type: .and))
+    private var metadataHelp: String {
+        var parts: [String] = []
+        if !task.assignees.isEmpty {
+            parts.append(
+                "Assigned to " + task.assignees.map(\.fullDescription)
+                    .formatted(.list(type: .and))
+            )
+        }
+        if !task.age.isEmpty { parts.append("Opened \(task.age)") }
+        return parts.joined(separator: " · ")
     }
 
     /// Click the number to drop an agent-ready prompt into the active terminal:

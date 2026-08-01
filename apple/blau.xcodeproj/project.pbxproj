@@ -124,6 +124,7 @@
 		77E0A9658F4C1F734114431E /* TrackpadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDB98CD0F5BCD145C5B14904 /* TrackpadView.swift */; };
 		7870D5E6E8A740AE7DAA76CB /* SignalingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E59DAB0A4EFD8A5F838D0A8 /* SignalingClient.swift */; };
 		7967EC37FA62CAA5881B007D /* ChromiumDiagnosticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAEDE9C650C88D42AF5E18B9 /* ChromiumDiagnosticsTests.swift */; };
+		797153D3C7A97CB236CD27D0 /* RelativeTime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 969EAB7D6EE50CCBEE9D783C /* RelativeTime.swift */; };
 		79E5C17D41BE1E6AED2C0BE3 /* AndroidKeyMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FCB39DEFACD1EEEB931280E /* AndroidKeyMap.swift */; };
 		7A37AD00419D5E56CE9F1116 /* PlotterGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE322B74FFF30F531624CC4E /* PlotterGeometry.swift */; };
 		7AB890387351E6DFD8F96F64 /* PlotterLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63CD5071FA5C9733D90B190B /* PlotterLiveActivity.swift */; };
@@ -492,6 +493,7 @@
 		92E2CDF8F11C49CE7F927643 /* WorkspaceActionWatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceActionWatcherTests.swift; sourceTree = "<group>"; };
 		93E831A131F5C50AD8808B7E /* WorkspaceActionWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceActionWatcher.swift; sourceTree = "<group>"; };
 		96606929062ABD51131A3148 /* PersistenceReporting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceReporting.swift; sourceTree = "<group>"; };
+		969EAB7D6EE50CCBEE9D783C /* RelativeTime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelativeTime.swift; sourceTree = "<group>"; };
 		97052041CFD5C5F3CAFA379C /* SharedTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SharedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		975868B93FF3865EB246AC9E /* UsageSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSessions.swift; sourceTree = "<group>"; };
 		9B755EA0C5AFDA39619EF74E /* AdbBridgeParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdbBridgeParsingTests.swift; sourceTree = "<group>"; };
@@ -950,6 +952,7 @@
 				DA57761D349040DD147F613C /* PilotEditorTheme.swift */,
 				61A39D3EBF0263AB3CE673E2 /* PreviewCanvasBackground.swift */,
 				208E5EDB71D82758A188D36A /* ProcessRunner.swift */,
+				969EAB7D6EE50CCBEE9D783C /* RelativeTime.swift */,
 				ACE63F355D22361D8CCB5F06 /* RemoteDesktopConnection.swift */,
 				B43EBD7F0CDA66C9C699E451 /* RemoteDesktopView.swift */,
 				0914A44923ED7CBD1EC18FAD /* RemoteDesktopViewer.swift */,
@@ -1593,6 +1596,7 @@
 				54AFE92923051BB3B541B102 /* PilotEditorTheme.swift in Sources */,
 				CBED99A2EDE15149D42F67F4 /* PreviewCanvasBackground.swift in Sources */,
 				7565CD6050FE6098979176FE /* ProcessRunner.swift in Sources */,
+				797153D3C7A97CB236CD27D0 /* RelativeTime.swift in Sources */,
 				64F5BBAD2D8C4BF5CDAAC40A /* ReliableMessenger.swift in Sources */,
 				34E418884A5993C311694465 /* RemoteDesktopConnection.swift in Sources */,
 				D844E2D4F11B2A24F1D4F230 /* RemoteDesktopView.swift in Sources */,
