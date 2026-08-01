@@ -1,13 +1,55 @@
 import AppKit
 import SwiftUI
 
+/// A GitHub account assigned to an issue. `gh` reports a login for every
+/// assignee; the display name is optional and often empty for bot accounts.
+struct GitHubTaskAssignee: Identifiable, Decodable, Equatable {
+    let login: String
+    let name: String?
+    var id: String { login }
+
+    /// The full name when GitHub has one, falling back to the handle. Used for
+    /// tooltips and VoiceOver, where the extra width costs nothing.
+    var fullDescription: String {
+        guard let name, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return login }
+        return "\(name) (\(login))"
+    }
+}
+
 /// A GitHub issue surfaced as a "task" in the inspector.
 struct GitHubTask: Identifiable, Decodable, Equatable {
     let number: Int
     let title: String
     let url: String
     let state: String
+    let assignees: [GitHubTaskAssignee]
+    let createdAt: String
     var id: Int { number }
+
+    /// Formatted on demand rather than at decode time so the row stays honest
+    /// between the 30s polls that refresh the list.
+    var age: String {
+        createdAt.isEmpty ? "" : RelativeTime.string(fromISO: createdAt)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case number, title, url, state, assignees, createdAt
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        number = try container.decode(Int.self, forKey: .number)
+        title = try container.decode(String.self, forKey: .title)
+        url = try container.decode(String.self, forKey: .url)
+        state = try container.decode(String.self, forKey: .state)
+        // Absent when the payload predates the assignee field. Unassigned is
+        // the safe reading; a throw here would blank the whole tab.
+        assignees = try container.decodeIfPresent(
+            [GitHubTaskAssignee].self,
+            forKey: .assignees
+        ) ?? []
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
+    }
 }
 
 /// Loads open GitHub issues for the active workspace's repo via the `gh` CLI.
@@ -223,14 +265,81 @@ private struct GitHubTaskRow: View {
             .buttonStyle(.plain)
             .help("Run an \u{201C}implement #\(task.number)\u{201D} task in the active terminal")
 
-            Text(task.title)
-                .font(.body)
-                .lineLimit(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture(perform: open)
-                .help("Open #\(task.number) on GitHub")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(task.title)
+                    .font(.body)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: open)
+                    .help("Open #\(task.number) on GitHub")
+
+                metadata
+            }
         }
+    }
+
+    /// User · time ago, mirroring the hash · user · time ago line the Commits
+    /// and Actions tabs show. An issue has no hash, so the line starts at the
+    /// assignee, and the person icon keeps a bare login from reading as a
+    /// stray word.
+    @ViewBuilder
+    private var metadata: some View {
+        let age = task.age
+        if !task.assignees.isEmpty || !age.isEmpty {
+            HStack(spacing: 4) {
+                if !task.assignees.isEmpty {
+                    Image(systemName: "person.crop.circle")
+                        .scaledFont(size: 11)
+                        .accessibilityHidden(true)
+
+                    // Handles rather than full names: they stay readable in a
+                    // narrow column. Full names live in the tooltip and the
+                    // accessibility label, which no truncation reaches.
+                    Text(assigneeSummary)
+                        .font(.subheadline)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                if !task.assignees.isEmpty && !age.isEmpty {
+                    Text("·")
+                        .font(.subheadline)
+                        .foregroundStyle(.quaternary)
+                }
+
+                if !age.isEmpty {
+                    Text(age)
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(.secondary)
+            .help(metadataHelp)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(metadataHelp)
+        }
+    }
+
+    /// One handle plus an overflow count, so even a four-way assignment leaves
+    /// room for the age at the end of the line.
+    private var assigneeSummary: String {
+        guard let first = task.assignees.first else { return "" }
+        let others = task.assignees.count - 1
+        return others > 0 ? "\(first.login) (+\(others))" : first.login
+    }
+
+    private var metadataHelp: String {
+        var parts: [String] = []
+        if !task.assignees.isEmpty {
+            parts.append(
+                "Assigned to " + task.assignees.map(\.fullDescription)
+                    .formatted(.list(type: .and))
+            )
+        }
+        if !task.age.isEmpty { parts.append("Opened \(task.age)") }
+        return parts.joined(separator: " · ")
     }
 
     /// Click the number to drop an agent-ready prompt into the active terminal:

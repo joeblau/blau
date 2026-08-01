@@ -18,6 +18,9 @@ struct GitAction: Identifiable {
     let conclusion: String
     let elapsed: String
     let url: String
+    /// GitHub login of whoever triggered the run — the pusher for a normal
+    /// commit, or whoever hit re-run. Empty when GitHub reports no actor.
+    let actor: String
 }
 
 struct GitRun: Identifiable {
@@ -211,7 +214,8 @@ final class GitCommitStore {
                 status: statusStr,
                 conclusion: conclusionStr,
                 elapsed: createdAt.isEmpty ? "" : Self.relativeTime(from: createdAt),
-                url: item["url"] as? String ?? ""
+                url: item["url"] as? String ?? "",
+                actor: item["actor"] as? String ?? ""
             ))
 
             let status: GitRun.Status
@@ -277,34 +281,15 @@ final class GitCommitStore {
     }
 
     private nonisolated static func relativeTime(from iso: String) -> String {
-        guard let date = parseISODate(iso) else { return iso }
-        return relativeTime(from: date)
+        RelativeTime.string(fromISO: iso)
     }
 
     private nonisolated static func relativeTime(from date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        formatter.locale = .autoupdatingCurrent
-        return formatter.localizedString(for: date, relativeTo: Date())
+        RelativeTime.string(from: date)
     }
 
-    // ISO8601DateFormatter is documented thread-safe, and these are never
-    // mutated after init — hence nonisolated(unsafe) is sound. Building one
-    // per parsed row (30 rows per 30s refresh) was measurable churn.
-    private nonisolated(unsafe) static let isoFractionalFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private nonisolated(unsafe) static let isoFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
-
     private nonisolated static func parseISODate(_ value: String) -> Date? {
-        isoFractionalFormatter.date(from: value) ?? isoFormatter.date(from: value)
+        RelativeTime.parseISODate(value)
     }
 
     nonisolated static func findGitRoot(from directory: String) -> String? {

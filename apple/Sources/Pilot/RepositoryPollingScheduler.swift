@@ -319,6 +319,24 @@ actor RepositoryPollingScheduler {
         }
     }
 
+    /// Reshapes `/actions/runs` into the flat `gh run list --json` field names
+    /// the workflow parser already reads, plus the triggering actor's login.
+    private static let workflowRunProjection = """
+        [.workflow_runs[] | {
+          databaseId: .id,
+          status,
+          conclusion,
+          displayTitle: .display_title,
+          headBranch: .head_branch,
+          headSha: .head_sha,
+          name,
+          createdAt: .created_at,
+          updatedAt: .updated_at,
+          url: .html_url,
+          actor: .actor.login
+        }]
+        """
+
     private static func execute(_ command: RepositoryPollCommand) async throws -> Data {
         let root = command.repository.rootURL
         let invocation: ProcessInvocation = switch command.resource {
@@ -331,11 +349,15 @@ actor RepositoryPollingScheduler {
                 standardOutputLimit: 2 * 1_024 * 1_024
             )
         case .workflowRuns:
+            // `gh run list --json` has no field for who triggered a run, so this
+            // goes to the REST endpoint and projects the same field names back
+            // out with `--jq`. `exclude_pull_requests` drops the largest part of
+            // the payload; the projection keeps what reaches us small.
             .developerTool(
                 "gh",
                 arguments: [
-                    "run", "list", "--limit", "30", "--json",
-                    "databaseId,status,conclusion,displayTitle,headBranch,headSha,name,createdAt,updatedAt,url",
+                    "api", "repos/{owner}/{repo}/actions/runs?per_page=30&exclude_pull_requests=true",
+                    "--jq", Self.workflowRunProjection,
                 ],
                 currentDirectoryURL: root,
                 timeout: .seconds(30),
@@ -346,7 +368,7 @@ actor RepositoryPollingScheduler {
                 "gh",
                 arguments: [
                     "issue", "list", "--state", "open", "--limit", "100",
-                    "--json", "number,title,url,state",
+                    "--json", "number,title,url,state,assignees,createdAt",
                 ],
                 currentDirectoryURL: root,
                 timeout: .seconds(30),
