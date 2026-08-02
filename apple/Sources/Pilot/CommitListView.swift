@@ -518,22 +518,28 @@ struct CommitListView: View {
                     .font(.callout)
                     .lineLimit(2)
 
+                // Hash • user • time ago at .tertiary with .quaternary
+                // separators — the metadata styling shared with the Actions
+                // and Tasks tabs.
                 HStack(spacing: 4) {
                     Text(commit.id)
                         .font(.system(.subheadline, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                    Text("·")
+                        .foregroundStyle(.tertiary)
+                    Text("•")
                         .font(.subheadline)
                         .foregroundStyle(.quaternary)
                     Text(commit.author)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text("·")
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Text("•")
                         .font(.subheadline)
                         .foregroundStyle(.quaternary)
                     Text(commit.date)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
                 }
             }
         }
@@ -604,7 +610,7 @@ struct ActionsListView: View {
                         Text(action.name)
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.secondary)
-                        Text("·")
+                        Text("•")
                             .font(.subheadline)
                             .foregroundStyle(.quaternary)
                         Text(action.headBranch)
@@ -616,10 +622,10 @@ struct ActionsListView: View {
                         Text(String(action.headSha.prefix(7)))
                             .font(.system(.subheadline, design: .monospaced))
                             .foregroundStyle(.tertiary)
-                        // Hash · user · time ago, matching the Commits and
+                        // Hash • user • time ago, matching the Commits and
                         // Tasks metadata lines.
                         if !action.actor.isEmpty {
-                            Text("·")
+                            Text("•")
                                 .font(.subheadline)
                                 .foregroundStyle(.quaternary)
                             Text(action.actor)
@@ -629,7 +635,7 @@ struct ActionsListView: View {
                                 .truncationMode(.tail)
                         }
                         if !action.elapsed.isEmpty {
-                            Text("·")
+                            Text("•")
                                 .font(.subheadline)
                                 .foregroundStyle(.quaternary)
                             Text(action.elapsed)

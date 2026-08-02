@@ -279,20 +279,16 @@ private struct GitHubTaskRow: View {
         }
     }
 
-    /// User · time ago, mirroring the hash · user · time ago line the Commits
+    /// User • time ago, mirroring the hash • user • time ago line the Commits
     /// and Actions tabs show. An issue has no hash, so the line starts at the
-    /// assignee, and the person icon keeps a bare login from reading as a
-    /// stray word.
+    /// assignee. Values sit at .tertiary with .quaternary separators, the
+    /// metadata styling shared across the three tabs.
     @ViewBuilder
     private var metadata: some View {
         let age = task.age
         if !task.assignees.isEmpty || !age.isEmpty {
             HStack(spacing: 4) {
                 if !task.assignees.isEmpty {
-                    Image(systemName: "person.crop.circle")
-                        .scaledFont(size: 11)
-                        .accessibilityHidden(true)
-
                     // Handles rather than full names: they stay readable in a
                     // narrow column. Full names live in the tooltip and the
                     // accessibility label, which no truncation reaches.
@@ -303,7 +299,7 @@ private struct GitHubTaskRow: View {
                 }
 
                 if !task.assignees.isEmpty && !age.isEmpty {
-                    Text("·")
+                    Text("•")
                         .font(.subheadline)
                         .foregroundStyle(.quaternary)
                 }
@@ -311,7 +307,6 @@ private struct GitHubTaskRow: View {
                 if !age.isEmpty {
                     Text(age)
                         .font(.subheadline)
-                        .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
             }
