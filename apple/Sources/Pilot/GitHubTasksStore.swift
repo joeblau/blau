@@ -294,6 +294,7 @@ private struct GitHubTaskRow: View {
                     // accessibility label, which no truncation reaches.
                     Text(assigneeSummary)
                         .font(.subheadline)
+                        .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -307,10 +308,10 @@ private struct GitHubTaskRow: View {
                 if !age.isEmpty {
                     Text(age)
                         .font(.subheadline)
+                        .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
             }
-            .foregroundStyle(.secondary)
             .help(metadataHelp)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(metadataHelp)
