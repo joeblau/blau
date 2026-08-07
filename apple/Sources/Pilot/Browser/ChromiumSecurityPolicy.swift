@@ -74,6 +74,13 @@ enum ChromiumNavigationPolicy {
             return opensNewSurface
                 ? .openInNewPane(request.url)
                 : .allowInCurrentPane
+        case "chrome-extension":
+            // SPIKE(rabby-extension): side-loaded wallet UIs navigate like
+            // ordinary pages in the current pane. Extension-initiated new
+            // surfaces (notification windows, welcome tabs) stay blocked.
+            return opensNewSurface
+                ? .block(.prohibitedScheme(scheme))
+                : .allowInCurrentPane
         default:
             guard externalSchemes.contains(scheme) else {
                 return .block(.prohibitedScheme(scheme))

@@ -202,6 +202,15 @@ typedef NS_ENUM(NSInteger, ChromiumDownloadState) {
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
 
+/// Unpacked extension directories to side-load, in load order.
+///
+/// Must be called before ``start(profileDirectory:)``: CEF reads the command
+/// line once during initialization. Chrome derives an unpacked extension's
+/// identifier from its absolute path, so these paths also determine the
+/// `chrome-extension://` origin its pages are served from.
+- (void)setExtensionDirectories:(NSArray<NSURL *> *)directories
+    NS_SWIFT_NAME(setExtensionDirectories(_:));
+
 - (BOOL)startWithProfileDirectory:(NSURL *)profileDirectory
                             error:(NSError * _Nullable * _Nullable)error
     NS_SWIFT_NAME(start(profileDirectory:));

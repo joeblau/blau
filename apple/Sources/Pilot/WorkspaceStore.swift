@@ -30,19 +30,45 @@ final class WorkspaceStore {
     var isNotesMode: Bool = false {
         didSet {
             UserDefaults.standard.set(isNotesMode, forKey: "notesMode")
-            // Notes and Remote Desktop are both full-detail global modes;
-            // entering one exits the other.
-            if isNotesMode { isRemoteDesktopMode = false }
+            // Notes, Remote Desktop, and Docker are all full-detail global
+            // modes; entering one exits the others.
+            if isNotesMode {
+                isRemoteDesktopMode = false
+                isDockerMode = false
+            }
         }
     }
 
     /// True while the global Remote Desktop mode is showing in the detail area
-    /// (toggled with ⇧⌘0). Mutually exclusive with `isNotesMode`.
+    /// (toggled with ⇧⌘0). Mutually exclusive with the other global modes.
     var isRemoteDesktopMode: Bool = false {
         didSet {
             UserDefaults.standard.set(isRemoteDesktopMode, forKey: "remoteDesktopMode")
-            if isRemoteDesktopMode { isNotesMode = false }
+            if isRemoteDesktopMode {
+                isNotesMode = false
+                isDockerMode = false
+            }
         }
+    }
+
+    /// True while the global Docker mode is showing in the detail area (toggled
+    /// with ⌃⌘0). Mutually exclusive with the other global modes.
+    var isDockerMode: Bool = false {
+        didSet {
+            UserDefaults.standard.set(isDockerMode, forKey: "dockerMode")
+            if isDockerMode {
+                isNotesMode = false
+                isRemoteDesktopMode = false
+            }
+        }
+    }
+
+    /// True when the detail area belongs to the selected workspace rather than
+    /// to one of the full-detail global modes. Every workspace-scoped surface
+    /// (pane activation, the ink overlay, ⌘W) keys off this rather than
+    /// re-listing the modes.
+    var isWorkspaceDetailVisible: Bool {
+        !isNotesMode && !isRemoteDesktopMode && !isDockerMode
     }
 
     var selectedRemoteConnectionID: UUID? {
@@ -135,8 +161,13 @@ final class WorkspaceStore {
         var unpinned = remaining.filter { !$0.isPinned }
 
         if workspace.isPinned {
-            pinned.insert(workspace, at: 0)
+            // Joins the end of the pinned section: pinning is an additive act,
+            // and displacing the workspace the user pinned first would reorder
+            // a list they arranged deliberately.
+            pinned.append(workspace)
         } else {
+            // Unpinning surfaces it at the top of the unpinned section, where
+            // it stays in easy reach right after leaving the pinned group.
             unpinned.insert(workspace, at: 0)
         }
 
@@ -164,6 +195,7 @@ final class WorkspaceStore {
         guard workspaces.contains(where: { $0.id == workspaceID }) else { return }
         if isNotesMode { isNotesMode = false }
         if isRemoteDesktopMode { isRemoteDesktopMode = false }
+        if isDockerMode { isDockerMode = false }
         if selectedWorkspaceID != workspaceID {
             selectedWorkspaceID = workspaceID
         }
@@ -324,6 +356,19 @@ final class WorkspaceStore {
         isRemoteDesktopMode = true
     }
 
+    // MARK: - Docker
+
+    /// ⌃⌘0: flip into Docker mode or back out to the selected workspace. Unlike
+    /// Notes and Remote Desktop there is nothing to seed first — the container
+    /// list is live daemon state, owned by `DockerStore`, not persisted here.
+    func toggleDockerMode() {
+        isDockerMode.toggle()
+    }
+
+    func enterDockerMode() {
+        isDockerMode = true
+    }
+
     @discardableResult
     func addRemoteConnection(host: String, port: Int = 5900, nickname: String = "", username: String = "") -> RemoteDesktopConnection {
         let maxOrder = remoteConnections.map(\.sortOrder).max() ?? -1
@@ -427,6 +472,7 @@ final class WorkspaceStore {
             self.selectedRemoteConnectionID = UUID(uuidString: storedRemote)
         }
         self.isRemoteDesktopMode = UserDefaults.standard.bool(forKey: "remoteDesktopMode")
+        self.isDockerMode = UserDefaults.standard.bool(forKey: "dockerMode")
         cleanupBadDirectories()
         if let selectedWorkspaceID, !workspaces.contains(where: { $0.id == selectedWorkspaceID }) {
             self.selectedWorkspaceID = workspaces.first?.id

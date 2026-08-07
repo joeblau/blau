@@ -32,6 +32,9 @@ struct WorkspacePaneLauncher: View {
         }
         .frame(width: 36, height: 36)
 
+        // No `primaryAction`: clicking opens the engine chooser rather than
+        // silently picking WebKit, matching the Apple and Android buttons beside
+        // it. ⌘B still opens a WebKit browser directly from the main menu.
         Menu {
             ForEach(BrowserEngine.allCases, id: \.self) { engine in
                 Button {
@@ -41,14 +44,21 @@ struct WorkspacePaneLauncher: View {
                 }
                 .disabled(!browserCreationEnabled(for: engine))
             }
+
+            // A greyed-out Chromium row is otherwise unexplained, and the three
+            // causes need different answers — most often nothing is wrong at all,
+            // just a build that deliberately ships without the CEF runtime.
+            if let reason = chromiumUnavailableReason {
+                Section {
+                    Text(reason.message)
+                }
+            }
         } label: {
             launcherLabel("New Browser", systemImage: BrowserEngine.webKit.systemImageName)
-        } primaryAction: {
-            addBrowserPane(engine: .webKit)
         }
         .menuIndicator(.hidden)
         .frame(width: 36, height: 36)
-        .help("Open a WebKit browser, or choose Chromium from the menu")
+        .help("Open a browser pane — choose WebKit or Chromium")
         .accessibilityIdentifier("workspace.browser-pane-launcher")
 
         Menu {
@@ -132,6 +142,12 @@ struct WorkspacePaneLauncher: View {
 
     private func addBrowserPane(engine: BrowserEngine) {
         workspace?.addBrowserPane(engine: engine, side: .right)
+    }
+
+    private var chromiumUnavailableReason: ChromiumUnavailableReason? {
+        _ = chromiumDiagnostics.runtimeStatus
+        _ = chromiumProfileAccess.isClearing
+        return ChromiumBrowserCreationPolicy.unavailableReason
     }
 
     private func browserCreationEnabled(for engine: BrowserEngine) -> Bool {

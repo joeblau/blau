@@ -108,6 +108,23 @@ Debug and Release intentionally remain artifact-free and continue using
 the stub bridge and WebKit. The opt-in environment is intentionally scoped to
 the Chromium build command.
 
+The built product lands in a hash-named DerivedData directory that a Clean
+Build Folder erases. To keep a Chromium-enabled Pilot at a stable path for
+day-to-day use, build and install it in one step:
+
+```sh
+apple/bin/install-pilot-chromium.sh
+```
+
+It selects an installed Xcode 26 when `xcode-select` points elsewhere, refuses
+to install a bundle without the embedded framework, helper bundles, or a valid
+signature, and swaps the destination atomically so an interrupted copy cannot
+replace a working app with a partial one. The destination defaults to
+`/Applications/Pilot.app` and is overridable with `--destination` or
+`BLAU_PILOT_INSTALL_PATH`. Pass `--skip-build` to install the current build as
+is. This installs a development-signed build for local use; distribution still
+goes through the signed, notarized release workflow.
+
 ## Run the real engine smoke test
 
 After installing the pinned runtime, exercise native rendering, offline

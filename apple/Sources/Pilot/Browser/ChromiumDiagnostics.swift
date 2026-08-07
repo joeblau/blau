@@ -50,6 +50,42 @@ enum ChromiumBrowserCreationPolicy {
                 ChromiumProfileAccessCoordinator.shared.isClearing
         )
     }
+
+    /// Why the Chromium entry point is disabled, worded for someone looking at a
+    /// greyed-out menu item. The three causes need different answers, so they are
+    /// reported separately rather than as one generic "see diagnostics" line —
+    /// diagnostics only helps for the third.
+    @MainActor
+    static var unavailableReason: ChromiumUnavailableReason? {
+        guard !isCreationEnabled else { return nil }
+        if !ChromiumEngine.shared.isRuntimeAvailable { return .notInThisBuild }
+        if ChromiumProfileAccessCoordinator.shared.isClearing { return .clearingBrowsingData }
+        return .engineUnavailable
+    }
+}
+
+/// The reasons a Chromium pane cannot be created right now.
+enum ChromiumUnavailableReason: Equatable, Sendable {
+    /// The overwhelmingly common one: clean Debug and Release builds compile
+    /// ChromiumKit's stub bridge and never link CEF, so there is no runtime to
+    /// start. Nothing is wrong — the fix is to build a different configuration.
+    case notInThisBuild
+    /// Transient. Creation is blocked until the detached filesystem work ends.
+    case clearingBrowsingData
+    /// The runtime is present but the engine failed to start, shut down, or
+    /// recorded an initialization failure. This is the case worth diagnosing.
+    case engineUnavailable
+
+    var message: String {
+        switch self {
+        case .notInThisBuild:
+            "Chromium isn't in this build. Build the Chromium configuration to enable it."
+        case .clearingBrowsingData:
+            "Pilot is clearing Chromium browsing data."
+        case .engineUnavailable:
+            "Chromium couldn't start. See Settings → Chromium diagnostics."
+        }
+    }
 }
 
 enum ChromiumDiagnosticEvent: String, CaseIterable, Hashable, Sendable {

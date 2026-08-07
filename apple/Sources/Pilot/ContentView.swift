@@ -169,6 +169,9 @@ struct BrowserNavigationToolbarControls: View {
     let state: BrowserState
 
     var body: some View {
+        // Wallets lead, separated from the navigation ControlGroup so they read
+        // as their own affordance rather than a third arrow.
+        BrowserWalletToolbarControls(state: state)
         BrowserBackForwardToolbarControls(state: state)
         BrowserAddressToolbarControl(state: state)
     }
@@ -585,6 +588,8 @@ struct ContentView: View {
     @State private var gitStore = GitCommitStore()
     @State private var tasksStore = GitHubTasksStore()
     @State private var usageStore = UsageStore()
+    @State private var dockerStore = DockerStore()
+    @State private var branchStore = WorkspaceBranchStore()
     @State private var isDrawingActive = false
     @AppStorage("sidebar.pinnedExpanded") private var pinnedSectionExpanded = true
     @AppStorage("sidebar.workspacesExpanded") private var workspacesSectionExpanded = true
@@ -612,6 +617,8 @@ struct ContentView: View {
                         .tag(SidebarSelection.notes)
                     Label("Remote Desktop", systemImage: "macbook.and.iphone")
                         .tag(SidebarSelection.remoteDesktop)
+                    Label("Docker", systemImage: "shippingbox")
+                        .tag(SidebarSelection.docker)
                 }
 
                 if !pinned.isEmpty {
@@ -674,8 +681,7 @@ struct ContentView: View {
                     // workspace, exactly like switching between workspaces does.
                     ZStack {
                         ForEach(workspaces) { workspace in
-                            let isActive = !store.isNotesMode
-                                && !store.isRemoteDesktopMode
+                            let isActive = store.isWorkspaceDetailVisible
                                 && workspace.id == store.selectedWorkspaceID
                             WorkspaceView(
                                 workspace: workspace,
@@ -693,10 +699,17 @@ struct ContentView: View {
                         }
                     }
 
-                    if !store.isNotesMode && !store.isRemoteDesktopMode && !hasSelectedWorkspace {
-                        ContentUnavailableView("No Workspace Selected",
-                                               systemImage: "rectangle.on.rectangle.slash",
-                                               description: Text("Select a workspace from the sidebar."))
+                    if store.isWorkspaceDetailVisible && !hasSelectedWorkspace {
+                        ContentUnavailableView {
+                            Label("No Workspace Selected", systemImage: "rectangle.on.rectangle.slash")
+                        } description: {
+                            Text("Select a workspace from the sidebar.")
+                        } actions: {
+                            PinnedQuickJumpRow(
+                                workspaces: workspaces,
+                                onSelect: store.selectWorkspace
+                            )
+                        }
                     }
                 }
 
@@ -710,7 +723,12 @@ struct ContentView: View {
                         .zIndex(100)
                 }
 
-                if isDrawingActive && !store.isNotesMode && !store.isRemoteDesktopMode && !workspaces.isEmpty {
+                if store.isDockerMode {
+                    DockerView(store: dockerStore)
+                        .zIndex(100)
+                }
+
+                if isDrawingActive && store.isWorkspaceDetailVisible && !workspaces.isEmpty {
                     InkOverlay(isActive: $isDrawingActive)
                         .zIndex(60)
                 }
@@ -756,6 +774,15 @@ struct ContentView: View {
             syncInspectorRepo(activeInspectorRepoPath)
             focusSelectedWorkspaceTerminal()
             usageStore.start()
+            branchStore.refresh(branchTargets(in: workspaces), force: true)
+        }
+        // A checkout happens in a terminal pane, so re-read when the workspace
+        // set or the selection changes; the store itself rate-limits the rest.
+        .onChange(of: store.changeCount) {
+            branchStore.refresh(branchTargets(in: store.workspaces))
+        }
+        .onChange(of: store.selectedWorkspaceID) {
+            branchStore.refresh(branchTargets(in: store.workspaces))
         }
         // Refetch usage the moment the inspector switches to the Usage tab, so a
         // key just saved in Settings shows results without waiting for the poll.
@@ -786,9 +813,7 @@ struct ContentView: View {
             )
         }
         .focusedSceneValue(
-            store.isNotesMode || store.isRemoteDesktopMode
-                ? nil
-                : store.selectedWorkspace
+            store.isWorkspaceDetailVisible ? store.selectedWorkspace : nil
         )
         .focusedSceneValue(
             \.pilotCloseTabAction,
@@ -799,8 +824,7 @@ struct ContentView: View {
         )
         .toolbar {
             ToolbarItem(placement: .principal) {
-                if !store.isNotesMode,
-                   !store.isRemoteDesktopMode,
+                if store.isWorkspaceDetailVisible,
                    let pane = TerminalToolbarSelection.pane(
                        for: store.selectedWorkspace?.selectedPane
                    ) {
@@ -809,8 +833,7 @@ struct ContentView: View {
                 }
             }
             ToolbarItem(placement: .principal) {
-                if !store.isNotesMode,
-                   !store.isRemoteDesktopMode,
+                if store.isWorkspaceDetailVisible,
                    let pane = TerminalToolbarSelection.pane(
                        for: store.selectedWorkspace?.selectedPane
                    ) {
@@ -819,8 +842,7 @@ struct ContentView: View {
                 }
             }
             ToolbarItemGroup(placement: .secondaryAction) {
-                if !store.isNotesMode,
-                   !store.isRemoteDesktopMode,
+                if store.isWorkspaceDetailVisible,
                    let pane = store.selectedWorkspace?.selectedPane {
                     PaneToolbarControls(pane: pane)
                 }
@@ -848,7 +870,7 @@ struct ContentView: View {
                 } label: {
                     Label("Inspector", systemImage: "sidebar.trailing")
                 }
-                .disabled(store.selectedWorkspace == nil || store.isNotesMode || store.isRemoteDesktopMode)
+                .disabled(store.selectedWorkspace == nil || !store.isWorkspaceDetailVisible)
             }
         }
         .background(LeadingWorkspaceToolbarItem())
@@ -901,7 +923,7 @@ struct ContentView: View {
         if store.isNotesMode {
             return store.selectedNote != nil
         }
-        guard !store.isRemoteDesktopMode else { return false }
+        guard store.isWorkspaceDetailVisible else { return false }
         return store.selectedWorkspace?.selectedPane != nil
     }
 
@@ -911,7 +933,7 @@ struct ContentView: View {
             store.requestCloseNote(note)
             return
         }
-        guard !store.isRemoteDesktopMode,
+        guard store.isWorkspaceDetailVisible,
               let workspace = store.selectedWorkspace,
               let pane = workspace.selectedPane else { return }
         workspace.removePane(pane)
@@ -925,6 +947,7 @@ struct ContentView: View {
     private var navigationTitle: String {
         if store.isNotesMode { return "Notes" }
         if store.isRemoteDesktopMode { return "Remote Desktop" }
+        if store.isDockerMode { return "Docker" }
         return store.selectedWorkspace?.name ?? ""
     }
 
@@ -933,6 +956,7 @@ struct ContentView: View {
             get: {
                 if store.isNotesMode { return .notes }
                 if store.isRemoteDesktopMode { return .remoteDesktop }
+                if store.isDockerMode { return .docker }
                 if let id = store.selectedWorkspaceID { return .workspace(id) }
                 return nil
             },
@@ -942,6 +966,8 @@ struct ContentView: View {
                     store.enterNotesMode()
                 case .remoteDesktop:
                     store.enterRemoteDesktopMode()
+                case .docker:
+                    store.enterDockerMode()
                 case .workspace(let id):
                     store.selectWorkspace(id)
                 case nil:
@@ -1015,12 +1041,28 @@ struct ContentView: View {
     }
 
     private func workspaceRow(_ workspace: Workspace) -> some View {
-        HStack {
+        HStack(spacing: 6) {
             TextField("Name", text: Bindable(workspace).name)
                 .focused($renamingWorkspaceID, equals: workspace.id)
                 .onSubmit {
                     renamingWorkspaceID = nil
                 }
+                .layoutPriority(1)
+
+            // Branch trails the name as secondary text. Hidden while renaming so
+            // it never competes with the field the user is typing in.
+            if renamingWorkspaceID != workspace.id,
+               let branch = branchStore.branches[workspace.id] {
+                Text(branch)
+                    .scaledFont(size: 10)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(0)
+                    .help("On branch \(branch)")
+                    .accessibilityLabel("On branch \(branch)")
+            }
+
             if workspace.badgeCount > 0 {
                 Text("\(workspace.badgeCount)")
                     .scaledFont(size: 10, weight: .bold)
@@ -1053,7 +1095,7 @@ struct ContentView: View {
                 store.togglePin(workspace)
             } label: {
                 Label(
-                    workspace.isPinned ? "Unpin" : "Pin to Top",
+                    workspace.isPinned ? "Unpin" : "Pin",
                     systemImage: workspace.isPinned ? "pin.slash" : "pin"
                 )
             }
@@ -1077,21 +1119,30 @@ struct ContentView: View {
         Binding(
             get: { isInspectorPresentedForSelectedWorkspace },
             set: { isPresented in
-                // Notes / Remote Desktop transiently hide the inspector by
-                // forcing `get` to false. SwiftUI echoes that back through this
-                // setter, which would otherwise persist `false` into the
-                // workspace and lose its real state. Ignore writes while a
-                // global mode is showing; only genuine in-workspace toggles
-                // persist — so the panel restores to what it was on return.
-                guard !store.isNotesMode, !store.isRemoteDesktopMode else { return }
+                // The global modes transiently hide the inspector by forcing
+                // `get` to false. SwiftUI echoes that back through this setter,
+                // which would otherwise persist `false` into the workspace and
+                // lose its real state. Ignore writes while a global mode is
+                // showing; only genuine in-workspace toggles persist — so the
+                // panel restores to what it was on return.
+                guard store.isWorkspaceDetailVisible else { return }
                 store.selectedWorkspace?.setInspectorPresented(isPresented)
             }
         )
     }
 
     private var isInspectorPresentedForSelectedWorkspace: Bool {
-        !store.isNotesMode && !store.isRemoteDesktopMode
+        store.isWorkspaceDetailVisible
             && (store.selectedWorkspace?.isInspectorPresented ?? false)
+    }
+
+    /// Workspaces that could have a branch — one without a root path has no
+    /// work tree to read, so it is never handed to a `git` lookup.
+    private func branchTargets(in workspaces: [Workspace]) -> [WorkspaceBranchStore.Target] {
+        workspaces.compactMap { workspace in
+            guard let path = workspace.effectiveRootPath else { return nil }
+            return WorkspaceBranchStore.Target(id: workspace.id, rootPath: path)
+        }
     }
 
     private var hasSelectedWorkspace: Bool {
@@ -1398,6 +1449,7 @@ private extension View {
 enum SidebarSelection: Hashable {
     case notes
     case remoteDesktop
+    case docker
     case workspace(UUID)
 }
 

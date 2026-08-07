@@ -699,6 +699,11 @@ struct PilotApp: App {
                 }
                 .keyboardShortcut("0", modifiers: [.command, .shift])
 
+                Button(store.isDockerMode ? "Hide Docker" : "Show Docker") {
+                    store.toggleDockerMode()
+                }
+                .keyboardShortcut("0", modifiers: [.command, .control])
+
                 Button("Focus Selected Pane") {
                     guard let workspace = store.selectedWorkspace,
                           let pane = workspace.selectedPane else { return }

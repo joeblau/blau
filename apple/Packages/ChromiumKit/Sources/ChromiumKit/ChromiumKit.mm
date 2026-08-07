@@ -209,6 +209,7 @@ BOOL ChromiumKitApplyDownloadQuarantine(NSURL *fileURL, NSError **error) {
 
 #if defined(BLAU_CHROMIUM_CEF_ENABLED) && BLAU_CHROMIUM_CEF_ENABLED
 
+
 #if !__has_include("include/cef_app.h")
 #error "BLAU_CHROMIUM_CEF_ENABLED requires the pinned CEF headers"
 #endif
@@ -221,6 +222,7 @@ BOOL ChromiumKitApplyDownloadQuarantine(NSURL *fileURL, NSError **error) {
 #include <limits>
 #include <memory>
 #include <unordered_map>
+#include <string>
 #include <vector>
 
 #include "include/cef_app.h"
@@ -238,6 +240,15 @@ BOOL ChromiumKitApplyDownloadQuarantine(NSURL *fileURL, NSError **error) {
 #include "include/cef_resource_request_handler.h"
 #include "include/wrapper/cef_helpers.h"
 #include "include/wrapper/cef_library_loader.h"
+
+namespace {
+/// Comma-separated unpacked extension directories supplied by Pilot before the
+/// engine starts. Read once by OnBeforeCommandLineProcessing on the main thread
+/// during CefInitialize, so no synchronization is required beyond the documented
+/// "set before start" contract.
+std::string g_extension_load_paths;
+std::string ExtensionLoadPaths() { return g_extension_load_paths; }
+}  // namespace
 
 namespace {
 
@@ -399,6 +410,23 @@ class ChromiumApp final : public CefApp,
             // CefRequestHandler::GetAuthCredentials. Route challenges through
             // our fail-closed handler without accepting external switches.
             command_line->AppendSwitch("disable-chrome-login-prompt");
+            // Side-load unpacked wallet extensions through Chrome's own
+            // mechanism: CEF 150 exposes no programmatic extension API (see
+            // chromiumembedded/cef#3450), so the switch is the only route.
+            // App-appended switches are still honored with
+            // command_line_args_disabled, which only blocks external/OS-
+            // provided arguments.
+            //
+            // The directories come from Pilot, which discovers them at runtime.
+            // They must never be hardcoded: Chrome derives an unpacked
+            // extension's ID from its absolute path, so a baked-in path both
+            // breaks on every other machine and silently invalidates the IDs
+            // used to address the extension's UI.
+            const std::string extension_paths = ExtensionLoadPaths();
+            if (!extension_paths.empty()) {
+                command_line->AppendSwitchWithValue("load-extension",
+                                                    extension_paths);
+            }
         }
     }
 
@@ -632,6 +660,11 @@ class EngineCore final {
         settings.external_message_pump = true;
         settings.windowless_rendering_enabled = false;
         settings.command_line_args_disabled = true;
+        // SPIKE(rabby-extension): CEF 150 removed CefSettings::chrome_runtime
+        // (Chrome runtime is now the only runtime) and the old
+        // CefRequestContext::LoadExtension API; programmatic extension
+        // management is still open upstream (chromiumembedded/cef#3450), so
+        // extensions load via the load-extension switch below.
         const char *path = profile.path.fileSystemRepresentation;
         CefString(&settings.root_cache_path) = path;
         CefString(&settings.cache_path) = path;
@@ -780,7 +813,9 @@ void BrowserClient::Create() {
     const int height = std::max(1, static_cast<int>(NSHeight(host.bounds)));
     window_info.SetAsChild(CAST_NSVIEW_TO_CEF_WINDOW_HANDLE(host),
                            CefRect(0, 0, width, height));
-    window_info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+    // SPIKE(rabby-extension): Chrome-style windows so extension UI (action
+    // popups, tabs APIs) behaves; was CEF_RUNTIME_STYLE_ALLOY.
+    window_info.runtime_style = CEF_RUNTIME_STYLE_CHROME;
     CefBrowserSettings settings;
     create_requested_ = true;
     if (!CefBrowserHost::CreateBrowser(window_info, this, "about:blank",
@@ -1580,6 +1615,24 @@ void BrowserClient::Layout() {
     return ExternalMessagePump::Shared().WatchdogWorkCount();
 }
 
+- (void)setExtensionDirectories:(NSArray<NSURL *> *)directories {
+    // Must be set before start: CEF reads the command line once during
+    // CefInitialize, and Chrome ties an unpacked extension's identity to the
+    // absolute path it was loaded from.
+    NSMutableArray<NSString *> *paths = [NSMutableArray array];
+    for (NSURL *directory in directories) {
+        if (!directory.isFileURL) { continue; }
+        NSString *path = directory.URLByStandardizingPath.path;
+        // A comma separates entries in the switch value, so a path containing
+        // one cannot be expressed and is dropped rather than silently splitting
+        // into two bogus directories.
+        if (path.length == 0 || [path containsString:@","]) { continue; }
+        [paths addObject:path];
+    }
+    g_extension_load_paths =
+        [[paths componentsJoinedByString:@","] UTF8String] ?: "";
+}
+
 - (BOOL)startWithProfileDirectory:(NSURL *)profileDirectory
                             error:(NSError **)error {
     NSCAssert(NSThread.isMainThread, @"CEF must initialize on main");
@@ -1984,6 +2037,10 @@ void BrowserClient::Layout() {
 
 - (NSUInteger)messagePumpWatchdogWorkCount {
     return 0;
+}
+
+- (void)setExtensionDirectories:(NSArray<NSURL *> *)directories {
+    // The artifact-free bridge links no CEF, so there is nothing to load.
 }
 
 - (BOOL)startWithProfileDirectory:(NSURL *)profileDirectory

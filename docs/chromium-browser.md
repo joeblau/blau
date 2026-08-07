@@ -57,6 +57,18 @@ The upstream
 [cef-project](https://github.com/chromiumembedded/cef-project)
 is the reference implementation for build and helper behavior.
 
+Retina and backing-scale correctness holds by construction. The bridge hosts
+Chromium as a native child window inside Pilot's `NSView` subtree
+(`CefWindowInfo.SetAsChild`), with windowless rendering disabled and no
+off-screen bitmap or render-handler path in ChromiumKit. AppKit therefore
+scales Chromium content to the window's backing scale factor exactly as it
+does the rest of the view hierarchy, and the bridge deliberately contains no
+scale-factor code. Native hosting passed the Retina probe during the Xcode 26
+feasibility proof. A future move to off-screen rendering would lose this
+property and require explicit scale-factor plumbing through the render
+handler, which is one reason off-screen rendering remains a rejected
+alternative.
+
 ## Pinned upstream inputs
 
 Normal builds must never resolve a floating CEF channel. The artifact manifest
@@ -298,6 +310,121 @@ validation rejects missing or changed copies.
 - URLs, credentials, headers, local paths, and page-controlled content are
   redacted or bounded before entering logs or diagnostics.
 
+### Profile semantics decision
+
+Pilot supports exactly one Chromium profile model: a single shared persistent
+profile. The alternatives the tracking issue asked to evaluate were decided
+as follows.
+
+- **Shared persistent profile — chosen.** All Chromium panes in every
+  workspace use one profile with the identifier `default`, rooted at
+  `Application Support/Pilot/Chromium/Profiles/default`.
+  `ChromiumProfilePolicy` enforces the boundary: profile identifiers are
+  path-safe (at most 64 UTF-8 bytes of ASCII letters, digits, `-`, `_`), the
+  location helper refuses any path outside the managed root and rejects
+  symlinks inside it, and the engine receives only URLs produced by that
+  helper. The profile is isolated from WebKit data and system Chrome, and it
+  is never inside a workspace directory.
+- **Per-workspace profiles — deferred.** `ChromiumProfileIdentifier` and
+  `ChromiumProfileLocation.directory(for:)` already support additional
+  identifiers, but Pilot intentionally uses only `default`. CEF is
+  initialized once per process with a single root cache path, so per-workspace
+  profiles would require either multiple engine lifecycles or a CEF
+  request-context isolation layer Pilot does not currently build. Workspace
+  separation is already provided at the pane level, and no requirement has
+  justified the added migration, clearing, and rollback complexity of
+  per-workspace storage.
+- **Ephemeral (incognito) profiles — rejected for now.** The audited
+  lifecycle assumes one persistent managed directory: creation policy,
+  diagnostics, and clearing are all built around it, and the pinned engine
+  configuration points CEF's root cache path at that directory. An ephemeral
+  profile would bypass the managed-clear path and widen the audit surface
+  (cleanup on close, crash residue, interaction with the download and
+  quarantine policy) for a capability no workflow currently needs.
+- **Adding either later** requires, at minimum: minting and recording
+  non-default `ChromiumProfileIdentifier` values (keyed by workspace for
+  per-workspace profiles), extending engine startup to select or isolate a
+  profile per context, extending `ChromiumProfileAccessCoordinator` to
+  serialize and clear multiple profiles, and updating the rollback profile
+  compatibility rules in the runbook. Ephemeral profiles additionally need a
+  defined teardown and residue-cleanup story.
+
+Clearing behaves the same regardless of these future directions: the
+`ChromiumProfileAccessCoordinator` serializes all profile access, refuses to
+clear while the process-wide engine is running, refuses overlapping clears,
+and deletes only directories that pass the managed-location check.
+
+## Wallet extensions
+
+Chromium panes can host side-loaded wallet extensions (Rabby, Backpack). Pilot
+implements no wallet: it holds no keys, derives no addresses, signs nothing, and
+speaks no chain protocol. The extension is ordinary third-party browser code
+that keeps its own secrets in its own extension storage. Pilot supplies exactly
+two things — the directories Chromium loads, and a button that opens each
+extension's action popup.
+
+### Loading
+
+CEF 150 removed `CefRequestContext::LoadExtension` and there is no replacement;
+programmatic extension management remains open upstream
+(chromiumembedded/cef#3450). The only route is Chrome's `--load-extension`
+switch, appended in `ChromiumApp::OnBeforeCommandLineProcessing`. App-appended
+switches are still honored under `command_line_args_disabled`, which blocks only
+external and OS-provided arguments.
+
+The directories are supplied by Pilot through
+`ChromiumEngine.setExtensionDirectories(_:)` before `start(profileDirectory:)`,
+never hardcoded in the bridge. CEF reads the command line once during
+initialization, so the call has to precede engine start.
+
+`WalletExtensionRegistry` discovers them, searching
+`PILOT_WALLET_EXTENSIONS_DIR` (a development override) and then
+`Application Support/Pilot/Extensions`.
+
+### Identifiers are derived, never stored
+
+Chrome computes an unpacked extension's identifier from its **absolute load
+path**: the first 16 bytes of the path's SHA-256, hex-encoded, with each hex
+digit mapped `0…f` → `a…p`. That identifier is the `chrome-extension://` origin
+the extension's pages are served from.
+
+Pilot therefore derives the identifier from the same path it hands to CEF. A
+hardcoded identifier is a latent defect rather than a shortcut: it breaks on
+every machine whose path differs, and it keeps *resolving* after a directory
+moves — addressing an origin that no longer exists, with no error. The
+regression test pins the derivation against two identifiers Chrome actually
+assigned.
+
+### Trust boundary
+
+- A wallet extension is third-party code with broad privileges inside Chromium.
+  Installing one is a deliberate user act, equivalent to installing it in
+  Chrome; Pilot neither audits nor sandboxes it beyond what Chromium does.
+- `manifest.json` is untrusted input. Its size is bounded before reading, its
+  name is sanitized, and its `default_popup` is rejected outright when absolute,
+  containing `..`, or carrying a scheme — that string becomes a URL path.
+- A path containing a comma cannot be expressed in the switch value and is
+  dropped rather than silently splitting into two bogus directories.
+- `ChromiumNavigationPolicy` allows `chrome-extension:` only for same-pane
+  navigation and denies every new surface, so extension pages cannot open
+  unmanaged windows.
+
+### Why the popup is a separate window
+
+Each wallet's action popup renders in a floating `NSPanel` above the browser
+view, not inside page content. This mirrors Chrome, where extension popups are
+deliberately outside page-controlled space: a page that could draw over a
+wallet's UI could forge a connection prompt or a signing confirmation. The panel
+takes key focus because importing a key means typing into it, and it denies
+popup requests from its own content.
+
+### Known limits
+
+Wallet buttons appear only in Chromium panes — WebKit cannot host the extensions
+and renders nothing rather than a disabled control. Because Chromium itself ships
+only in the `Chromium` configuration, wallets are absent from clean Debug and
+Release builds for the same reason the engine is.
+
 ## Update and rollback
 
 Every CEF update changes the lock manifest in review and regenerates the
@@ -330,3 +457,7 @@ swap fails.
 The initial Chromium panel does not provide Chrome profile import, Chrome Sync,
 extension-store installation, a password manager, Widevine/DRM, or
 proprietary-codec builds.
+
+Pilot also implements no wallet of its own: no key storage, no signing, no
+EIP-1193 provider, no chain RPC. Wallet support means hosting a side-loaded
+extension that does those things itself, as described above.

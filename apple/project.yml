@@ -65,6 +65,8 @@ schemes:
     build:
       targets:
         Pilot: [run, test, profile, analyze, archive]
+    run:
+      config: Chromium
   # App schemes wired to run their fastlane snapshot UI-test bundles.
   Copilot:
     build:
