@@ -11,9 +11,14 @@ PACKAGES="${BLAU_SOURCE_PACKAGES:-${TMPDIR:-/tmp}/blau-source-packages}"
 build() {
   local scheme="$1"
   local destination="$2"
+  # Pin the configuration instead of inheriting the scheme's Run action. A
+  # scheme whose Run action points at Chromium would otherwise make this
+  # artifact-free lane build the CEF-backed configuration and fail on a machine
+  # without the pinned runtime installed — which is every CI runner.
   DISABLE_SWIFTLINT=1 xcodebuild build -quiet \
     -project "$PROJECT" \
     -scheme "$scheme" \
+    -configuration Debug \
     -destination "$destination" \
     -derivedDataPath "$DERIVED_ROOT/$scheme" \
     -clonedSourcePackagesDirPath "$PACKAGES" \
