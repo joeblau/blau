@@ -20,6 +20,7 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "audit": "bun audit",
+    "xcodegen": "apple/bin/install-xcodegen.sh generate --spec apple/project.yml --project apple",
     "ci": "bun run lint && bun run check && bun run test && bun run build && bun run audit",
     "preview": "turbo run preview",
     "deploy": "turbo run deploy"

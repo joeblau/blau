@@ -4,7 +4,8 @@ blau is a native Apple development cockpit: four companion apps, a public web
 site, and an optional rendezvous relay.
 
 - **Pilot** (macOS) combines terminals, editing, browser previews, GitHub work,
-  device capture, simulators, and remote screens.
+  device capture, simulators, remote screens, and local container control (see
+  [the Docker section](docs/docker-section.md)).
 - **Copilot** (iOS) supplies a trackpad, voice transcription, settings, and
   secure peer messaging.
 - **Plotter** (iPadOS) mirrors a Pilot window with low-latency HEVC and sends

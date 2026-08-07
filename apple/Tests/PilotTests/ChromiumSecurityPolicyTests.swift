@@ -74,6 +74,27 @@ struct ChromiumNavigationPolicyTests {
             ) == .block(.prohibitedScheme("javascript"))
         )
     }
+
+    @Test
+    func sideLoadedExtensionUINavigatesInTheCurrentPaneOnly() throws {
+        let url = try #require(
+            URL(string: "chrome-extension://adbojkblhgobhcdckcplhgemldmjldel/index.html")
+        )
+
+        #expect(
+            ChromiumNavigationPolicy.disposition(for: ChromiumNavigationRequest(url: url))
+                == .allowInCurrentPane
+        )
+        #expect(
+            ChromiumNavigationPolicy.disposition(
+                for: ChromiumNavigationRequest(
+                    url: url,
+                    target: .popup,
+                    hasTrustedUserGesture: true
+                )
+            ) == .block(.prohibitedScheme("chrome-extension"))
+        )
+    }
 }
 
 @Suite("Chromium origin permission policy")

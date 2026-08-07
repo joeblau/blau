@@ -60,6 +60,13 @@ final class ChromiumProfileAccessCoordinator: ObservableObject {
             throw ChromiumProfileSecurityError.profileClearInProgress
         }
         if !ChromiumEngine.shared.isRunning {
+            // Extension directories must be handed over before start: CEF reads
+            // the command line once during initialization, and the paths also
+            // determine the chrome-extension:// origins the wallet UI is served
+            // from, so they cannot change afterwards.
+            ChromiumEngine.shared.setExtensionDirectories(
+                WalletExtensionRegistry.discover().map(\.directory)
+            )
             _ = try ChromiumEngine.shared.start(
                 profileDirectory: profileDirectory
             )

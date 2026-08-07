@@ -128,6 +128,35 @@ struct ChromiumBrowserCreationPolicyTests {
             profileClearInProgress: true
         ))
     }
+
+    /// A disabled Chromium row has three different causes and only one of them
+    /// is worth opening diagnostics for, so the launcher reports them apart.
+    @Test
+    @MainActor
+    func explainsWhyCreationIsUnavailable() {
+#if BLAU_CHROMIUM_CEF_ENABLED
+        // The real bridge is linked, so "not in this build" cannot be the reason.
+        #expect(ChromiumBrowserCreationPolicy.unavailableReason != .notInThisBuild)
+#else
+        // Clean Debug and Release builds compile the stub bridge: nothing is
+        // broken, the runtime simply isn't linked.
+        #expect(ChromiumBrowserCreationPolicy.unavailableReason == .notInThisBuild)
+        #expect(!ChromiumBrowserCreationPolicy.isCreationEnabled)
+#endif
+    }
+
+    @Test
+    func eachUnavailableReasonNamesItsOwnFix() {
+        // The build-configuration case is the common one and must not send the
+        // reader to a diagnostics panel that would only report "Unavailable".
+        #expect(ChromiumUnavailableReason.notInThisBuild.message
+            .contains("Chromium configuration"))
+        #expect(!ChromiumUnavailableReason.notInThisBuild.message.contains("diagnostics"))
+        #expect(ChromiumUnavailableReason.clearingBrowsingData.message
+            .contains("clearing"))
+        #expect(ChromiumUnavailableReason.engineUnavailable.message
+            .contains("diagnostics"))
+    }
 }
 
 private actor ChromiumProfileClearTestGate {
