@@ -1,126 +1,32 @@
 ---
-const featureTags = [
-  { label: 'Pilot', position: 'tag--01' },
-  { label: 'Copilot', position: 'tag--02' },
-  { label: 'Plotter', position: 'tag--03' },
-  { label: 'Wingman', position: 'tag--04' },
-  { label: 'Agent terminals', position: 'tag--05' },
-  { label: 'Encrypted pairing', position: 'tag--06' },
-  { label: 'GitHub flow', position: 'tag--07' },
-  { label: 'Screen mirror', position: 'tag--08' },
-  { label: 'Voice control', position: 'tag--09' },
-  { label: 'Pencil feedback', position: 'tag--10' },
-  { label: 'Swift native', position: 'tag--11' },
-  { label: 'Local first', position: 'tag--12' },
-  { label: 'Live preview', position: 'tag--13' },
-  { label: 'Zero trust', position: 'tag--14' },
-  { label: 'HEVC', position: 'tag--15' },
-  { label: 'Clipboard sync', position: 'tag--16' },
-  { label: 'Watch gestures', position: 'tag--17' },
-  { label: 'Device capture', position: 'tag--18' },
-  { label: 'Embedded browser', position: 'tag--19' },
-  { label: 'WebKit previews', position: 'tag--20' },
-  { label: 'Chromium previews', position: 'tag--21' },
-  { label: 'Local server scan', position: 'tag--22' },
-  { label: 'Git status', position: 'tag--23' },
-  { label: 'Commit history', position: 'tag--24' },
-  { label: 'GitHub tasks', position: 'tag--25' },
-  { label: 'Fuzzy file finder', position: 'tag--26' },
-  { label: 'Markdown notes', position: 'tag--27' },
-  { label: 'Secret masking', position: 'tag--28' },
-  { label: 'iOS simulator', position: 'tag--29' },
-  { label: 'Android emulator', position: 'tag--30' },
-  { label: 'Remote desktop', position: 'tag--31' },
-  { label: 'Safari inspector', position: 'tag--32' },
-  { label: 'Touch input', position: 'tag--33' },
-  { label: 'Keyboard control', position: 'tag--34' },
-  { label: 'Ink annotations', position: 'tag--35' },
-  { label: 'Voice transcription', position: 'tag--36' },
-  { label: 'Usage tracking', position: 'tag--37' },
-  { label: 'Secure messaging', position: 'tag--38' },
-];
+import Button from './ui/Button.astro';
 ---
 
-<section class="landing" id="top">
-  <div class="landing__glow" aria-hidden="true"></div>
+<section class="landing" aria-labelledby="page-title">
+  <div class="landing__content">
+    <h1 id="page-title">Blau</h1>
 
-  <div class="feature-cloud" data-feature-cloud aria-hidden="true">
-    <canvas class="feature-cloud__canvas" data-tag-cloud></canvas>
-    {featureTags.map(({ label, position }) => (
-      <span class={`feature-tag ${position}`}>{label}</span>
-    ))}
-  </div>
-
-  <header class="landing__nav" aria-label="Site header">
-    <a class="brand" href="#top" aria-label="blau, back to top">
-      <span class="brand__glyph" aria-hidden="true">
-        <svg viewBox="0 0 28 28" fill="none">
-          <path d="m8 8 6 6-6 6M15 20h6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+    <div class="landing__actions" aria-label="Downloads">
+      <Button rounded type="button" disabled title="Coming soon">
+        <svg viewBox="0 0 24 24" data-icon="inline-start" aria-hidden="true">
+          <path d="M17.05 12.54c.02 2.22 1.95 2.96 1.97 2.97-.02.05-.31 1.06-1.02 2.1-.61.9-1.25 1.8-2.26 1.82-.98.02-1.3-.59-2.43-.59-1.12 0-1.48.57-2.41.61-.97.04-1.71-.97-2.33-1.86-1.27-1.84-2.24-5.2-.94-7.47a3.62 3.62 0 0 1 3.08-1.86c.96-.02 1.87.65 2.43.65.56 0 1.62-.8 2.73-.69.46.02 1.77.19 2.61 1.42-.07.04-1.56.91-1.54 2.9ZM15.14 7.05c.51-.62.86-1.49.76-2.36-.74.03-1.64.5-2.17 1.11-.48.55-.9 1.44-.78 2.28.83.06 1.67-.42 2.19-1.03Z" />
         </svg>
-      </span>
-      <span>blau</span>
-    </a>
+        <span>Download for macOS</span>
+      </Button>
 
-    <a class="source-link" href="https://github.com/joeblau/blau" rel="noopener">
-      Source code
-      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <path d="M5 15 15 5M8 5h7v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-    </a>
-  </header>
-
-  <div class="hero__content">
-    <p class="hero__eyebrow">Native on every Apple screen</p>
-
-    <h1>blau</h1>
-    <p class="hero__tagline">Agentic development, without the noise.</p>
-    <p class="hero__description">
-      A focused Mac cockpit with your iPhone, iPad, and Watch as private,
-      encrypted control surfaces.
-    </p>
-
-    <div class="hero__actions">
-      <button class="button store-badge" type="button" disabled title="Coming soon">
-        <span class="store-badge__device store-badge__device--mac" aria-hidden="true"></span>
-        <span class="store-badge__copy">
-          <span class="store-badge__eyebrow">Download on the</span>
-          <span class="store-badge__name">Mac App Store</span>
-        </span>
-      </button>
-      <button class="button store-badge" type="button" disabled title="Coming soon">
-        <span class="store-badge__device store-badge__device--ios" aria-hidden="true"></span>
-        <span class="store-badge__copy">
-          <span class="store-badge__eyebrow">Download on the</span>
-          <span class="store-badge__name">App Store</span>
-        </span>
-      </button>
-      <a class="button button--primary" href="https://github.com/joeblau/blau" rel="noopener">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M12 .8A11.2 11.2 0 0 0 8.46 22.62c.56.1.77-.24.77-.54v-2.16c-3.14.68-3.8-1.33-3.8-1.33-.51-1.3-1.25-1.65-1.25-1.65-1.03-.7.08-.69.08-.69 1.13.08 1.73 1.16 1.73 1.16 1.01 1.72 2.64 1.23 3.28.94.1-.73.4-1.23.72-1.5-2.51-.29-5.15-1.26-5.15-5.59 0-1.23.44-2.24 1.16-3.04-.11-.29-.5-1.44.12-3 0 0 .95-.3 3.1 1.16a10.8 10.8 0 0 1 5.66 0c2.15-1.46 3.1-1.16 3.1-1.16.62 1.56.23 2.71.12 3 .72.8 1.16 1.81 1.16 3.04 0 4.34-2.65 5.3-5.17 5.58.4.35.76 1.03.76 2.08v3.15c0 .3.2.65.78.54A11.2 11.2 0 0 0 12 .8Z" />
+      <Button rounded type="button" disabled title="Coming soon">
+        <svg viewBox="0 0 24 24" data-icon="inline-start" aria-hidden="true">
+          <path d="M17.05 12.54c.02 2.22 1.95 2.96 1.97 2.97-.02.05-.31 1.06-1.02 2.1-.61.9-1.25 1.8-2.26 1.82-.98.02-1.3-.59-2.43-.59-1.12 0-1.48.57-2.41.61-.97.04-1.71-.97-2.33-1.86-1.27-1.84-2.24-5.2-.94-7.47a3.62 3.62 0 0 1 3.08-1.86c.96-.02 1.87.65 2.43.65.56 0 1.62-.8 2.73-.69.46.02 1.77.19 2.61 1.42-.07.04-1.56.91-1.54 2.9ZM15.14 7.05c.51-.62.86-1.49.76-2.36-.74.03-1.64.5-2.17 1.11-.48.55-.9 1.44-.78 2.28.83.06 1.67-.42 2.19-1.03Z" />
         </svg>
-        View on GitHub
-      </a>
+        <span>Download for iOS</span>
+      </Button>
     </div>
-
-    <p class="sr-only">
-      Features include Pilot, Copilot, Plotter, Wingman, agent terminals,
-      encrypted pairing, GitHub workflows, screen mirroring, voice control,
-      Pencil feedback, live previews, and device capture.
-    </p>
   </div>
 
   <footer class="landing__footer">
-    <p>Four native apps. One encrypted loop.</p>
-    <ul aria-label="Supported platforms">
-      <li>macOS</li>
-      <li>iOS</li>
-      <li>iPadOS</li>
-      <li>watchOS</li>
-    </ul>
+    <nav aria-label="Social links">
+      <a href="https://github.com/joeblau/blau" target="_blank" rel="noreferrer">GitHub</a>
+      <a href="https://x.com/joeblau" target="_blank" rel="noreferrer">X</a>
+    </nav>
   </footer>
 </section>
-
-<script>
-  import '../scripts/tag-cloud';
-  import '../scripts/liquid-glass';
-</script>
