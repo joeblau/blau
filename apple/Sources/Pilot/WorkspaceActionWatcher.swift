@@ -37,17 +37,37 @@ final class WorkspaceActionWatcher {
     private var fetchTasks: [UUID: Task<Void, Never>] = [:]
     private var fetchGenerations: [UUID: Int] = [:]
 
-    /// Gentle cadence — Actions change less often than commits, and this hits
-    /// `gh` once per workspace per tick.
-    private static let interval: TimeInterval = 60
+    /// Cadence adapts to whether anything is actually running.
+    ///
+    /// A fixed 60s sweep meant a finished run could sit unbadged for a minute
+    /// on top of the poll cache's own TTL — most visible exactly when you are
+    /// watching CI. While any tracked repo has a queued or in-progress run the
+    /// sweep tightens; once everything is idle it backs off again, so the
+    /// steady-state cost of `gh` subprocesses and API calls is unchanged.
+    ///
+    /// The run status arrives in the response already being fetched, so knowing
+    /// which mode to use costs no extra request.
+    private static let activeInterval: TimeInterval = 10
+    private static let idleInterval: TimeInterval = 60
+
+    /// Workspaces whose most recent snapshot showed a run still in flight.
+    /// Tracked per workspace rather than as one flag so a result arriving from
+    /// one repo cannot clear what another repo just reported.
+    private var workspacesWithActiveRuns: Set<UUID> = []
+
+    private var hasActiveRun: Bool { !workspacesWithActiveRuns.isEmpty }
+
+    /// GitHub's non-terminal run states. Anything outside this set and
+    /// `completed` is treated as idle rather than assumed to be running.
+    private nonisolated static let activeStatuses: Set<String> = [
+        "queued", "in_progress", "waiting", "requested", "pending",
+    ]
 
     func start(store: WorkspaceStore) {
         self.store = store
         timer?.invalidate()
         sweep()
-        timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.sweep() }
-        }
+        scheduleNextSweep()
     }
 
     func stop() {
@@ -55,6 +75,20 @@ final class WorkspaceActionWatcher {
         timer = nil
         fetchTasks.values.forEach { $0.cancel() }
         fetchTasks.removeAll()
+    }
+
+    /// One-shot timer rescheduled after every sweep, so the interval can change
+    /// between ticks rather than being fixed when the watcher starts.
+    private func scheduleNextSweep() {
+        timer?.invalidate()
+        let interval = hasActiveRun ? Self.activeInterval : Self.idleInterval
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.sweep()
+                self.scheduleNextSweep()
+            }
+        }
     }
 
     private func sweep() {
@@ -67,15 +101,33 @@ final class WorkspaceActionWatcher {
             let generation = (fetchGenerations[wsID] ?? 0) + 1
             fetchGenerations[wsID] = generation
             fetchTasks[wsID] = Task { [weak self] in
-                let result = await Self.completedRunIDs(in: dir)
+                let result = await Self.runSnapshot(in: dir)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     guard let self, self.fetchGenerations[wsID] == generation else { return }
                     self.fetchTasks[wsID] = nil
-                    self.process(workspaceID: wsID, result: result)
+                    if case .success(let snapshot) = result {
+                        // Cadence changes take effect immediately rather than
+                        // waiting for the next tick, so a run starting shortens
+                        // the wait and the last one finishing ends the fast poll.
+                        let wasActive = self.hasActiveRun
+                        if snapshot.hasActiveRun {
+                            self.workspacesWithActiveRuns.insert(wsID)
+                        } else {
+                            self.workspacesWithActiveRuns.remove(wsID)
+                        }
+                        if self.hasActiveRun != wasActive { self.scheduleNextSweep() }
+                    }
+                    self.process(
+                        workspaceID: wsID,
+                        result: result.map(\.completedIDs)
+                    )
                 }
             }
         }
+        // Workspaces that disappeared cannot keep the fast cadence alive.
+        let liveIDs = Set(store.workspaces.map(\.id))
+        workspacesWithActiveRuns.formIntersection(liveIDs)
     }
 
     private func process(workspaceID: UUID, result: Result<Set<Int>, ActionRunFetchError>) {
@@ -89,11 +141,18 @@ final class WorkspaceActionWatcher {
 
     // MARK: - gh (off the main actor)
 
-    /// IDs of runs currently in the `completed` status for the repo at `dir`.
-    /// Any newly-completed run (vs. the last sweep) is what we badge on.
-    private nonisolated static func completedRunIDs(
+    /// What one sweep learns about a repo: which runs have finished, and
+    /// whether anything is still in flight.
+    struct RunSnapshot: Sendable {
+        let completedIDs: Set<Int>
+        let hasActiveRun: Bool
+    }
+
+    /// Runs for the repo at `dir`. Newly-completed runs (vs. the last sweep)
+    /// are what we badge on; the active flag only drives the poll cadence.
+    private nonisolated static func runSnapshot(
         in dir: String
-    ) async -> Result<Set<Int>, ActionRunFetchError> {
+    ) async -> Result<RunSnapshot, ActionRunFetchError> {
         guard let repository = await RepositoryPollingScheduler.shared.repository(for: dir) else {
             return .failure(.launchFailed("Not a Git repository"))
         }
@@ -119,10 +178,16 @@ final class WorkspaceActionWatcher {
             return .failure(.invalidJSON)
         }
         var ids: Set<Int> = []
-        for item in items where (item["status"] as? String) == "completed" {
-            if let id = item["databaseId"] as? Int { ids.insert(id) }
+        var hasActiveRun = false
+        for item in items {
+            let status = (item["status"] as? String) ?? ""
+            if status == "completed" {
+                if let id = item["databaseId"] as? Int { ids.insert(id) }
+            } else if Self.activeStatuses.contains(status) {
+                hasActiveRun = true
+            }
         }
-        return .success(ids)
+        return .success(RunSnapshot(completedIDs: ids, hasActiveRun: hasActiveRun))
     }
 
 }

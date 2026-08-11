@@ -1063,6 +1063,9 @@ struct ContentView: View {
                     .accessibilityLabel("On branch \(branch)")
             }
 
+            // The count outranks both the name field and the branch for space.
+            // The field is greedy, so without a higher priority and a fixed
+            // size the digits get truncated away and the capsule renders empty.
             if workspace.badgeCount > 0 {
                 Text("\(workspace.badgeCount)")
                     .scaledFont(size: 10, weight: .bold)
@@ -1070,6 +1073,8 @@ struct ContentView: View {
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(.red, in: Capsule())
+                    .fixedSize()
+                    .layoutPriority(2)
             }
         }
         .tag(SidebarSelection.workspace(workspace.id))
