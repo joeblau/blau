@@ -1,0 +1,30 @@
+---
+interface Props {
+  variant?: 'default' | 'outline';
+  size?: 'default' | 'lg';
+  rounded?: boolean;
+  class?: string;
+  type?: 'button' | 'submit' | 'reset';
+  disabled?: boolean;
+  title?: string;
+  'aria-label'?: string;
+}
+
+const {
+  variant = 'default',
+  size = 'default',
+  rounded = false,
+  class: className,
+  ...props
+} = Astro.props;
+---
+
+<button
+  data-slot="button"
+  data-variant={variant}
+  data-size={size}
+  class:list={['button', rounded && 'button--rounded', className]}
+  {...props}
+>
+  <slot />
+</button>
