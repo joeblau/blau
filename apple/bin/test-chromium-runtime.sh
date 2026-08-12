@@ -38,6 +38,7 @@ xcodebuild \
   -configuration Chromium \
   -destination 'platform=macOS' \
   -only-testing:PilotTests/ChromiumRealEngineSmokeTests \
+  -skipPackagePluginValidation \
   ENABLE_TESTABILITY=YES \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=YES \
   ARCHS="$TEST_ARCHITECTURE" \
