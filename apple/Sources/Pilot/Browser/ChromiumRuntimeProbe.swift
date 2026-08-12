@@ -199,7 +199,7 @@ enum ChromiumRuntimeProbe {
                     && !secondHost.isLoading
             }
             logger.notice("Surviving browser navigation observed")
-            let survivingTitle = "Pilot Chromium probe survivor"
+            let survivingTitle = "Cockpit Chromium probe survivor"
             guard secondHost.executeJavaScript(
                 "document.title = '\(survivingTitle)';",
                 sourceURL: secondURL,
@@ -308,8 +308,8 @@ enum ChromiumRuntimeProbe {
         sourceURL: URL,
         timeout: TimeInterval
     ) async throws -> (first: String, second: String) {
-        let firstTitle = "Pilot Chromium probe first"
-        let secondTitle = "Pilot Chromium probe second"
+        let firstTitle = "Cockpit Chromium probe first"
+        let secondTitle = "Cockpit Chromium probe second"
         guard firstHost.executeJavaScript(
             "document.title = '\(firstTitle)';",
             sourceURL: sourceURL,
@@ -353,7 +353,7 @@ enum ChromiumRuntimeProbe {
         while true {
             guard let commands = runningHelperCommands() else {
                 throw ChromiumRuntimeProbeError.invalidLifecycle(
-                    "Pilot could not inspect Chromium helper cleanup."
+                    "Cockpit could not inspect Chromium helper cleanup."
                 )
             }
             helperCount = commands.count
@@ -495,7 +495,7 @@ enum ChromiumRuntimeProbe {
                     && delegate.lastTitle?.contains("[ready]") == true
                     && !host.isLoading
             }
-            let restoredTitle = "Pilot Chromium probe restored"
+            let restoredTitle = "Cockpit Chromium probe restored"
             guard host.executeJavaScript(
                 "document.title = '\(restoredTitle)';",
                 sourceURL: restoredURL,
@@ -541,7 +541,7 @@ enum ChromiumRuntimeProbe {
                     && delegate.lastTitle?.contains("[ready]") == true
                     && !host.isLoading
             }
-            let recoveryTitle = "Pilot Chromium probe renderer recovered"
+            let recoveryTitle = "Cockpit Chromium probe renderer recovered"
             guard host.executeJavaScript(
                 "document.title = '\(recoveryTitle)';",
                 sourceURL: recoveryURL,
@@ -617,7 +617,7 @@ enum ChromiumRuntimeProbe {
             to: popupPageURL,
             timeout: timeout
         )
-        let blockedScriptPopupTitle = "Pilot Chromium script popup blocked"
+        let blockedScriptPopupTitle = "Cockpit Chromium script popup blocked"
         guard host.executeJavaScript(
             """
             document.title =
@@ -663,7 +663,7 @@ enum ChromiumRuntimeProbe {
             to: permissionPageURL,
             timeout: timeout
         )
-        let permissionDeniedTitle = "Pilot Chromium permission denied"
+        let permissionDeniedTitle = "Cockpit Chromium permission denied"
         guard host.executeJavaScript(
             """
             navigator.mediaDevices.getUserMedia({audio: true})
@@ -749,7 +749,7 @@ enum ChromiumRuntimeProbe {
             to: hostileURL,
             timeout: timeout
         )
-        let survivorTitle = "Pilot Chromium hostile messages ignored"
+        let survivorTitle = "Cockpit Chromium hostile messages ignored"
         guard host.executeJavaScript(
             """
             document.querySelector('#send').click();
@@ -800,7 +800,7 @@ enum ChromiumRuntimeProbe {
         sourceURL: URL,
         timeout: TimeInterval
     ) async throws {
-        let titlePrefix = "Pilot Chromium click location:"
+        let titlePrefix = "Cockpit Chromium click location:"
         guard host.executeJavaScript(
             """
             (() => {
@@ -990,7 +990,7 @@ enum ChromiumRuntimeProbe {
         let messagePumpCountBefore = ChromiumEngine.shared.messagePumpWatchdogWorkCount
         guard !before.isEmpty else {
             throw ChromiumRuntimeProbeError.invalidLifecycle(
-                "No Pilot Chromium processes were available to sample."
+                "No Cockpit Chromium processes were available to sample."
             )
         }
         let startedAt = ContinuousClock.now
@@ -1002,7 +1002,7 @@ enum ChromiumRuntimeProbe {
         let commonProcessIDs = Set(before.keys).intersection(after.keys)
         guard !commonProcessIDs.isEmpty else {
             throw ChromiumRuntimeProbeError.invalidLifecycle(
-                "The Pilot Chromium process set changed during idle sampling."
+                "The Cockpit Chromium process set changed during idle sampling."
             )
         }
 

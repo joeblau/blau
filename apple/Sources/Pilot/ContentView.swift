@@ -795,7 +795,7 @@ struct ContentView: View {
             usageStore.stop()
         }
         .onReceive(NotificationCenter.default.publisher(for: .pilotPersistenceSaveFailed)) { notification in
-            let operation = notification.userInfo?["operation"] as? String ?? "Saving Pilot data"
+            let operation = notification.userInfo?["operation"] as? String ?? "Saving Cockpit data"
             let message = notification.userInfo?["message"] as? String ?? "Unknown persistence error"
             persistenceFailure = PersistenceFailure(operation: operation, message: message)
         }
@@ -807,7 +807,7 @@ struct ContentView: View {
                 title: Text("Changes could not be saved"),
                 message: Text("\(failure.operation) failed: \(failure.message)\n\nYour non-destructive edits remain in memory. Free disk space or fix permissions, then retry."),
                 primaryButton: .default(Text("Retry")) {
-                    _ = store.modelContext.saveReporting(operation: "Retrying Pilot data save")
+                    _ = store.modelContext.saveReporting(operation: "Retrying Cockpit data save")
                 },
                 secondaryButton: .cancel()
             )
@@ -1029,7 +1029,7 @@ struct ContentView: View {
         case .iphone:
             syncService.statusText
         case .ipad:
-            isPlotterConnected ? "Plotter connected" : nil
+            isPlotterConnected ? "Kneeboard connected" : nil
         case .appleWatch:
             peerDeviceStatus.isWatchConnected ? "Companion watch connected" : nil
         case .airpods, .airpodsPro, .airpodsMax, .beats, .headphonesWired,

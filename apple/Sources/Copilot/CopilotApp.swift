@@ -133,11 +133,11 @@ final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificatio
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
         // Terminal controls are intentionally live-only. Ignore queued payloads
         // from older Wingman builds instead of pressing Enter after reconnect.
-        copilotConnectivityLogger.notice("Ignored queued Wingman transferUserInfo payload.")
+        copilotConnectivityLogger.notice("Ignored queued Trigger transferUserInfo payload.")
     }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        copilotConnectivityLogger.notice("Ignored queued Wingman applicationContext payload.")
+        copilotConnectivityLogger.notice("Ignored queued Trigger applicationContext payload.")
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
@@ -151,7 +151,7 @@ final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificatio
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        copilotConnectivityLogger.info("Presenting Wingman notification while app is foregrounded.")
+        copilotConnectivityLogger.info("Presenting Trigger notification while app is foregrounded.")
         completionHandler([.banner, .list, .sound])
     }
 
@@ -172,16 +172,16 @@ final class PhoneSessionDelegate: NSObject, WCSessionDelegate, UNUserNotificatio
             isPilotConnected: syncService?.isConnected == true
         ) {
         case .rejectStale:
-            copilotConnectivityLogger.notice("Rejected stale Wingman command over \(transport, privacy: .public).")
+            copilotConnectivityLogger.notice("Rejected stale Trigger command over \(transport, privacy: .public).")
             return false
         case .rejectUnavailable:
-            copilotConnectivityLogger.notice("Rejected Wingman command because Pilot is disconnected.")
+            copilotConnectivityLogger.notice("Rejected Trigger command because Cockpit is disconnected.")
             return false
         case .acknowledgeDuplicate:
-            copilotConnectivityLogger.info("Acknowledged already-executed Wingman command over \(transport, privacy: .public).")
+            copilotConnectivityLogger.info("Acknowledged already-executed Trigger command over \(transport, privacy: .public).")
             return true
         case .acceptAndExecute:
-            copilotConnectivityLogger.info("Accepted fresh double pinch over \(transport, privacy: .public). Forwarding as Enter to Pilot.")
+            copilotConnectivityLogger.info("Accepted fresh double pinch over \(transport, privacy: .public). Forwarding as Enter to Cockpit.")
             PhoneSessionDelegate.playDoublePinchHaptic()
             syncService?.send(.terminalInput(.enter))
             return true
@@ -230,7 +230,7 @@ struct CopilotApp: App {
         notificationCenter.delegate = delegate
 
         if WCSession.isSupported() {
-            copilotConnectivityLogger.info("Activating default WCSession for Copilot.")
+            copilotConnectivityLogger.info("Activating default WCSession for Walkie.")
             WCSession.default.delegate = delegate
             WCSession.default.activate()
         } else {

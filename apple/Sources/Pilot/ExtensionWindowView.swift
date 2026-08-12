@@ -621,8 +621,8 @@ struct ExtensionWindowView: View {
                             systemImage: "rectangle.on.rectangle.slash",
                             description: Text(
                                 store.workspaces.isEmpty
-                                    ? "Create a workspace in the main Pilot window."
-                                    : "Select a workspace in the main Pilot window."
+                                    ? "Create a workspace in the main Cockpit window."
+                                    : "Select a workspace in the main Cockpit window."
                             )
                         )
                         .accessibilityIdentifier("extension.empty")

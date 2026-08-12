@@ -5,7 +5,8 @@ tool, plugin, skill router, or globally installed utility.
 
 ## Repository map
 
-- `apple/` — Pilot (macOS), Copilot (iOS), Plotter (iPadOS), Wingman (watchOS),
+- `apple/` — Cockpit (`Pilot`, macOS), Walkie (`Copilot`, iOS), Kneeboard
+  (`Plotter`, iPadOS), Trigger (`Wingman`, watchOS),
   shared peer protocols, unit/UI tests, XcodeGen source, and screenshot tools.
 - `workers/web/` — Astro static site deployed to Cloudflare.
 - `workers/rendezvous/` — Cloudflare Worker and Durable Object relay.
