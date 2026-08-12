@@ -143,6 +143,10 @@ dependencies have one team identity under hardened runtime. Set
 `BLAU_CHROMIUM_TEST_DEVELOPMENT_TEAM` to override the local defaults. Ordinary
 invocations run the host architecture; set
 `BLAU_CHROMIUM_TEST_ARCHITECTURE=x86_64` to run the x86_64 slice under Rosetta.
+Result bundles land in a temporary directory (one per architecture); set
+`BLAU_CHROMIUM_TEST_RESULT_ROOT` to choose the directory — on failure the
+script prints the recorded test failures from the bundle, which is the only
+failure detail available under `-quiet`.
 The protected release workflow runs both architecture slices. Ordinary
 Debug and Release suites skip this one real-engine test and continue using the
 stub bridge. Runtime and artifact limits are pinned in

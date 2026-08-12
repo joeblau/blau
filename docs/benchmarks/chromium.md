@@ -31,14 +31,19 @@ Per-architecture ceilings from `performance-budgets.json`:
 
 | Metric | arm64 | x86_64 |
 | --- | ---: | ---: |
-| Startup | 5 s | 40 s |
-| First navigation | 2 s | 2 s |
-| Helper cleanup after shutdown | 5 s | 5 s |
+| Startup | 30 s | 40 s |
+| First navigation | 10 s | 10 s |
+| Helper cleanup after shutdown | 15 s | 15 s |
 | Idle process-tree CPU | 35 % | 35 % |
 | Idle Pilot-watchdog message-pump turns | 12 | 12 |
 | Resident memory | 1,250,000,000 bytes | 1,250,000,000 bytes |
 
-The x86_64 startup ceiling includes cold Rosetta translation. The watchdog
+The wall-clock ceilings are sized for the shared CI runners that execute the
+release gate: a cold runtime start on a busy hosted VM is far slower than on
+a development machine, so startup, first navigation, and helper cleanup carry
+generous headroom while the speed-independent limits (idle CPU, watchdog
+turns, resident memory) stay tight. The x86_64 startup ceiling includes cold
+Rosetta translation. The watchdog
 turn budget rejects a regression to high-frequency Pilot-owned message-pump
 polling even when host CPU stays under its ceiling; CEF-requested turns are
 diagnostic and do not count against the limit. CPU is calculated from

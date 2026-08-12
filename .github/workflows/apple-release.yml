@@ -174,13 +174,26 @@ jobs:
         env:
           BLAU_CHROMIUM_TEST_CODE_SIGN_IDENTITY: ${{ env.MACOS_SIGNING_IDENTITY }}
           BLAU_CHROMIUM_TEST_DEVELOPMENT_TEAM: ${{ env.APPLE_TEAM_ID }}
+          BLAU_CHROMIUM_TEST_RESULT_ROOT: ${{ runner.temp }}/chromium-gate-results
         run: |
           for architecture in arm64 x86_64; do
+            DEVELOPER_DIR="$(xcode-select -p)" \
             BLAU_CHROMIUM_TEST_ARCHITECTURE="$architecture" \
               apple/bin/test-chromium-runtime.sh
           done
+      - name: Upload Chromium gate results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chromium-gate-results
+          path: ${{ runner.temp }}/chromium-gate-results
+          if-no-files-found: ignore
       - name: Archive signed universal Pilot
         shell: bash
+        # OTHER_CODE_SIGN_FLAGS=--timestamp: Xcode signs embedded frameworks
+        # on copy with --timestamp=none, but the post-notarization validation
+        # requires trusted timestamps on every framework root (Sparkle,
+        # RoyalVNCKit).
         run: |
           archive="$RUNNER_TEMP/Pilot.xcarchive"
           xcodebuild archive \
@@ -196,6 +209,7 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="$MACOS_SIGNING_IDENTITY" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            OTHER_CODE_SIGN_FLAGS=--timestamp \
             MARKETING_VERSION="$RELEASE_VERSION" \
             CURRENT_PROJECT_VERSION="$RELEASE_BUILD_NUMBER"
           apple/bin/validate-chromium-archive.sh "$archive"

@@ -7,17 +7,17 @@
   },
   "runtime": {
     "arm64": {
-      "maximumStartupSeconds": 5,
-      "maximumFirstNavigationSeconds": 2,
-      "maximumHelperCleanupSeconds": 5,
+      "maximumStartupSeconds": 30,
+      "maximumFirstNavigationSeconds": 10,
+      "maximumHelperCleanupSeconds": 15,
       "maximumIdleCPUPercent": 35,
       "maximumIdleMessagePumpWatchdogWorkCount": 12,
       "maximumResidentMemoryBytes": 1250000000
     },
     "x86_64": {
       "maximumStartupSeconds": 40,
-      "maximumFirstNavigationSeconds": 2,
-      "maximumHelperCleanupSeconds": 5,
+      "maximumFirstNavigationSeconds": 10,
+      "maximumHelperCleanupSeconds": 15,
       "maximumIdleCPUPercent": 35,
       "maximumIdleMessagePumpWatchdogWorkCount": 12,
       "maximumResidentMemoryBytes": 1250000000

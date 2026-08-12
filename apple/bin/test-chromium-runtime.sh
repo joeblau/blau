@@ -3,7 +3,7 @@ set -euo pipefail
 
 APPLE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT="$APPLE_ROOT/blau.xcodeproj"
-DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-26.6.0.app/Contents/Developer}"
+DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 export DEVELOPER_DIR
 export DISABLE_SWIFTLINT=YES
 export BLAU_CHROMIUM_CODESIGN_TIMESTAMP="${BLAU_CHROMIUM_CODESIGN_TIMESTAMP:-NO}"
@@ -31,18 +31,43 @@ case "$TEST_ARCHITECTURE" in
     ;;
 esac
 
+RESULT_ROOT="${BLAU_CHROMIUM_TEST_RESULT_ROOT:-$(mktemp -d -t chromium-runtime-gate)}"
+RESULT_BUNDLE="$RESULT_ROOT/ChromiumRuntimeGate-$TEST_ARCHITECTURE.xcresult"
+mkdir -p "$RESULT_ROOT"
+rm -rf "$RESULT_BUNDLE"
+
+# DEBUG_INFORMATION_FORMAT=dwarf: the gate has no use for dSYMs, and
+# skipping them silences dsymutil warnings from the prebuilt tree-sitter
+# archives in CodeEditLanguages, whose DWARF references object files on the
+# upstream author's machine.
+status=0
 xcodebuild \
   -quiet \
   -project "$PROJECT" \
   -scheme PilotTests \
   -configuration Chromium \
-  -destination 'platform=macOS' \
+  -destination "platform=macOS,arch=$TEST_ARCHITECTURE" \
   -only-testing:PilotTests/ChromiumRealEngineSmokeTests \
+  -skipPackagePluginValidation \
+  -resultBundlePath "$RESULT_BUNDLE" \
   ENABLE_TESTABILITY=YES \
+  DEBUG_INFORMATION_FORMAT=dwarf \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=YES \
   ARCHS="$TEST_ARCHITECTURE" \
   ONLY_ACTIVE_ARCH=YES \
+  CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="$TEST_CODE_SIGN_IDENTITY" \
   DEVELOPMENT_TEAM="$TEST_DEVELOPMENT_TEAM" \
   CODE_SIGNING_REQUIRED=YES \
-  test
+  test || status=$?
+
+# -quiet suppresses per-test failure output, so surface the recorded issues
+# from the result bundle; without this a CI failure is undiagnosable.
+if [[ $status -ne 0 && -d "$RESULT_BUNDLE" ]]; then
+  printf 'Chromium runtime gate failures (result bundle: %s):\n' \
+    "$RESULT_BUNDLE" >&2
+  xcrun xcresulttool get test-results tests --path "$RESULT_BUNDLE" 2>/dev/null \
+    | jq -r '.. | objects | select(.nodeType? == "Failure") | "- " + .name' \
+    >&2 || true
+fi
+exit "$status"
