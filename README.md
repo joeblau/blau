@@ -115,7 +115,10 @@ The screenshot harness uses deterministic demo state and writes to
 Production deployment and rollback are owned by the protected GitHub
 `production` environment and the pinned workflows. See
 [production operations](docs/operations.md) for the exact commands, Cloudflare
-token scope, endpoint verification, and rollback procedure.
+token scope, endpoint verification, and rollback procedure. Tagged macOS and
+TestFlight builds use the separate protected `apple-release` environment; see
+[Apple releases](docs/apple-releases.md) for the signing material, App Store
+Connect setup, tag convention, and release behavior.
 
 For an authorized manual deployment using the lockfile-installed Wrangler:
 
