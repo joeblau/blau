@@ -386,7 +386,9 @@ jobs:
   testflight:
     name: TestFlight (${{ matrix.scheme }})
     needs: release-metadata
-    if: ${{ github.event_name == 'push' }}
+    # TestFlight uploads are paused. Restore the push condition to resume:
+    # if: ${{ github.event_name == 'push' }}
+    if: ${{ false }}
     runs-on: macos-26
     environment: apple-release
     timeout-minutes: 120
@@ -518,8 +520,7 @@ jobs:
         needs.release-metadata.result == 'success' &&
         needs.macos.result == 'success' &&
         (needs.testflight.result == 'success' ||
-          (github.event_name == 'workflow_dispatch' &&
-            needs.testflight.result == 'skipped'))
+          needs.testflight.result == 'skipped')
       }}
     runs-on: ubuntu-latest
     permissions:
