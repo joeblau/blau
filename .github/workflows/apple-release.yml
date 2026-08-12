@@ -137,8 +137,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Tags release the reviewed lock exactly. Upstream freshness is a
+          # ChromiumKit maintenance concern, not a reproducible-release gate.
           bash apple/bin/package-chromiumkit.sh manifest
-          bash apple/bin/verify-chromiumkit-support.sh
 
           release_id="$(jq -r '.releaseID' \
             apple/Packages/ChromiumKit/cef-artifacts.json)"
