@@ -22,6 +22,9 @@ test('the built landing page renders the download slate', async () => {
   assert.match(html, />Download for iPad<\/span>/);
   assert.match(html, /href="https:\/\/testflight\.apple\.com\/join\/Q2G2q5ts"/);
   assert.match(html, /href="https:\/\/testflight\.apple\.com\/join\/NsVkk4Rq"/);
+  assert.match(html, /<dialog class="qr-dialog" data-qr-dialog>/);
+  assert.equal((html.match(/data-qr-code="/g) ?? []).length, 2);
+  assert.equal((html.match(/<title>QR Code<\/title>/g) ?? []).length, 2);
   assert.match(html, /href="https:\/\/github\.com\/joeblau\/blau"/);
   assert.match(html, /href="https:\/\/x\.com\/joeblau"/);
   assert.equal((html.match(/title="Coming soon"/g) ?? []).length, 1);

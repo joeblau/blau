@@ -1036,13 +1036,35 @@ export function initCockpit() {
 
   /* ============================== input ============================== */
   let lookX = 0, lookY = 0, tgtX = 0, tgtY = 0;
-  function setLook(nx, ny) {
-    tgtX = clamp((nx - 0.5) * 2, -1, 1);
-    tgtY = clamp((ny - 0.5) * 2, -1, 1);
+  const coarsePointer = matchMedia('(pointer: coarse)').matches;
+  if (!coarsePointer) {
+    // Desktop: absolute mouse position steers the view. Skipped on touch
+    // devices so iOS's synthetic mousemove after a tap can't snap the camera.
+    addEventListener('mousemove', (e) => {
+      tgtX = clamp((e.clientX / W - 0.5) * 2, -1, 1);
+      tgtY = clamp((e.clientY / H - 0.5) * 2, -1, 1);
+    });
   }
-  addEventListener('mousemove', (e) => setLook(e.clientX / W, e.clientY / H));
+  // Touch: dragging pans the cockpit view while the page content stays
+  // pinned — deltas accumulate, so lifting the finger keeps the view put.
+  let lastTX = null, lastTY = null;
+  addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      lastTX = e.touches[0].clientX;
+      lastTY = e.touches[0].clientY;
+    }
+  }, { passive: true });
   addEventListener('touchmove', (e) => {
-    if (e.touches[0]) setLook(e.touches[0].clientX / W, e.touches[0].clientY / H);
+    const t = e.touches[0];
+    if (!t || lastTX === null) return;
+    tgtX = clamp(tgtX - (t.clientX - lastTX) * 2.2 / W, -1, 1);
+    tgtY = clamp(tgtY - (t.clientY - lastTY) * 2.2 / H, -1, 1);
+    lastTX = t.clientX;
+    lastTY = t.clientY;
+  }, { passive: true });
+  addEventListener('touchend', () => {
+    lastTX = null;
+    lastTY = null;
   }, { passive: true });
   addEventListener('keydown', (e) => {
     if (e.key === 'h' || e.key === 'H') S.hmd = !S.hmd;
