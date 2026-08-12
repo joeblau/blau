@@ -34,9 +34,13 @@ struct DockerEngineSmokeTests {
             #expect(!container.id.isEmpty)
             #expect(!container.name.isEmpty)
             #expect(container.shortID.count <= 12)
-            // Ports are de-duplicated, so no two share a mapping triple.
-            let mappings = container.ports.map { [$0.privatePort, $0.publicPort ?? -1] }
-            #expect(mappings.count == Set(mappings.map(\.description)).count)
+            // Ports are de-duplicated, so no two share a mapping triple. The
+            // key must include the protocol: a container exposing 4001/tcp and
+            // 4001/udp is two distinct, legitimate mappings.
+            let mappings = container.ports.map {
+                "\($0.privatePort)/\($0.networkProtocol)/\($0.publicPort ?? -1)"
+            }
+            #expect(mappings.count == Set(mappings).count)
         }
     }
 

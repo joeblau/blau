@@ -394,9 +394,7 @@ jobs:
   testflight:
     name: TestFlight (${{ matrix.scheme }})
     needs: release-metadata
-    # TestFlight uploads are paused. Restore the push condition to resume:
-    # if: ${{ github.event_name == 'push' }}
-    if: ${{ false }}
+    if: ${{ github.event_name == 'push' }}
     runs-on: macos-26
     environment: apple-release
     timeout-minutes: 120

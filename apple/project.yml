@@ -3,7 +3,7 @@ options:
   bundleIdPrefix: app.blau
   deploymentTarget:
     iOS: "26.0"
-    macOS: "26.0"
+    macOS: "15.0"
     watchOS: "26.0"
   xcodeVersion: "26.0"
   generateEmptyDirectories: true
@@ -331,6 +331,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Trigger
         INFOPLIST_KEY_WKCompanionAppBundleIdentifier: app.blau.copilot
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: false
         GENERATE_INFOPLIST_FILE: true
         SDKROOT: watchos
 

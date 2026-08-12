@@ -847,14 +847,21 @@ struct ContentView: View {
                     PaneToolbarControls(pane: pane)
                 }
             }
-            ToolbarItem(placement: .primaryAction) {
-                // ⌘T / ⌘B live as main-menu commands (see PilotApp.commands)
-                // so a focused browser web view can't swallow them.
-                WorkspacePaneLauncher(workspace: store.selectedWorkspace)
-                    .disabled(store.isNotesMode)
+            if #available(macOS 26.0, *) {
+                ToolbarItem(placement: .primaryAction) {
+                    // ⌘T / ⌘B live as main-menu commands (see PilotApp.commands)
+                    // so a focused browser web view can't swallow them.
+                    WorkspacePaneLauncher(workspace: store.selectedWorkspace)
+                        .disabled(store.isNotesMode)
+                }
+                .sharedBackgroundVisibility(.hidden)
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+            } else {
+                ToolbarItem(placement: .primaryAction) {
+                    WorkspacePaneLauncher(workspace: store.selectedWorkspace)
+                        .disabled(store.isNotesMode)
+                }
             }
-            .sharedBackgroundVisibility(.hidden)
-            ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     isDrawingActive.toggle()
