@@ -15,12 +15,12 @@
       "maximumResidentMemoryBytes": 1250000000
     },
     "x86_64": {
-      "maximumStartupSeconds": 40,
-      "maximumFirstNavigationSeconds": 2,
-      "maximumHelperCleanupSeconds": 5,
-      "maximumIdleCPUPercent": 35,
-      "maximumIdleMessagePumpWatchdogWorkCount": 12,
-      "maximumResidentMemoryBytes": 1250000000
+      "maximumStartupSeconds": 120,
+      "maximumFirstNavigationSeconds": 8,
+      "maximumHelperCleanupSeconds": 10,
+      "maximumIdleCPUPercent": 80,
+      "maximumIdleMessagePumpWatchdogWorkCount": 30,
+      "maximumResidentMemoryBytes": 1500000000
     }
   }
 }
