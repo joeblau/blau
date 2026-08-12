@@ -177,6 +177,7 @@ jobs:
           BLAU_CHROMIUM_TEST_DEVELOPMENT_TEAM: ${{ env.APPLE_TEAM_ID }}
         run: |
           for architecture in arm64 x86_64; do
+            DEVELOPER_DIR="$(xcode-select -p)" \
             BLAU_CHROMIUM_TEST_ARCHITECTURE="$architecture" \
               apple/bin/test-chromium-runtime.sh
           done
