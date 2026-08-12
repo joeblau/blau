@@ -9,4 +9,19 @@ struct PrivacyManifestTests {
         let description = Bundle.main.object(forInfoDictionaryKey: "NSCameraUsageDescription") as? String
         #expect(description?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
     }
+
+    @Test("Cockpit embeds the reviewed Sparkle update policy")
+    func sparkleUpdatePolicyIsPresent() {
+        #expect(
+            Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+                == "https://github.com/joeblau/blau/releases/latest/download/appcast.xml"
+        )
+        #expect(
+            Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String
+                == "BIQoEzT2ALEKrU/qHI6ZCBZXrHMmq+GQxRgy9dCpEBg="
+        )
+        #expect(Bundle.main.object(forInfoDictionaryKey: "SUEnableAutomaticChecks") as? Bool == true)
+        #expect(Bundle.main.object(forInfoDictionaryKey: "SURequireSignedFeed") as? Bool == true)
+        #expect(Bundle.main.object(forInfoDictionaryKey: "SUVerifyUpdateBeforeExtraction") as? Bool == true)
+    }
 }

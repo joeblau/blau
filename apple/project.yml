@@ -27,6 +27,9 @@ settings:
 packages:
   GhosttyKit:
     path: Packages/GhosttyKit
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle.git
+    exactVersion: "2.9.5"
   WhisperKit:
     url: https://github.com/argmaxinc/argmax-oss-swift.git
     from: "1.0.0"
@@ -138,6 +141,8 @@ targets:
           - "TranscriptionService.swift"
     dependencies:
       - package: GhosttyKit
+      - package: Sparkle
+        product: Sparkle
       - target: ChromiumKit
         embed: false
       - target: PilotChromiumHelperTemplate

@@ -18,6 +18,16 @@
 	<string>APPL</string>
 	<key>NSPrincipalClass</key>
 	<string>PilotApplication</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/joeblau/blau/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>BIQoEzT2ALEKrU/qHI6ZCBZXrHMmq+GQxRgy9dCpEBg=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
