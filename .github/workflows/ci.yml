@@ -15,13 +15,18 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      apple: ${{ steps.filter.outputs.apple }}
-      docs: ${{ steps.filter.outputs.docs }}
-      workers: ${{ steps.filter.outputs.workers }}
+      apple: ${{ steps.filter.outputs.apple || steps.filter-all.outputs.apple }}
+      docs: ${{ steps.filter.outputs.docs || steps.filter-all.outputs.docs }}
+      workers: ${{ steps.filter.outputs.workers || steps.filter-all.outputs.workers }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Manual runs have no PR base to diff against; select every gate.
+      - id: filter-all
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: printf 'apple=true\ndocs=true\nworkers=true\n' >> "$GITHUB_OUTPUT"
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: |
             apple:
@@ -80,12 +85,16 @@ jobs:
           xcodebuild -version
           xcodebuild -version | grep -E '^Xcode 26\.'
       - name: Lint changed Swift
-        run: apple/bin/lint-swift.sh --changed origin/${{ github.base_ref }}
+        run: |
+          if [[ -n "${{ github.base_ref }}" ]]; then
+            apple/bin/lint-swift.sh --changed "origin/${{ github.base_ref }}"
+          else
+            apple/bin/lint-swift.sh --all
+          fi
 
   apple-build-test:
     needs: changes
-    # Temporarily disabled while the local and release build pipelines stabilize.
-    if: ${{ false }}
+    if: needs.changes.outputs.apple == 'true'
     runs-on: macos-26
     env:
       BLAU_SOURCE_PACKAGES: ${{ github.workspace }}/apple/.ci-source-packages
