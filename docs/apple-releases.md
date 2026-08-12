@@ -100,5 +100,12 @@ Apple finishes processing it. Assigning tester groups, completing export
 compliance, submitting an external beta for review, and promoting a build to
 the App Store remain explicit App Store Connect operations.
 
+If both TestFlight jobs succeed but Pilot fails, merge the Pilot fix and run
+**Apple Release** manually from `main`. Supply the unchanged release tag and
+the failed release run ID. The workflow verifies that both TestFlight jobs in
+that run succeeded for the exact tagged commit, then runs only Pilot and
+publishes the GitHub Release. This recovery path never moves the tag or uploads
+the mobile builds again.
+
 Do not move or reuse a release tag. If a release needs another binary, make a
 new version tag. A workflow retry receives a new build number automatically.

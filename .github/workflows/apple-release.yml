@@ -4,12 +4,23 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to recover
+        required: true
+        type: string
+      successful_mobile_run_id:
+        description: Prior Apple Release run with both TestFlight jobs successful
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
-  group: apple-release-${{ github.ref }}
+  group: apple-release-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -17,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       build-number: ${{ steps.release.outputs.build-number }}
+      tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -25,24 +37,67 @@ jobs:
       - name: Validate release tag
         id: release
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ github.event.inputs.tag }}
+          SUCCESSFUL_MOBILE_RUN_ID: ${{ github.event.inputs.successful_mobile_run_id }}
         run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            release_tag="$GITHUB_REF_NAME"
+          else
+            release_tag="$REQUESTED_TAG"
+          fi
+          if [[ ! "$release_tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             printf 'Release tags must use vMAJOR.MINOR.PATCH: %s\n' \
-              "$GITHUB_REF_NAME" >&2
+              "$release_tag" >&2
             exit 1
           fi
 
           git fetch --no-tags origin \
+            "refs/tags/$release_tag:refs/tags/$release_tag" \
             main:refs/remotes/origin/main
-          release_commit="$(git rev-parse "$GITHUB_REF^{commit}")"
+          release_commit="$(git rev-parse "refs/tags/$release_tag^{commit}")"
           git merge-base --is-ancestor \
             "$release_commit" refs/remotes/origin/main || {
             printf 'Release tag is not on origin/main: %s\n' \
-              "$GITHUB_REF_NAME" >&2
+              "$release_tag" >&2
             exit 1
           }
 
-          printf 'version=%s\n' "${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            [[ "$SUCCESSFUL_MOBILE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || {
+              printf 'Invalid prior Apple Release run ID: %s\n' \
+                "$SUCCESSFUL_MOBILE_RUN_ID" >&2
+              exit 1
+            }
+            run="$(gh api \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$SUCCESSFUL_MOBILE_RUN_ID")"
+            jq -e \
+              --arg tag "$release_tag" \
+              --arg commit "$release_commit" \
+              '.status == "completed" and
+               .event == "push" and
+               .head_branch == $tag and
+               .head_sha == $commit' <<< "$run" >/dev/null || {
+              printf '%s\n' \
+                'Prior run does not belong to this release tag and commit.' >&2
+              exit 1
+            }
+            jobs="$(gh api \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$SUCCESSFUL_MOBILE_RUN_ID/jobs?filter=latest&per_page=100")"
+            for name in 'TestFlight (Copilot)' 'TestFlight (Plotter)'; do
+              jq -e --arg name "$name" \
+                '.jobs | any(.name == $name and .conclusion == "success")' \
+                <<< "$jobs" >/dev/null || {
+                printf 'Prior run did not complete successfully: %s\n' \
+                  "$name" >&2
+                exit 1
+              }
+            done
+          fi
+
+          printf 'tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "${release_tag#v}" >> "$GITHUB_OUTPUT"
           printf 'build-number=%s.%s\n' \
             "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
 
@@ -72,6 +127,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           lfs: true
+          ref: ${{ needs.release-metadata.outputs.tag }}
       - name: Require release credentials
         shell: bash
         run: |
@@ -256,6 +312,7 @@ jobs:
   testflight:
     name: TestFlight (${{ matrix.scheme }})
     needs: release-metadata
+    if: ${{ github.event_name == 'push' }}
     runs-on: macos-26
     environment: apple-release
     timeout-minutes: 120
@@ -381,6 +438,15 @@ jobs:
       - release-metadata
       - macos
       - testflight
+    if: >-
+      ${{
+        always() &&
+        needs.release-metadata.result == 'success' &&
+        needs.macos.result == 'success' &&
+        (needs.testflight.result == 'success' ||
+          (github.event_name == 'workflow_dispatch' &&
+            needs.testflight.result == 'skipped'))
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -403,15 +469,16 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
           RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
         run: |
-          gh release view "$GITHUB_REF_NAME" \
+          gh release view "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && {
             printf 'Refusing to replace existing release: %s\n' \
-              "$GITHUB_REF_NAME" >&2
+              "$RELEASE_TAG" >&2
             exit 1
           }
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "blau $RELEASE_VERSION" \
