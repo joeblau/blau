@@ -10,11 +10,15 @@ test('the built landing page renders the download slate', async () => {
   assert.match(html, /<title>Blau<\/title>/);
   assert.match(html, /<section class="landing" aria-labelledby="page-title">/);
   assert.match(html, /<h1 id="page-title">Blau<\/h1>/);
+  assert.match(html, /<h2>Pilot<\/h2>/);
+  assert.match(html, /<h2>Copilot<\/h2>/);
+  assert.match(html, /<h2>Plotter<\/h2>/);
   assert.match(html, />Download for macOS<\/span>/);
   assert.match(html, />Download for iOS<\/span>/);
+  assert.match(html, />Download for iPad<\/span>/);
   assert.match(html, /href="https:\/\/github\.com\/joeblau\/blau"/);
   assert.match(html, /href="https:\/\/x\.com\/joeblau"/);
-  assert.equal((html.match(/title="Coming soon"/g) ?? []).length, 2);
+  assert.equal((html.match(/title="Coming soon"/g) ?? []).length, 3);
 });
 
 test('the built landing page keeps CSP-compatible output', async () => {
