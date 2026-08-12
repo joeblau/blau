@@ -16,9 +16,11 @@ test('the built landing page renders the download slate', async () => {
   assert.match(html, />Download for macOS<\/span>/);
   assert.match(html, />Download for iOS<\/span>/);
   assert.match(html, />Download for iPad<\/span>/);
+  assert.match(html, /href="https:\/\/testflight\.apple\.com\/join\/Q2G2q5ts"/);
+  assert.match(html, /href="https:\/\/testflight\.apple\.com\/join\/NsVkk4Rq"/);
   assert.match(html, /href="https:\/\/github\.com\/joeblau\/blau"/);
   assert.match(html, /href="https:\/\/x\.com\/joeblau"/);
-  assert.equal((html.match(/title="Coming soon"/g) ?? []).length, 3);
+  assert.equal((html.match(/title="Coming soon"/g) ?? []).length, 1);
 });
 
 test('the built landing page keeps CSP-compatible output', async () => {
