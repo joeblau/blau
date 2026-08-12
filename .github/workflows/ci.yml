@@ -30,6 +30,7 @@ jobs:
               - '.github/workflows/ghosttykit-bootstrap.yml'
               - '.github/workflows/chromiumkit-bootstrap.yml'
               - '.github/workflows/chromiumkit-monitor.yml'
+              - '.github/workflows/apple-release.yml'
             docs:
               - '**/*.md'
               - 'bin/check-docs.sh'
