@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,6 +8,9 @@ const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 test('the built landing page renders the download slate', async () => {
   const html = await readFile(`${dist}index.html`, 'utf8');
   assert.match(html, /<title>Blau<\/title>/);
+  assert.match(html, /<meta property="og:image" content="https:\/\/blau\.app\/og\.jpg">/);
+  assert.match(html, /<meta name="twitter:card" content="summary_large_image">/);
+  assert.ok((await stat(`${dist}og.jpg`)).size > 0, 'og.jpg ships in dist');
   assert.match(html, /<section class="landing" aria-labelledby="page-title">/);
   assert.match(html, /<div class="cockpit-bg" aria-hidden="true">/);
   assert.match(html, /<canvas data-cockpit-scene>/);
