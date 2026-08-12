@@ -9,6 +9,9 @@ test('the built landing page renders the download slate', async () => {
   const html = await readFile(`${dist}index.html`, 'utf8');
   assert.match(html, /<title>Blau<\/title>/);
   assert.match(html, /<section class="landing" aria-labelledby="page-title">/);
+  assert.match(html, /<div class="cockpit-bg" aria-hidden="true">/);
+  assert.match(html, /<canvas data-cockpit-scene>/);
+  assert.match(html, /<canvas data-cockpit-hud>/);
   assert.match(html, /<h1 id="page-title">Blau<\/h1>/);
   assert.match(html, /<p class="landing__tagline">Multimodal Agentic Development Environment<\/p>/);
   assert.match(html, /<h2>Cockpit<\/h2>/);
