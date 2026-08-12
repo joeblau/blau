@@ -244,12 +244,20 @@ jobs:
         env:
           BLAU_CHROMIUM_TEST_CODE_SIGN_IDENTITY: ${{ env.MACOS_SIGNING_IDENTITY }}
           BLAU_CHROMIUM_TEST_DEVELOPMENT_TEAM: ${{ env.APPLE_TEAM_ID }}
+          BLAU_CHROMIUM_TEST_RESULT_ROOT: ${{ runner.temp }}/chromium-gate-results
         run: |
           for architecture in arm64 x86_64; do
             DEVELOPER_DIR="$(xcode-select -p)" \
             BLAU_CHROMIUM_TEST_ARCHITECTURE="$architecture" \
               apple/bin/test-chromium-runtime.sh
           done
+      - name: Upload Chromium gate results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chromium-gate-results
+          path: ${{ runner.temp }}/chromium-gate-results
+          if-no-files-found: ignore
       - name: Archive signed universal Pilot
         shell: bash
         run: |

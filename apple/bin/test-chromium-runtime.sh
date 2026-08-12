@@ -63,7 +63,7 @@ xcodebuild \
   -destination 'platform=macOS' \
   -only-testing:PilotTests/ChromiumRealEngineSmokeTests \
   -skipPackagePluginValidation \
-  "${result_settings[@]}" \
+  ${result_settings[@]+"${result_settings[@]}"} \
   ENABLE_TESTABILITY=YES \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=YES \
   ARCHS="$TEST_ARCHITECTURE" \
