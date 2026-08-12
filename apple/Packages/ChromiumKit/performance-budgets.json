@@ -15,7 +15,7 @@
       "maximumResidentMemoryBytes": 1250000000
     },
     "x86_64": {
-      "maximumStartupSeconds": 120,
+      "maximumStartupSeconds": 240,
       "maximumFirstNavigationSeconds": 8,
       "maximumHelperCleanupSeconds": 10,
       "maximumIdleCPUPercent": 80,

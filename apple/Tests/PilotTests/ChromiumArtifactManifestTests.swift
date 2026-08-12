@@ -298,7 +298,7 @@ final class ChromiumArtifactManifestTests: XCTestCase {
         XCTAssertEqual(arm64.maximumIdleMessagePumpWatchdogWorkCount, 12)
         XCTAssertEqual(arm64.maximumResidentMemoryBytes, 1_250_000_000)
         let x86 = try XCTUnwrap(budgets.runtime["x86_64"])
-        XCTAssertEqual(x86.maximumStartupSeconds, 120)
+        XCTAssertEqual(x86.maximumStartupSeconds, 240)
         XCTAssertEqual(x86.maximumFirstNavigationSeconds, 8)
         XCTAssertEqual(x86.maximumHelperCleanupSeconds, 10)
         XCTAssertEqual(x86.maximumIdleCPUPercent, 80)
