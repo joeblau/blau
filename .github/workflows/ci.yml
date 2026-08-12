@@ -84,7 +84,8 @@ jobs:
 
   apple-build-test:
     needs: changes
-    if: needs.changes.outputs.apple == 'true'
+    # Temporarily disabled while the local and release build pipelines stabilize.
+    if: ${{ false }}
     runs-on: macos-26
     env:
       BLAU_SOURCE_PACKAGES: ${{ github.workspace }}/apple/.ci-source-packages

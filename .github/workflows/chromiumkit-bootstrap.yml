@@ -121,17 +121,38 @@ jobs:
           done
       - name: Archive signed universal Pilot
         run: |
+          archive="$RUNNER_TEMP/Pilot.xcarchive"
           xcodebuild archive \
             -project apple/blau.xcodeproj \
             -scheme Pilot \
             -configuration Chromium \
             -destination 'generic/platform=macOS' \
-            -archivePath "$RUNNER_TEMP/Pilot.xcarchive" \
+            -archivePath "$archive" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="$MACOS_SIGNING_IDENTITY" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
-          apple/bin/validate-chromium-archive.sh \
-            "$RUNNER_TEMP/Pilot.xcarchive"
+      - name: Export Developer ID signed Pilot into the support archive
+        run: |
+          archive="$RUNNER_TEMP/Pilot.xcarchive"
+          export_path="$RUNNER_TEMP/Pilot-export"
+          export_options="$RUNNER_TEMP/DeveloperIDExportOptions.plist"
+          plutil -create xml1 "$export_options"
+          plutil -insert method -string developer-id "$export_options"
+          plutil -insert destination -string export "$export_options"
+          plutil -insert signingStyle -string manual "$export_options"
+          plutil -insert signingCertificate \
+            -string "$MACOS_SIGNING_IDENTITY" "$export_options"
+          plutil -insert teamID -string "$APPLE_TEAM_ID" "$export_options"
+
+          xcodebuild -exportArchive \
+            -archivePath "$archive" \
+            -exportPath "$export_path" \
+            -exportOptionsPlist "$export_options"
+
+          archive_app="$archive/Products/Applications/Pilot.app"
+          rm -rf "$archive_app"
+          ditto "$export_path/Pilot.app" "$archive_app"
+          apple/bin/validate-chromium-archive.sh "$archive"
       - name: Notarize, staple, and validate
         run: |
           ditto -c -k --keepParent \
@@ -175,6 +196,7 @@ jobs:
         run: |
           gh release create "${{ steps.release.outputs.tag }}" \
             --target "$GITHUB_SHA" \
+            --latest=false \
             --title "${{ steps.release.outputs.tag }}" \
             --notes 'Pinned, reproducible, signed, notarized ChromiumKit release.' \
             "$RUNNER_TEMP/ChromiumKitCEF.runtime.zip" \

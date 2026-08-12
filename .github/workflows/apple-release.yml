@@ -122,6 +122,7 @@ jobs:
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
       MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
       RELEASE_BUILD_NUMBER: ${{ needs.release-metadata.outputs.build-number }}
+      RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
       RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -139,6 +140,8 @@ jobs:
             apple/bin/test-chromium-runtime.sh
       - name: Require release credentials
         shell: bash
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           for name in \
             APPLE_TEAM_ID \
@@ -147,7 +150,8 @@ jobs:
             APP_STORE_CONNECT_PRIVATE_KEY_P8_BASE64 \
             MACOS_CERTIFICATE_P12 \
             MACOS_CERTIFICATE_PASSWORD \
-            MACOS_SIGNING_IDENTITY; do
+            MACOS_SIGNING_IDENTITY \
+            SPARKLE_PRIVATE_KEY; do
             [[ -n "${!name:-}" ]] || {
               printf 'Missing apple-release secret: %s\n' "$name" >&2
               exit 1
@@ -265,17 +269,39 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             MARKETING_VERSION="$RELEASE_VERSION" \
             CURRENT_PROJECT_VERSION="$RELEASE_BUILD_NUMBER"
-          apple/bin/validate-chromium-archive.sh "$archive"
           [[ "$(plutil -extract CFBundleShortVersionString raw \
             "$archive/Products/Applications/Pilot.app/Contents/Info.plist")" \
             == "$RELEASE_VERSION" ]]
           [[ "$(plutil -extract CFBundleVersion raw \
             "$archive/Products/Applications/Pilot.app/Contents/Info.plist")" \
             == "$RELEASE_BUILD_NUMBER" ]]
+      - name: Export Developer ID signed Cockpit
+        shell: bash
+        run: |
+          export_options="$RUNNER_TEMP/DeveloperIDExportOptions.plist"
+          plutil -create xml1 "$export_options"
+          plutil -insert method -string developer-id "$export_options"
+          plutil -insert destination -string export "$export_options"
+          plutil -insert signingStyle -string manual "$export_options"
+          plutil -insert signingCertificate \
+            -string "$MACOS_SIGNING_IDENTITY" "$export_options"
+          plutil -insert teamID -string "$APPLE_TEAM_ID" "$export_options"
+
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Pilot.xcarchive" \
+            -exportPath "$RUNNER_TEMP/Pilot-export" \
+            -exportOptionsPlist "$export_options"
+
+          app="$RUNNER_TEMP/Pilot-export/Pilot.app"
+          apple/bin/validate-chromium-archive.sh "$app"
+          [[ "$(plutil -extract CFBundleShortVersionString raw \
+            "$app/Contents/Info.plist")" == "$RELEASE_VERSION" ]]
+          [[ "$(plutil -extract CFBundleVersion raw \
+            "$app/Contents/Info.plist")" == "$RELEASE_BUILD_NUMBER" ]]
       - name: Notarize and staple Pilot
         shell: bash
         run: |
-          app="$RUNNER_TEMP/Pilot.xcarchive/Products/Applications/Pilot.app"
+          app="$RUNNER_TEMP/Pilot-export/Pilot.app"
           submission="$RUNNER_TEMP/Pilot-notarization.zip"
           ditto -c -k --keepParent "$app" "$submission"
           xcrun notarytool submit "$submission" \
@@ -290,16 +316,55 @@ jobs:
         shell: bash
         run: |
           release_directory="$RUNNER_TEMP/apple-release"
-          asset="Pilot-${RELEASE_VERSION}-macOS.zip"
+          asset="Cockpit-${RELEASE_VERSION}-macOS.zip"
           mkdir -p "$release_directory"
           ditto -c -k --keepParent \
-            "$RUNNER_TEMP/Pilot.xcarchive/Products/Applications/Pilot.app" \
+            "$RUNNER_TEMP/Pilot-export/Pilot.app" \
             "$release_directory/$asset"
           (
             cd "$release_directory"
             shasum -a 256 "$asset" > "$asset.sha256"
             shasum -a 256 -c "$asset.sha256"
           )
+      - name: Generate the signed Sparkle appcast
+        shell: bash
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          [[ -n "$SPARKLE_PRIVATE_KEY" ]] || {
+            printf '%s\n' \
+              'Missing apple-release secret: SPARKLE_PRIVATE_KEY' >&2
+            exit 1
+          }
+          generate_appcast="$(find "$BLAU_SOURCE_PACKAGES/artifacts" \
+            -type f -path '*/Sparkle/bin/generate_appcast' \
+            -perm -111 -print -quit)"
+          [[ -n "$generate_appcast" ]] || {
+            printf '%s\n' 'Sparkle generate_appcast tool was not resolved.' >&2
+            exit 1
+          }
+          sign_update="${generate_appcast%/*}/sign_update"
+          [[ -x "$sign_update" ]] || {
+            printf '%s\n' 'Sparkle sign_update tool was not resolved.' >&2
+            exit 1
+          }
+          release_directory="$RUNNER_TEMP/apple-release"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" |
+            "$generate_appcast" \
+              --ed-key-file - \
+              --download-url-prefix \
+                "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/" \
+              --link 'https://blau.app' \
+              --maximum-deltas 0 \
+              -o "$release_directory/appcast.xml" \
+              "$release_directory"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" |
+            "$sign_update" --ed-key-file - --verify \
+              "$release_directory/appcast.xml"
+          grep -Fq 'sparkle:edSignature=' "$release_directory/appcast.xml"
+          grep -Fq \
+            "releases/download/$RELEASE_TAG/Cockpit-${RELEASE_VERSION}-macOS.zip" \
+            "$release_directory/appcast.xml"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: macos-release-${{ needs.release-metadata.outputs.version }}
@@ -470,10 +535,11 @@ jobs:
           RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
         run: |
           cd "$RUNNER_TEMP/apple-release"
-          asset="Pilot-${RELEASE_VERSION}-macOS.zip"
-          [[ -f "$asset" && -f "$asset.sha256" ]]
-          [[ "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" == 2 ]]
+          asset="Cockpit-${RELEASE_VERSION}-macOS.zip"
+          [[ -f "$asset" && -f "$asset.sha256" && -f appcast.xml ]]
+          [[ "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" == 3 ]]
           shasum -a 256 -c "$asset.sha256"
+          grep -Fq 'sparkle:edSignature=' appcast.xml
       - name: Publish the tagged release
         shell: bash
         env:
@@ -490,7 +556,9 @@ jobs:
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
+            --latest \
             --title "blau $RELEASE_VERSION" \
             --generate-notes \
-            "$RUNNER_TEMP/apple-release/Pilot-${RELEASE_VERSION}-macOS.zip" \
-            "$RUNNER_TEMP/apple-release/Pilot-${RELEASE_VERSION}-macOS.zip.sha256"
+            "$RUNNER_TEMP/apple-release/Cockpit-${RELEASE_VERSION}-macOS.zip" \
+            "$RUNNER_TEMP/apple-release/Cockpit-${RELEASE_VERSION}-macOS.zip.sha256" \
+            "$RUNNER_TEMP/apple-release/appcast.xml"
