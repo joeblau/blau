@@ -43,6 +43,18 @@ case "$TEST_ARCHITECTURE" in
     ;;
 esac
 
+# When a result root is provided (the release workflow uploads it on
+# failure), emit an xcresult per architecture so the exact failing
+# assertion survives the -quiet log.
+result_settings=()
+if [[ -n "${BLAU_CHROMIUM_TEST_RESULT_ROOT:-}" ]]; then
+  mkdir -p "$BLAU_CHROMIUM_TEST_RESULT_ROOT"
+  result_settings=(
+    -resultBundlePath
+    "$BLAU_CHROMIUM_TEST_RESULT_ROOT/gate-$TEST_ARCHITECTURE.xcresult"
+  )
+fi
+
 xcodebuild \
   -quiet \
   -project "$PROJECT" \
@@ -51,6 +63,7 @@ xcodebuild \
   -destination 'platform=macOS' \
   -only-testing:PilotTests/ChromiumRealEngineSmokeTests \
   -skipPackagePluginValidation \
+  "${result_settings[@]}" \
   ENABLE_TESTABILITY=YES \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=YES \
   ARCHS="$TEST_ARCHITECTURE" \

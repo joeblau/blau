@@ -298,12 +298,12 @@ final class ChromiumArtifactManifestTests: XCTestCase {
         XCTAssertEqual(arm64.maximumIdleMessagePumpWatchdogWorkCount, 12)
         XCTAssertEqual(arm64.maximumResidentMemoryBytes, 1_250_000_000)
         let x86 = try XCTUnwrap(budgets.runtime["x86_64"])
-        XCTAssertEqual(x86.maximumStartupSeconds, 40)
-        XCTAssertEqual(x86.maximumFirstNavigationSeconds, 2)
-        XCTAssertEqual(x86.maximumHelperCleanupSeconds, 5)
-        XCTAssertEqual(x86.maximumIdleCPUPercent, 35)
-        XCTAssertEqual(x86.maximumIdleMessagePumpWatchdogWorkCount, 12)
-        XCTAssertEqual(x86.maximumResidentMemoryBytes, 1_250_000_000)
+        XCTAssertEqual(x86.maximumStartupSeconds, 120)
+        XCTAssertEqual(x86.maximumFirstNavigationSeconds, 8)
+        XCTAssertEqual(x86.maximumHelperCleanupSeconds, 10)
+        XCTAssertEqual(x86.maximumIdleCPUPercent, 80)
+        XCTAssertEqual(x86.maximumIdleMessagePumpWatchdogWorkCount, 30)
+        XCTAssertEqual(x86.maximumResidentMemoryBytes, 1_500_000_000)
     }
 
     private func loadManifest() throws -> Manifest {
