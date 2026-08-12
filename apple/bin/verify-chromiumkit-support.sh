@@ -59,24 +59,22 @@ fi
 read_cef_field() {
   local platform="$1"
   local field="$2"
-  jq -er --arg platform "$platform" --arg field "$field" '
+  # "Latest" means the highest Chromium version, not the most recently
+  # uploaded build: backfilled legacy-branch builds (which may also lack
+  # sandbox_compat) carry newer last_modified timestamps.
+  local value
+  value="$(jq -er --arg platform "$platform" --arg field "$field" '
     .[$platform].versions
     | map(select(
         .channel == "stable" and
         any(.files[]; .type == "minimal")
       ))
-    | map({
-        version: .,
-        modified: (
-          [.files[] | select(.type == "minimal") | .last_modified]
-          | max
-        )
-      })
-    | sort_by(.modified)
+    | sort_by(.chromium_version | split(".") | map(tonumber))
     | last
-    | .version
     | .[$field]
-  ' "$cef_index"
+  ' "$cef_index")" ||
+    fail "CEF index is missing $field for the latest stable $platform build"
+  printf '%s' "$value"
 }
 
 pinned_cef="$(jq -er '.cef.version' "$MANIFEST")"
