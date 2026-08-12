@@ -5,7 +5,9 @@ on `main` into one coordinated Apple release:
 
 - Pilot is built as a universal Chromium-enabled macOS app, signed with
   Developer ID, notarized, stapled, and attached to a GitHub Release as a ZIP
-  with a SHA-256 checksum.
+  with a SHA-256 checksum. The release also carries a Sparkle appcast
+  (`appcast.xml`) whose enclosure is EdDSA-signed, so installed copies
+  self-update from `releases/latest/download/appcast.xml`.
 - Copilot, including Wingman, is uploaded to App Store Connect for TestFlight.
 - Plotter, including PlotterWidgets, is uploaded to App Store Connect for
   TestFlight.
@@ -45,6 +47,23 @@ certificate and its private key from Keychain Access as a password-protected
 the team API key and Apple's cloud-managed distribution signing for the App
 Store uploads.
 
+Sparkle updates are signed with an EdDSA key pair that lives in the
+maintainer's login keychain under the `blau` account (created with
+`generate_keys` from the pinned Sparkle release; the matching public key is
+baked into Pilot's `Info.plist` as `SUPublicEDKey`). Export the private key
+and store it as the CI secret:
+
+```bash
+./bin/generate_keys --account blau -x /tmp/sparkle-blau-private-key
+gh secret set SPARKLE_PRIVATE_KEY --env apple-release \
+  --body "$(cat /tmp/sparkle-blau-private-key)"
+rm -P /tmp/sparkle-blau-private-key
+```
+
+Losing the private key means shipping a new public key with the next release
+and leaving older installs unable to verify updates, so keep a copy in the
+team password manager.
+
 Apple references:
 
 - [Create an App Store Connect API key](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api)
@@ -66,6 +85,7 @@ download. Store these environment secrets:
 | `MACOS_CERTIFICATE_P12` | Base64-encoded Developer ID Application certificate and private key. |
 | `MACOS_CERTIFICATE_PASSWORD` | Password used when exporting the `.p12`. |
 | `MACOS_SIGNING_IDENTITY` | Full identity, for example `Developer ID Application: Example, Inc. (TEAMID1234)`. |
+| `SPARKLE_PRIVATE_KEY` | EdDSA private key for signing Sparkle update enclosures (see above). |
 
 Encode the two files without introducing line wrapping:
 
@@ -102,3 +122,8 @@ the App Store remain explicit App Store Connect operations.
 
 Do not move or reuse a release tag. If a release needs another binary, make a
 new version tag. A workflow retry receives a new build number automatically.
+
+Sparkle reads the feed from `releases/latest/download/appcast.xml`, so the
+"latest" badge must stay on app releases: this workflow publishes with
+`--latest=true`, the ChromiumKit workflow publishes with `--latest=false`, and
+any component release cut by hand (e.g. GhosttyKit) must not take the badge.

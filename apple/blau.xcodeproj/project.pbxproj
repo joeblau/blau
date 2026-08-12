@@ -151,6 +151,7 @@
 		86557E84E7B1FC2703488521 /* SecureChannelTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 860F562B6ECC3F208F44D970 /* SecureChannelTransport.swift */; };
 		873845340784690BC3748654 /* ScreenMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB7A71E179389DD6C888CCD /* ScreenMirror.swift */; };
 		880CCDD939B45A5FAA585770 /* ChromiumFixtureServerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B23E11EFB83796FC1F7D29CC /* ChromiumFixtureServerTests.swift */; };
+		881C72A64879436574FF8968 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 7B28DC3EBDA26F60FF28CF29 /* Sparkle */; };
 		886D15E54EBB200F67958A3F /* WorkspacePinOrderingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A998F7444DECBEDA70D1714 /* WorkspacePinOrderingTests.swift */; };
 		89BEE9E3B7E25F751C3E5D42 /* SimulatorHID.swift in Sources */ = {isa = PBXBuildFile; fileRef = D663ACF8E2F0BC4AFD374515 /* SimulatorHID.swift */; };
 		89F1AA2347092C088C969903 /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47FBC3890175E320C78E68E1 /* DeviceIdentity.swift */; };
@@ -627,6 +628,7 @@
 				EECD02F2C6B395905ECDC4CD /* CodeEditSourceEditor in Frameworks */,
 				1C339E4DD14A67E782134F62 /* CodeEditLanguages in Frameworks */,
 				257301D7346DC77D7337C64B /* RoyalVNCKit in Frameworks */,
+				881C72A64879436574FF8968 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1180,6 +1182,7 @@
 				7D02971F0B90E14E1F971E28 /* Resources */,
 				63B9D3713CC3AC0D7AD9EB9A /* Frameworks */,
 				53FB2CE7B17FD345ADB2E146 /* Embed Frameworks */,
+				AA648E75105CE797F1A2F739 /* Embed Sparkle */,
 				71ABA4DC5184B92D9E22C506 /* Assemble Chromium Runtime */,
 			);
 			buildRules = (
@@ -1194,6 +1197,7 @@
 				B25F722F3EAE02E14DD52E64 /* CodeEditSourceEditor */,
 				17A204F6C41268C5D43D828E /* CodeEditLanguages */,
 				6E9BD40D67F1BCD6E626A7DC /* RoyalVNCKit */,
+				7B28DC3EBDA26F60FF28CF29 /* Sparkle */,
 			);
 			productName = Pilot;
 			productReference = 1C98BD914066A308C6C6C1C9 /* Pilot.app */;
@@ -1387,6 +1391,7 @@
 				71EDA6A5C3688FCD868ADCCC /* XCRemoteSwiftPackageReference "CodeEditLanguages" */,
 				A897E60FF62D36C0B29E3DAB /* XCRemoteSwiftPackageReference "CodeEditSourceEditor" */,
 				42CBA16A25AD5D46E7F1A183 /* XCRemoteSwiftPackageReference "royalvnc" */,
+				A66A30B814ACE4BFDBAF7BAC /* XCRemoteSwiftPackageReference "Sparkle" */,
 				9EF4A371110F9A516524F6B6 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
 				320E1904178479F15DCEAB9D /* XCLocalSwiftPackageReference "Packages/GhosttyKit" */,
 			);
@@ -1473,6 +1478,26 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "if [[ \"$CONFIGURATION\" != \"Chromium\" ]]; then\n  exit 0\nfi\n\"$SRCROOT/bin/assemble-chromium-runtime.sh\" \\\n  \"$TARGET_BUILD_DIR/$WRAPPER_NAME\" \\\n  \"$BUILT_PRODUCTS_DIR/PilotChromiumHelperTemplate.app\" \\\n  \"$EXPANDED_CODE_SIGN_IDENTITY\"\n";
+		};
+		AA648E75105CE797F1A2F739 /* Embed Sparkle */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Frameworks/Sparkle.framework",
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Frameworks/Sparkle.framework/Versions/Current/_CodeSignature/CodeResources",
+			);
+			name = "Embed Sparkle";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/bin/embed-sparkle.sh\"\n";
 		};
 		DBCF29DE5B7933D56170719C /* Verify Installed ChromiumKit Runtime */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -1944,6 +1969,7 @@
 				CODE_SIGN_ENTITLEMENTS = Sources/Pilot/Pilot.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/Pilot/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -2583,6 +2609,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/Pilot/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -3008,6 +3035,14 @@
 				minimumVersion = 1.0.0;
 			};
 		};
+		A66A30B814ACE4BFDBAF7BAC /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.9.5;
+			};
+		};
 		A897E60FF62D36C0B29E3DAB /* XCRemoteSwiftPackageReference "CodeEditSourceEditor" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/CodeEditApp/CodeEditSourceEditor.git";
@@ -3037,6 +3072,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 42CBA16A25AD5D46E7F1A183 /* XCRemoteSwiftPackageReference "royalvnc" */;
 			productName = RoyalVNCKit;
+		};
+		7B28DC3EBDA26F60FF28CF29 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A66A30B814ACE4BFDBAF7BAC /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 		B25F722F3EAE02E14DD52E64 /* CodeEditSourceEditor */ = {
 			isa = XCSwiftPackageProductDependency;
