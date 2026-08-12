@@ -281,7 +281,7 @@ final class DeviceCaptureSession: NSObject {
                           generation == self.lifecycleGeneration else { return }
                     guard granted else {
                         self.isCameraPermissionDenied = true
-                        self.status = .failed("Pilot needs camera permission to mirror the iPhone screen.")
+                        self.status = .failed("Cockpit needs camera permission to mirror the iPhone screen.")
                         return
                     }
                     self.isCameraPermissionDenied = false
@@ -1007,16 +1007,16 @@ final class DeviceCaptureSession: NSObject {
                     warnings.append(formatWarning)
                 }
             } else {
-                failure = "Pilot couldn't add the selected iOS device as a video input."
+                failure = "Cockpit couldn't add the selected iOS device as a video input."
             }
         } catch {
-            failure = "Pilot couldn't open the selected iOS device: \(error.localizedDescription)"
+            failure = "Cockpit couldn't open the selected iOS device: \(error.localizedDescription)"
         }
 
         if failure == nil {
             guard session.canAddOutput(videoOutput) else {
                 Self.abortConfiguration(session)
-                return .failure("Pilot couldn't add the required iOS video output.")
+                return .failure("Cockpit couldn't add the required iOS video output.")
             }
             session.addOutput(videoOutput)
 
@@ -1065,7 +1065,7 @@ final class DeviceCaptureSession: NSObject {
         if !session.isRunning { session.startRunning() }
         guard session.isRunning else {
             Self.stopAndClear(session)
-            return .failure("Pilot configured the selected iOS device, but capture did not start.")
+            return .failure("Cockpit configured the selected iOS device, but capture did not start.")
         }
         return .success(hasAudioInput: hasUsableAudioOutput, warnings: warnings)
     }

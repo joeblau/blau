@@ -131,7 +131,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
             adv.startAdvertisingPeer()
 
         case .browser:
-            updateStatus("Browsing for Pilot sync service")
+            updateStatus("Browsing for Cockpit sync service")
             let br = MCNearbyServiceBrowser(peer: peerID, serviceType: Self.serviceType)
             br.delegate = self
             browser = br
@@ -187,7 +187,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
                 self.advertiser = adv
                 adv.startAdvertisingPeer()
             case .browser:
-                self.updateStatus("Restarting Pilot discovery")
+                self.updateStatus("Restarting Cockpit discovery")
                 self.browser?.stopBrowsingForPeers()
                 let br = MCNearbyServiceBrowser(peer: self.peerID, serviceType: Self.serviceType)
                 br.delegate = self
@@ -451,7 +451,7 @@ extension PeerSyncService: MCNearbyServiceBrowserDelegate {
             guard let self, self.browser === browser else { return }
             self.clearPendingPairing(
                 for: peerID,
-                status: "Lost Pilot sync peer \(peerID.displayName)"
+                status: "Lost Cockpit sync peer \(peerID.displayName)"
             )
             self.scheduleReconnect()
         }
@@ -526,7 +526,7 @@ private extension PeerSyncService {
             trusted: authenticator.peerPublicKeyBase64
         ) {
         case .trusted:
-            updateStatus("Inviting trusted Pilot sync peer \(peerID.displayName)")
+            updateStatus("Inviting trusted Cockpit sync peer \(peerID.displayName)")
             browser.invitePeer(
                 peerID,
                 to: session,
@@ -552,7 +552,7 @@ private extension PeerSyncService {
             }
 
         case .reject:
-            updateStatus("Ignored Pilot sync service without a valid identity")
+            updateStatus("Ignored Cockpit sync service without a valid identity")
         }
     }
 }

@@ -42,7 +42,7 @@ struct PlotterLiveActivity: Widget {
         HStack(spacing: 12) {
             thumbnail(side: 52)
             VStack(alignment: .leading, spacing: 3) {
-                Text(state.title.isEmpty ? "Plotter" : state.title)
+                Text(state.title.isEmpty ? "Kneeboard" : state.title)
                     .font(.headline)
                 Text(stateLine(state))
                     .font(.caption)

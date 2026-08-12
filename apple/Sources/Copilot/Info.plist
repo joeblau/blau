@@ -4,6 +4,8 @@
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
+    <key>CFBundleDisplayName</key>
+    <string>Walkie</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -11,7 +13,7 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>$(PRODUCT_NAME)</string>
+    <string>Walkie</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -28,9 +30,9 @@
         <string>_blau-sync._udp</string>
     </array>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Copilot uses the local network to sync with Pilot.</string>
+    <string>Walkie uses the local network to sync with Cockpit.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Copilot uses the microphone for walkie-talkie audio to Pilot.</string>
+    <string>Walkie uses the microphone for push-to-talk audio to Cockpit.</string>
     <key>UILaunchScreen</key>
     <dict>
         <key>UILaunchScreen</key>

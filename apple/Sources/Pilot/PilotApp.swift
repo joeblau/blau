@@ -493,7 +493,7 @@ struct PilotApp: App {
     }
 
     var body: some Scene {
-        Window("Pilot", id: PilotWindowID.main) {
+        Window("Cockpit", id: PilotWindowID.main) {
             ContentView(
                 store: store,
                 syncService: syncService,
@@ -579,8 +579,8 @@ struct PilotApp: App {
                 }
                 .alert(
                     syncService.pairingRequest?.isKeyChange == true
-                        ? "Trust New Copilot Identity?"
-                        : "Pair with Copilot?",
+                        ? "Trust New Walkie Identity?"
+                        : "Pair with Walkie?",
                     isPresented: Binding(
                         get: { syncService.pairingRequest != nil },
                         set: { if !$0 { syncService.resolvePairingRequest(approved: false) } }
@@ -598,8 +598,8 @@ struct PilotApp: App {
                 }
                 .alert(
                     plotterPairingRequest?.isKeyChange == true
-                        ? "Trust New Plotter Identity?"
-                        : "Pair with Plotter?",
+                        ? "Trust New Kneeboard Identity?"
+                        : "Pair with Kneeboard?",
                     isPresented: Binding(
                         get: { plotterPairingRequest != nil },
                         set: { if !$0 { frameSender.resolvePairingRequest(approved: false) } }
@@ -612,7 +612,7 @@ struct PilotApp: App {
                         frameSender.resolvePairingRequest(approved: true)
                     }
                 } message: {
-                    Text("Verify this fingerprint on Plotter before approving:\n\n\(plotterPairingRequest?.fingerprint ?? "")")
+                    Text("Verify this fingerprint on Kneeboard before approving:\n\n\(plotterPairingRequest?.fingerprint ?? "")")
                 }
                 .environment(secureIdentity)
                 .background {
@@ -1043,7 +1043,7 @@ private struct PilotSettingsView: View {
             Form {
                 PilotSettingsPageHeader(
                     title: "General",
-                    subtitle: "Manage Pilot identity, pairing, and app information.",
+                    subtitle: "Manage Cockpit identity, pairing, and app information.",
                     systemImage: "gearshape.fill",
                     tint: .blue
                 )

@@ -25,14 +25,14 @@ struct UsageSettingsView: View {
             if showsPageHeader {
                 PilotSettingsPageHeader(
                     title: "Usage",
-                    subtitle: "Connect local coding-agent sessions and review their usage in Pilot.",
+                    subtitle: "Connect local coding-agent sessions and review their usage in Cockpit.",
                     systemImage: "chart.bar.xaxis",
                     tint: .blue
                 )
             }
 
             Section {
-                Toggle("Allow Pilot to read Claude Code credentials and usage", isOn: $claudeEnabled)
+                Toggle("Allow Cockpit to read Claude Code credentials and usage", isOn: $claudeEnabled)
                 statusRow(enabled: claudeEnabled, signedIn: claudeSignedIn)
                 Link(destination: Self.claudeDocsURL) {
                     Label("Install & sign in to Claude Code", systemImage: "arrow.up.forward.app")
@@ -40,11 +40,11 @@ struct UsageSettingsView: View {
             } header: {
                 Text("Claude")
             } footer: {
-                Text("When enabled, Pilot reads Claude Code's credential file or Keychain item and sends its bearer token only to Anthropic's usage endpoint. Keychain access may prompt once.")
+                Text("When enabled, Cockpit reads Claude Code's credential file or Keychain item and sends its bearer token only to Anthropic's usage endpoint. Keychain access may prompt once.")
             }
 
             Section {
-                Toggle("Allow Pilot to read Codex credentials and usage", isOn: $codexEnabled)
+                Toggle("Allow Cockpit to read Codex credentials and usage", isOn: $codexEnabled)
                 statusRow(enabled: codexEnabled, signedIn: codexSignedIn)
                 Link(destination: Self.codexDocsURL) {
                     Label("Install & sign in to Codex", systemImage: "arrow.up.forward.app")
@@ -52,11 +52,11 @@ struct UsageSettingsView: View {
             } header: {
                 Text("Codex")
             } footer: {
-                Text("When enabled, Pilot reads ~/.codex/auth.json and sends its bearer token only to ChatGPT's Codex usage endpoint.")
+                Text("When enabled, Cockpit reads ~/.codex/auth.json and sends its bearer token only to ChatGPT's Codex usage endpoint.")
             }
 
             Section {
-                Toggle("Allow Pilot to read Kimi Code credentials and usage", isOn: $kimiEnabled)
+                Toggle("Allow Cockpit to read Kimi Code credentials and usage", isOn: $kimiEnabled)
                 statusRow(enabled: kimiEnabled, signedIn: kimiSignedIn)
                 Link(destination: Self.kimiDocsURL) {
                     Label("Install & sign in to Kimi Code", systemImage: "arrow.up.forward.app")
@@ -65,14 +65,14 @@ struct UsageSettingsView: View {
                 Text("Kimi")
             } footer: {
                 Text(
-                    "When enabled, Pilot reads Kimi Code's credential file under "
+                    "When enabled, Cockpit reads Kimi Code's credential file under "
                         + "$KIMI_CODE_HOME (or ~/.kimi-code), with legacy ~/.kimi fallback, "
                         + "and sends its bearer token only to api.kimi.com/coding/v1/usages."
                 )
             }
 
             Section {
-                Toggle("Allow Pilot to read Grok credentials and usage", isOn: $grokEnabled)
+                Toggle("Allow Cockpit to read Grok credentials and usage", isOn: $grokEnabled)
                 statusRow(enabled: grokEnabled, signedIn: grokSignedIn)
                 Link(destination: Self.grokDocsURL) {
                     Label("Install & sign in to Grok", systemImage: "arrow.up.forward.app")
@@ -81,7 +81,7 @@ struct UsageSettingsView: View {
                 Text("Grok")
             } footer: {
                 Text(
-                    "When enabled, Pilot reads $GROK_HOME/auth.json (or ~/.grok/auth.json) "
+                    "When enabled, Cockpit reads $GROK_HOME/auth.json (or ~/.grok/auth.json) "
                         + "and sends its bearer token only to xAI's usage endpoint."
                 )
             }
@@ -89,7 +89,7 @@ struct UsageSettingsView: View {
             Section {
                 EmptyView()
             } footer: {
-                Text("All providers are disabled by default. Pilot does not read auth files, query Keychain, or make usage requests until you enable that provider. Tokens are never stored by Pilot.")
+                Text("All providers are disabled by default. Cockpit does not read auth files, query Keychain, or make usage requests until you enable that provider. Tokens are never stored by Cockpit.")
             }
         }
         .task { await detect() }

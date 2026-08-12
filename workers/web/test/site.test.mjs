@@ -10,9 +10,9 @@ test('the built landing page renders the download slate', async () => {
   assert.match(html, /<title>Blau<\/title>/);
   assert.match(html, /<section class="landing" aria-labelledby="page-title">/);
   assert.match(html, /<h1 id="page-title">Blau<\/h1>/);
-  assert.match(html, /<h2>Pilot<\/h2>/);
-  assert.match(html, /<h2>Copilot<\/h2>/);
-  assert.match(html, /<h2>Plotter<\/h2>/);
+  assert.match(html, /<h2>Cockpit<\/h2>/);
+  assert.match(html, /<h2>Walkie<\/h2>/);
+  assert.match(html, /<h2>Kneeboard<\/h2>/);
   assert.match(html, />Download for macOS<\/span>/);
   assert.match(html, />Download for iOS<\/span>/);
   assert.match(html, />Download for iPad<\/span>/);

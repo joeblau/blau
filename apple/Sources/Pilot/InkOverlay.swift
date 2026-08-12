@@ -175,9 +175,9 @@ struct RemoteInkControls: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            button("arrow.uturn.backward", help: "Undo last Plotter stroke") { model.undo() }
+            button("arrow.uturn.backward", help: "Undo last Kneeboard stroke") { model.undo() }
             Divider().frame(height: 18)
-            button("trash", help: "Clear Plotter annotations") { model.clear() }
+            button("trash", help: "Clear Kneeboard annotations") { model.clear() }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
