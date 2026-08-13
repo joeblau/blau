@@ -122,7 +122,7 @@ struct NotesView: View {
     private func tabBar(notes: [Note]) -> some View {
         HStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
-                GlassEffectContainer(spacing: 8) {
+                CompatGlassContainer(spacing: 8) {
                     HStack(spacing: 8) {
                         ForEach(notes) { note in
                             NoteTab(
@@ -164,7 +164,7 @@ struct NotesView: View {
                             Image(systemName: "plus")
                                 .scaledFont(size: 12, weight: .medium)
                         }
-                        .buttonStyle(.glass)
+                        .compatGlassButtonStyle()
                         .buttonBorderShape(.circle)
                         .foregroundStyle(.primary)
                         .help("New Note")
@@ -1401,10 +1401,9 @@ private struct NoteTab: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .frame(maxWidth: 170, alignment: .leading)
-        .glassEffect(
-            .regular
-                .tint(isSelected ? Color.accentColor.opacity(0.14) : nil)
-                .interactive(),
+        .compatGlassEffect(
+            tint: isSelected ? Color.accentColor.opacity(0.14) : nil,
+            interactive: true,
             in: RoundedRectangle(cornerRadius: 7, style: .continuous)
         )
         .overlay {

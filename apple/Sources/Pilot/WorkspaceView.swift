@@ -111,8 +111,9 @@ struct WorkspaceView: View {
         .padding(.horizontal, pane.isCollapsed ? 0 : 14)
         .frame(maxWidth: .infinity)
         .frame(height: 28)
-        .glassEffect(
-            .regular.tint(glassTint).interactive(),
+        .compatGlassEffect(
+            tint: glassTint,
+            interactive: true,
             in: RoundedRectangle(cornerRadius: 9, style: .continuous)
         )
         .overlay {

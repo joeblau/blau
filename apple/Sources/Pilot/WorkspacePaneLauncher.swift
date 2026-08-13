@@ -18,7 +18,7 @@ struct WorkspacePaneLauncher: View {
         .buttonStyle(.plain)
         .menuStyle(.borderlessButton)
         .padding(.horizontal, 4)
-        .glassEffect(.regular, in: Capsule())
+        .compatGlassEffect(in: Capsule())
         .disabled(workspace == nil)
         .accessibilityIdentifier("workspace.pane-launcher")
     }

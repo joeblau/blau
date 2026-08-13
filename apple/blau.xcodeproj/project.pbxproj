@@ -76,6 +76,7 @@
 		409BF267099B0CC2035B8471 /* SignalingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E59DAB0A4EFD8A5F838D0A8 /* SignalingClient.swift */; };
 		42AD1C88122F979531C2C527 /* RepositoryPollingSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2E7DF37EA94BAC2FDEAB71B /* RepositoryPollingSchedulerTests.swift */; };
 		43359E06161C1CFB9610398F /* SecureChannelDeadline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68DD092D8ED9F34EC42D8241 /* SecureChannelDeadline.swift */; };
+		436177793FAB81A27D8E96A5 /* GlassCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5AD0685A4D3AFEA304ABF59 /* GlassCompat.swift */; };
 		4526E461A2B2FDF05C746045 /* PlotterGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE322B74FFF30F531624CC4E /* PlotterGeometry.swift */; };
 		462DAF21F8E2358AA293B0ED /* PeerSyncAuthenticationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C367CD809AB561EB25F80458 /* PeerSyncAuthenticationTests.swift */; };
 		479E8C915A0648AF2533D59F /* ReplayWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D806B2F6BB75F102EA196B1F /* ReplayWindow.swift */; };
@@ -601,6 +602,7 @@
 		F3F832B896CD37E9E7C63993 /* TerminalToolbarControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalToolbarControls.swift; sourceTree = "<group>"; };
 		F41F5AC980B9260EDB78A608 /* BrowserStartPageVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserStartPageVisibilityTests.swift; sourceTree = "<group>"; };
 		F430B621891B5DED12E1CF39 /* Copilot.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Copilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F5AD0685A4D3AFEA304ABF59 /* GlassCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCompat.swift; sourceTree = "<group>"; };
 		F628D6AEB4271F9CAA8506FB /* ChromiumDiagnosticsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromiumDiagnosticsSettings.swift; sourceTree = "<group>"; };
 		F684D74A8F12B03954CC49B3 /* PilotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PilotApp.swift; sourceTree = "<group>"; };
 		F777746FD4E9041FC410B4D1 /* AwakeSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AwakeSessionTests.swift; sourceTree = "<group>"; };
@@ -983,6 +985,7 @@
 				DE61939AF52E09E1543E7B5B /* GitCommitStore.swift */,
 				09CBC9A2EAF71B52D91F96DB /* GitHubTasksStore.swift */,
 				C3D720FB31D52FB4E99A5ECF /* GitStatus.swift */,
+				F5AD0685A4D3AFEA304ABF59 /* GlassCompat.swift */,
 				AEF294C6D54F08AFA7316B33 /* HeadphoneDetector.swift */,
 				0146AB6C59B6957CE9B7E874 /* Info.plist */,
 				21D88EA79C48861054839A54 /* InkOverlay.swift */,
@@ -1647,6 +1650,7 @@
 				F797C21E5A72C28BD91D6073 /* GitCommitStore.swift in Sources */,
 				E57F6CDE4BED1E1E9489FE9E /* GitHubTasksStore.swift in Sources */,
 				2D4B2E82B3713A77B0B6F66A /* GitStatus.swift in Sources */,
+				436177793FAB81A27D8E96A5 /* GlassCompat.swift in Sources */,
 				BFEB5C4EF0861CD8CCBC4F72 /* H264AnnexBAssembler.swift in Sources */,
 				9CCB3AE0ECFF1D2D7C809867 /* HeadphoneDetector.swift in Sources */,
 				3DA4B44B89281F76759EE2CE /* InkOverlay.swift in Sources */,
@@ -2174,6 +2178,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Trigger;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = app.blau.copilot;
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.copilot.watchkitapp;
@@ -2431,6 +2436,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Trigger;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = app.blau.copilot;
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.copilot.watchkitapp;
@@ -2765,6 +2771,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Trigger;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = app.blau.copilot;
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.copilot.watchkitapp;
