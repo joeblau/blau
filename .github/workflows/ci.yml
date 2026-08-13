@@ -96,6 +96,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.apple == 'true'
     runs-on: macos-26
+    # A hung xcodebuild otherwise burns the 6-hour runner default (seen when a
+    # deployment-target change stalled Network.framework-dependent tests).
+    timeout-minutes: 90
     env:
       BLAU_SOURCE_PACKAGES: ${{ github.workspace }}/apple/.ci-source-packages
     steps:
