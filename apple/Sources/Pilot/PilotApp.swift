@@ -194,6 +194,9 @@ struct PilotPaneCreationCommands: Commands {
 @main
 struct PilotApp: App {
     let modelContainer: ModelContainer
+    /// Sparkle's standard updater controller. Starting it here schedules the
+    /// automatic background checks (per the user's Sparkle preference) and
+    /// powers the Settings → General "Check for Updates…" button.
     private let updaterController: SPUStandardUpdaterController
 
     @State private var store: WorkspaceStore
@@ -222,15 +225,6 @@ struct PilotApp: App {
     /// Auto-generated identity key, auto-exchanged with Copilot over the
     /// encrypted channel (issue #51).
     @State private var secureIdentity = SecureIdentity(role: .pilot)
-
-    /// Sparkle's standard updater controller. Starting it here schedules the
-    /// automatic background checks (per the user's Sparkle preference) and
-    /// powers the Settings → General "Check for Updates…" button.
-    private let updaterController = SPUStandardUpdaterController(
-        startingUpdater: true,
-        updaterDelegate: nil,
-        userDriverDelegate: nil
-    )
 
     @AppStorage("ui.zoom") private var uiZoom: Double = UIZoomLadder.default
 

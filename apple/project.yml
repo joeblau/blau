@@ -52,9 +52,6 @@ packages:
   RoyalVNCKit:
     url: https://github.com/royalapplications/royalvnc.git
     revision: 92d4427c73817d8f849bb289ff190aa4b40c44ea
-  Sparkle:
-    url: https://github.com/sparkle-project/Sparkle.git
-    exactVersion: "2.9.5"
 
 schemes:
   SharedTests:

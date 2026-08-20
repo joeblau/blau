@@ -153,6 +153,7 @@ struct DockerView: View {
                 } description: {
                     Text("Nothing has been created on this engine yet. Start one from a terminal with `docker run`.")
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if store.visibleContainers.isEmpty {
                 ContentUnavailableView {
                     Label("Nothing Matches", systemImage: "line.3.horizontal.decrease.circle")
@@ -161,6 +162,7 @@ struct DockerView: View {
                          ? "No container matches the filter."
                          : "No running container matches the filter. Turn on “Show stopped” to see the rest.")
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 containerList
             }
@@ -226,6 +228,7 @@ struct DockerView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// Only offer the launch button when Docker Desktop is actually installed —

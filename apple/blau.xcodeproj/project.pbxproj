@@ -121,6 +121,7 @@
 		64F5BBAD2D8C4BF5CDAAC40A /* ReliableMessenger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271D385A8DA926A540CE6710 /* ReliableMessenger.swift */; };
 		65D9C04BD7FCE7CCF33CFD77 /* DockerContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20D1CA89284AED0AC05A06B4 /* DockerContainer.swift */; };
 		6684B7C0B05ED55FA9992E54 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 201310A4047D7610189A9F4D /* SettingsView.swift */; };
+		679373481E50F0FD7BF6B6D5 /* ChromiumRuntimeProbeDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80C1ABBF303B0BD57824A8B /* ChromiumRuntimeProbeDelegate.swift */; };
 		67BBEC3250BD17664ABB37EC /* DockerHTTPParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCACC65C389DB2551F3D872F /* DockerHTTPParsingTests.swift */; };
 		6827D1977814F3808D1FBACF /* PlotterSnapshotWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385D31984E6C837A96E9976A /* PlotterSnapshotWidget.swift */; };
 		69E5F86F22F8A3173F33A047 /* RoyalVNCKit in Embed Frameworks */ = {isa = PBXBuildFile; productRef = 6E9BD40D67F1BCD6E626A7DC /* RoyalVNCKit */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -553,6 +554,7 @@
 		A1C985F86115A698849ED108 /* VolumeScrollListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeScrollListView.swift; sourceTree = "<group>"; };
 		A4F002C4E4B79B5D1D7053E2 /* ScreenMirrorBitrateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenMirrorBitrateTests.swift; sourceTree = "<group>"; };
 		A55ED623DB1E559C312D29D1 /* AgenticUseModelPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgenticUseModelPalette.swift; sourceTree = "<group>"; };
+		A80C1ABBF303B0BD57824A8B /* ChromiumRuntimeProbeDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromiumRuntimeProbeDelegate.swift; sourceTree = "<group>"; };
 		A8128F295B3D268259C8F98F /* EnvSecret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvSecret.swift; sourceTree = "<group>"; };
 		AA1D8AC628F3F55D563872C7 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AB2FB7766C24786389E2F582 /* RemoteScreenDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteScreenDiscovery.swift; sourceTree = "<group>"; };
@@ -950,6 +952,7 @@
 				F628D6AEB4271F9CAA8506FB /* ChromiumDiagnosticsSettings.swift */,
 				03B12DEFB58998D6396738CA /* ChromiumProfilePolicy.swift */,
 				147F6234512A7AB888DE87E8 /* ChromiumRuntimeProbe.swift */,
+				A80C1ABBF303B0BD57824A8B /* ChromiumRuntimeProbeDelegate.swift */,
 				066424360600310F328FDB6C /* ChromiumSecurityPolicy.swift */,
 				CB128E7236AC4C65E97A2041 /* LocalServerProbe.swift */,
 				4A912031A64F684013037FBB /* LocalServerScanner.swift */,
@@ -1701,6 +1704,7 @@
 				B217CB22A7A9ED562DE10978 /* ChromiumDiagnosticsSettings.swift in Sources */,
 				DD7C98135DE2142343285BF1 /* ChromiumProfilePolicy.swift in Sources */,
 				8F331ABD5EDFB8C95743146F /* ChromiumRuntimeProbe.swift in Sources */,
+				679373481E50F0FD7BF6B6D5 /* ChromiumRuntimeProbeDelegate.swift in Sources */,
 				6181F474E332DA503B5E4A58 /* ChromiumSecurityPolicy.swift in Sources */,
 				D0FFBBC93C69BA053BFCFDA3 /* ColorChip.swift in Sources */,
 				CB797869A7D03477CAC989A2 /* CommitListView.swift in Sources */,
