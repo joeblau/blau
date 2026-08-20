@@ -1170,7 +1170,7 @@ enum ChromiumRuntimeProbe {
             for delegate in delegates {
                 if let error = delegate.lastFailure {
                     throw ChromiumRuntimeProbeError.navigationFailed(
-                        error.localizedDescription
+                        "\(operation): \(error.localizedDescription)"
                     )
                 }
                 if let status = delegate.rendererTerminationStatus {
@@ -1476,15 +1476,20 @@ private final class ChromiumRuntimeProbeDelegate:
             let failingURL = navigationError.userInfo[
                 NSURLErrorFailingURLErrorKey
             ] as? URL
-            let netError = navigationError.userInfo[
-                "ChromiumNetError"
-            ] as? Int
-            let expectedCancellation = netError == -3
-                && failingURL.map {
-                    blockedNavigationURLs.contains($0)
-                        || deniedDownloadURLs.contains($0)
-                } == true
-            if !expectedCancellation {
+            // The probe deliberately rejects every navigation recorded in
+            // these lists. The cancel error can arrive after the step that
+            // triggered it (the auth rejection is dispatched from the CEF IO
+            // thread, ChromiumKit.mm:1345), so match on the failing URL
+            // rather than on the error code or on arrival timing.
+            let expectedCancellation = failingURL.map {
+                blockedNavigationURLs.contains($0)
+                    || deniedDownloadURLs.contains($0)
+                    || deniedAuthenticationURLs.contains($0)
+                    || rejectedCertificateURLs.contains($0)
+            } == true
+            let intentionalCrashAbort = allowsIntentionalRendererCrash
+                && failingURL?.absoluteString == "chrome://crash"
+            if !expectedCancellation && !intentionalCrashAbort {
                 lastFailure = navigationError
             }
         }

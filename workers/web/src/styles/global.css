@@ -25,6 +25,9 @@ body {
   min-height: 100%;
   margin: 0;
   background: var(--background);
+  /* Touch drags steer the cockpit background; keep the pinned page from
+     rubber-banding along with them. */
+  overscroll-behavior: none;
 }
 
 body {
@@ -36,6 +39,36 @@ body {
 button {
   font: inherit;
   -webkit-tap-highlight-color: transparent;
+}
+
+main {
+  position: relative;
+  z-index: 1;
+}
+
+.cockpit-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--background);
+}
+
+.cockpit-bg canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.cockpit-bg__vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 42%, rgb(0 0 0 / 0) 45%, rgb(0 0 0 / 0.55) 100%),
+    linear-gradient(rgb(9 9 11 / 0.3), rgb(9 9 11 / 0.45));
 }
 
 .landing {
@@ -53,6 +86,12 @@ button {
   gap: clamp(2.5rem, 6vh, 4rem);
 }
 
+.landing__intro {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+}
+
 .landing h1 {
   margin: 0;
   color: var(--foreground);
@@ -61,6 +100,16 @@ button {
   font-weight: 600;
   letter-spacing: -0.07em;
   line-height: 0.9;
+}
+
+.landing__tagline {
+  margin: 0;
+  color: rgb(250 250 250 / 0.55);
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 2.2vw, 1.25rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  text-align: center;
 }
 
 .landing__actions {
@@ -142,6 +191,54 @@ button {
 .button:disabled {
   opacity: 0.5;
   pointer-events: none;
+}
+
+.qr-dialog {
+  display: grid;
+  justify-items: center;
+  gap: 1.25rem;
+  width: min(90vw, 22rem);
+  margin: auto;
+  padding: 2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #101012;
+  color: var(--foreground);
+}
+
+.qr-dialog:not([open]) {
+  display: none;
+}
+
+.qr-dialog::backdrop {
+  background: rgb(0 0 0 / 0.65);
+}
+
+.qr-dialog__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.qr-dialog__code {
+  width: 13rem;
+  padding: 0.875rem;
+  border-radius: var(--radius);
+  background: #fff;
+  color: #09090b;
+}
+
+.qr-dialog__code svg {
+  display: block;
+}
+
+.qr-dialog__hint {
+  margin: 0;
+  color: rgb(250 250 250 / 0.55);
+  font-size: 0.875rem;
+  text-align: center;
 }
 
 .landing__footer {

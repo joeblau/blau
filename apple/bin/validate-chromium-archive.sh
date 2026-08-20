@@ -185,17 +185,52 @@ while IFS= read -r additional_framework; do
   verify_signature "$additional_framework" "$label" "$app_team"
   verify_exact_entitlements "$additional_framework" "" "$label"
   found_macho=0
+  sparkle_macho_paths="$work/sparkle-macho-paths.txt"
+  : > "$sparkle_macho_paths"
   while IFS= read -r binary; do
     if file "$binary" | grep -q 'Mach-O'; then
       found_macho=1
       [[ "$(sorted_architectures "$binary")" == "arm64 x86_64" ]] ||
         fail "non-universal binary in $label: $binary"
       verify_signature "$binary" "$label nested binary" "$app_team"
-      verify_exact_entitlements "$binary" "" "$label nested binary"
+      relative_framework_path="${binary#"$additional_framework/"}"
+      if [[ "$(basename "$additional_framework")" == \
+            "Sparkle.framework" && "$relative_framework_path" == \
+            "Versions/B/Autoupdate" ]]; then
+        [[ "$(canonical_entitlements "$binary")" == \
+          '{"com.apple.application-identifier":"org.sparkle-project.Sparkle.Autoupdate"}' ]] ||
+          fail "Sparkle Autoupdate entitlements differ from reviewed policy"
+      else
+        verify_exact_entitlements "$binary" "" "$label nested binary"
+      fi
+      if [[ "$(basename "$additional_framework")" == \
+            "Sparkle.framework" ]]; then
+        printf '%s\n' "$relative_framework_path" >> "$sparkle_macho_paths"
+      fi
       printf '%s\n' "${binary#"$APP/"}" >> "$allowed_code"
     fi
   done < <(find "$additional_framework" -type f -print | LC_ALL=C sort)
   [[ "$found_macho" == 1 ]] || fail "$label contains no Mach-O payload"
+  if [[ "$(basename "$additional_framework")" == "Sparkle.framework" ]]; then
+    sparkle_version="$(jq -r '
+      .pins[] | select(.identity == "sparkle") | .state.version
+    ' "$APPLE_ROOT/blau.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved")"
+    [[ -n "$sparkle_version" && "$sparkle_version" != "null" ]] ||
+      fail "Sparkle is missing from Package.resolved"
+    [[ "$(plutil -extract CFBundleShortVersionString raw \
+      "$additional_framework/Resources/Info.plist")" == "$sparkle_version" ]] ||
+      fail "embedded Sparkle version differs from Package.resolved"
+    cat > "$work/expected-sparkle-macho-paths.txt" <<'SPARKLE_PATHS'
+Versions/B/Autoupdate
+Versions/B/Sparkle
+Versions/B/Updater.app/Contents/MacOS/Updater
+Versions/B/XPCServices/Downloader.xpc/Contents/MacOS/Downloader
+Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer
+SPARKLE_PATHS
+    cmp "$work/expected-sparkle-macho-paths.txt" \
+      "$sparkle_macho_paths" >/dev/null ||
+      fail "embedded Sparkle executable layout differs from reviewed policy"
+  fi
 done < "$additional_frameworks"
 while IFS= read -r binary; do
   if file "$binary" | grep -q 'Mach-O'; then

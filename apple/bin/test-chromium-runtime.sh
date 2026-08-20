@@ -10,6 +10,18 @@ export BLAU_CHROMIUM_CODESIGN_TIMESTAMP="${BLAU_CHROMIUM_CODESIGN_TIMESTAMP:-NO}
 TEST_CODE_SIGN_IDENTITY="${BLAU_CHROMIUM_TEST_CODE_SIGN_IDENTITY:-Apple Development}"
 TEST_DEVELOPMENT_TEAM="${BLAU_CHROMIUM_TEST_DEVELOPMENT_TEAM:-K78G42H4U2}"
 TEST_ARCHITECTURE="${BLAU_CHROMIUM_TEST_ARCHITECTURE:-$(uname -m)}"
+signing_settings=(
+  "CODE_SIGN_IDENTITY=$TEST_CODE_SIGN_IDENTITY"
+  "DEVELOPMENT_TEAM=$TEST_DEVELOPMENT_TEAM"
+  "CODE_SIGNING_REQUIRED=YES"
+)
+if [[ "$TEST_CODE_SIGN_IDENTITY" == Developer\ ID\ Application:* ]]; then
+  # Xcode's automatic signing accepts Apple Development but rejects an
+  # explicit Developer ID identity. Release smoke tests have only the imported
+  # Developer ID key, so make that override consistently manual for every
+  # target in the hosted test graph.
+  signing_settings+=("CODE_SIGN_STYLE=Manual")
+fi
 
 if [[ ! -d "$DEVELOPER_DIR" ]]; then
   printf 'Chromium runtime test error: Xcode developer directory not found: %s\n' \
@@ -55,10 +67,7 @@ xcodebuild \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=YES \
   ARCHS="$TEST_ARCHITECTURE" \
   ONLY_ACTIVE_ARCH=YES \
-  CODE_SIGN_STYLE=Manual \
-  CODE_SIGN_IDENTITY="$TEST_CODE_SIGN_IDENTITY" \
-  DEVELOPMENT_TEAM="$TEST_DEVELOPMENT_TEAM" \
-  CODE_SIGNING_REQUIRED=YES \
+  "${signing_settings[@]}" \
   test || status=$?
 
 # -quiet suppresses per-test failure output, so surface the recorded issues

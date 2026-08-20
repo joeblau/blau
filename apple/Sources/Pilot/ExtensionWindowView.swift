@@ -680,11 +680,17 @@ struct ExtensionWindowView: View {
                     PaneToolbarControls(pane: pane)
                 }
             }
-            ToolbarItem(placement: .primaryAction) {
-                WorkspacePaneLauncher(workspace: extensionWorkspace)
+            if #available(macOS 26.0, *) {
+                ToolbarItem(placement: .primaryAction) {
+                    WorkspacePaneLauncher(workspace: extensionWorkspace)
+                }
+                .sharedBackgroundVisibility(.hidden)
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+            } else {
+                ToolbarItem(placement: .primaryAction) {
+                    WorkspacePaneLauncher(workspace: extensionWorkspace)
+                }
             }
-            .sharedBackgroundVisibility(.hidden)
-            ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     isDrawingActive.toggle()

@@ -194,6 +194,7 @@ struct PilotPaneCreationCommands: Commands {
 @main
 struct PilotApp: App {
     let modelContainer: ModelContainer
+    private let updaterController: SPUStandardUpdaterController
 
     @State private var store: WorkspaceStore
     @State private var extensionWorkspaceController: ExtensionWorkspaceController
@@ -234,11 +235,17 @@ struct PilotApp: App {
     @AppStorage("ui.zoom") private var uiZoom: Double = UIZoomLadder.default
 
     init() {
+        let isRunningTests = ProcessInfo.processInfo.environment.keys.contains("XCTestConfigurationFilePath")
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: !isRunningTests,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
         // Build the schema from the newest versioned schema so the store is
         // stamped with a version and `PilotMigrationPlan` governs upgrades.
         let schema = Schema(versionedSchema: PilotSchemaV3.self)
         let container: ModelContainer
-        if ProcessInfo.processInfo.environment.keys.contains("XCTestConfigurationFilePath") {
+        if isRunningTests {
             // A hosted unit-test launch must never open, back up, migrate, or
             // quarantine the developer's real Pilot store. It can also deadlock
             // behind a normally running Pilot process. Keep the test host fully
@@ -661,6 +668,9 @@ struct PilotApp: App {
         .commands {
             PilotWindowCommands()
             PilotCloseCommands()
+            CommandGroup(after: .appInfo) {
+                CheckForSoftwareUpdatesView(updater: updaterController.updater)
+            }
 
             // New Terminal / New Browser as real main-menu commands. As toolbar
             // ControlGroup button shortcuts they were swallowed by a focused

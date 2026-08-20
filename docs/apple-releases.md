@@ -3,13 +3,11 @@
 The `Apple Release` GitHub Actions workflow turns a `vMAJOR.MINOR.PATCH` tag
 on `main` into one coordinated Apple release:
 
-- Pilot is built as a universal Chromium-enabled macOS app, signed with
-  Developer ID, notarized, stapled, and attached to a GitHub Release as a ZIP
-  with a SHA-256 checksum. The release also carries a Sparkle appcast
-  (`appcast.xml`) whose enclosure is EdDSA-signed, so installed copies
-  self-update from `releases/latest/download/appcast.xml`.
-- Copilot, including Wingman, is uploaded to App Store Connect for TestFlight.
-- Plotter, including PlotterWidgets, is uploaded to App Store Connect for
+- Cockpit (the `Pilot` target) is built as a universal Chromium-enabled macOS
+  app, signed with Developer ID, notarized, stapled, and attached to a GitHub
+  Release as a ZIP with a SHA-256 checksum and a signed Sparkle appcast.
+- Walkie, including Trigger, is uploaded to App Store Connect for TestFlight.
+- Kneeboard, including Kneeboard widgets, is uploaded to App Store Connect for
   TestFlight.
 - The public GitHub Release is created only after the notarized macOS artifact
   and both TestFlight uploads succeed.
@@ -30,9 +28,9 @@ Identifiers & Profiles before the first release:
 - the `group.app.blau.plotter` App Group, assigned to Plotter and
   PlotterWidgets
 
-Create App Store Connect app records for Copilot (`app.blau.copilot`) and
-Plotter (`app.blau.plotter`). Apple must know those top-level apps before a CI
-upload can be associated with TestFlight.
+Create App Store Connect app records for Walkie (`app.blau.copilot`) and
+Kneeboard (`app.blau.plotter`). Apple must know those top-level apps before a
+CI upload can be associated with TestFlight.
 
 Create a team App Store Connect API key under **Users and Access >
 Integrations > Team Keys**. Use an Admin key so headless Xcode automatic
@@ -41,28 +39,11 @@ and `notarytool` are authorized. The private `.p8` file can only be downloaded
 once. Individual API keys do not support the provisioning endpoints or
 `notarytool`, so they cannot replace the team key in this workflow.
 
-Create a **Developer ID Application** certificate for Pilot. Export the
+Create a **Developer ID Application** certificate for Cockpit. Export the
 certificate and its private key from Keychain Access as a password-protected
 `.p12`. An Apple Distribution certificate is not stored in GitHub: Xcode uses
 the team API key and Apple's cloud-managed distribution signing for the App
 Store uploads.
-
-Sparkle updates are signed with an EdDSA key pair that lives in the
-maintainer's login keychain under the `blau` account (created with
-`generate_keys` from the pinned Sparkle release; the matching public key is
-baked into Pilot's `Info.plist` as `SUPublicEDKey`). Export the private key
-and store it as the CI secret:
-
-```bash
-./bin/generate_keys --account blau -x /tmp/sparkle-blau-private-key
-gh secret set SPARKLE_PRIVATE_KEY --env apple-release \
-  --body "$(cat /tmp/sparkle-blau-private-key)"
-rm -P /tmp/sparkle-blau-private-key
-```
-
-Losing the private key means shipping a new public key with the next release
-and leaving older installs unable to verify updates, so keep a copy in the
-team password manager.
 
 Apple references:
 
@@ -85,7 +66,7 @@ download. Store these environment secrets:
 | `MACOS_CERTIFICATE_P12` | Base64-encoded Developer ID Application certificate and private key. |
 | `MACOS_CERTIFICATE_PASSWORD` | Password used when exporting the `.p12`. |
 | `MACOS_SIGNING_IDENTITY` | Full identity, for example `Developer ID Application: Example, Inc. (TEAMID1234)`. |
-| `SPARKLE_PRIVATE_KEY` | EdDSA private key for signing Sparkle update enclosures (see above). |
+| `SPARKLE_PRIVATE_KEY` | Private Ed25519 key exported by Sparkle's `generate_keys` tool. Do not base64-encode it again. |
 
 Encode the two files without introducing line wrapping:
 
@@ -93,6 +74,11 @@ Encode the two files without introducing line wrapping:
 base64 -i AuthKey_KEYID.p8 | pbcopy
 base64 -i DeveloperIDApplication.p12 | pbcopy
 ```
+
+The Sparkle private key is distinct from every Apple credential. Its matching
+public key is committed as `SUPublicEDKey` in Cockpit's Info.plist. Keep an
+encrypted backup of the private key outside GitHub; GitHub secrets cannot be
+read back after creation.
 
 Use a GitHub ruleset to restrict creation and deletion of tags matching `v*`
 to release maintainers. The workflow also refuses tags whose target commit is
@@ -110,20 +96,42 @@ git tag -s v1.2.3 -m "blau 1.2.3"
 git push origin v1.2.3
 ```
 
-The first Pilot release for a pinned Chromium version reproduces the verified
+The first Cockpit release for a pinned Chromium version reproduces the verified
 runtime from its locked upstream archives. Later releases reuse the immutable
 `chromiumkit-<release-id>` GitHub Release when one exists and verify its
 release attestation and asset bytes before installation.
+
+## Cockpit updates
+
+Cockpit uses Sparkle 2 for updates outside the Mac App Store. Each semantic app
+release is explicitly marked as GitHub's latest release and publishes:
+
+- `Cockpit-<version>-macOS.zip`
+- `Cockpit-<version>-macOS.zip.sha256`
+- `appcast.xml`
+
+The appcast points at the immutable, versioned GitHub Release URL rather than a
+mutable asset URL. The release workflow signs both the update enclosure and the
+feed with `SPARKLE_PRIVATE_KEY`; Cockpit verifies them with its embedded public
+key and verifies the Developer ID signature before installation. ChromiumKit
+support releases are explicitly prevented from replacing the semantic app
+release as GitHub's latest release.
+
+The first release containing Sparkle must still be installed manually. Once
+that version is running, later semantic releases appear automatically and can
+also be requested from **Cockpit > Check for Updates…**.
 
 Successful upload makes each mobile build appear in App Store Connect after
 Apple finishes processing it. Assigning tester groups, completing export
 compliance, submitting an external beta for review, and promoting a build to
 the App Store remain explicit App Store Connect operations.
 
+If both TestFlight jobs succeed but Cockpit fails, merge the Cockpit fix and run
+**Apple Release** manually from `main`. Supply the unchanged release tag and
+the failed release run ID. The workflow verifies that both TestFlight jobs in
+that run succeeded for the exact tagged commit, then runs only Cockpit and
+publishes the GitHub Release. This recovery path never moves the tag or uploads
+the mobile builds again.
+
 Do not move or reuse a release tag. If a release needs another binary, make a
 new version tag. A workflow retry receives a new build number automatically.
-
-Sparkle reads the feed from `releases/latest/download/appcast.xml`, so the
-"latest" badge must stay on app releases: this workflow publishes with
-`--latest=true`, the ChromiumKit workflow publishes with `--latest=false`, and
-any component release cut by hand (e.g. GhosttyKit) must not take the badge.

@@ -3,6 +3,12 @@ options:
   bundleIdPrefix: app.blau
   deploymentTarget:
     iOS: "26.0"
+    # Goal floor is 15.0 and the code is ready for it (see GlassCompat and the
+    # #available toolbar guards), but the Xcode 26 SDK breaks Network.framework
+    # for binaries targeting < 26: NWListener pinned to loopback never reaches
+    # .ready and AF_UNIX NWConnection (Docker transport) times out. Verified by
+    # A/B at target 15 vs 26 on the same SDK; the Xcode 27 SDK fixes it. Lower
+    # this to "15.0" once CI's pinned toolchain moves to Xcode 27.
     macOS: "26.0"
     watchOS: "26.0"
   xcodeVersion: "26.0"
@@ -27,6 +33,9 @@ settings:
 packages:
   GhosttyKit:
     path: Packages/GhosttyKit
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle.git
+    exactVersion: "2.9.5"
   WhisperKit:
     url: https://github.com/argmaxinc/argmax-oss-swift.git
     from: "1.0.0"
@@ -141,6 +150,8 @@ targets:
           - "TranscriptionService.swift"
     dependencies:
       - package: GhosttyKit
+      - package: Sparkle
+        product: Sparkle
       - target: ChromiumKit
         embed: false
       - target: PilotChromiumHelperTemplate
@@ -353,6 +364,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Trigger
         INFOPLIST_KEY_WKCompanionAppBundleIdentifier: app.blau.copilot
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: false
         GENERATE_INFOPLIST_FILE: true
         SDKROOT: watchos
 
