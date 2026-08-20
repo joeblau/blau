@@ -162,6 +162,13 @@ enum ChromiumRuntimeProbe {
                 timeout: timeout
             )
 
+            try await verifySameDocumentHistory(
+                host: firstHost,
+                delegate: firstDelegate,
+                pageURL: firstURL,
+                timeout: timeout
+            )
+
             let helpers = try await verifyHelpersAndMeasureResources(
                 delegates: [firstDelegate, secondDelegate],
                 timeout: timeout
@@ -199,7 +206,7 @@ enum ChromiumRuntimeProbe {
                     && !secondHost.isLoading
             }
             logger.notice("Surviving browser navigation observed")
-            let survivingTitle = "Pilot Chromium probe survivor"
+            let survivingTitle = "Cockpit Chromium probe survivor"
             guard secondHost.executeJavaScript(
                 "document.title = '\(survivingTitle)';",
                 sourceURL: secondURL,
@@ -308,8 +315,8 @@ enum ChromiumRuntimeProbe {
         sourceURL: URL,
         timeout: TimeInterval
     ) async throws -> (first: String, second: String) {
-        let firstTitle = "Pilot Chromium probe first"
-        let secondTitle = "Pilot Chromium probe second"
+        let firstTitle = "Cockpit Chromium probe first"
+        let secondTitle = "Cockpit Chromium probe second"
         guard firstHost.executeJavaScript(
             "document.title = '\(firstTitle)';",
             sourceURL: sourceURL,
@@ -353,7 +360,7 @@ enum ChromiumRuntimeProbe {
         while true {
             guard let commands = runningHelperCommands() else {
                 throw ChromiumRuntimeProbeError.invalidLifecycle(
-                    "Pilot could not inspect Chromium helper cleanup."
+                    "Cockpit could not inspect Chromium helper cleanup."
                 )
             }
             helperCount = commands.count
@@ -411,6 +418,59 @@ enum ChromiumRuntimeProbe {
     private struct HistoryResult {
         let backURL: URL
         let forwardURL: URL
+    }
+
+    /// IDE previews commonly use the History API instead of full document
+    /// loads. CEF reports those through OnAddressChange, so the native host's
+    /// Back/Forward state must refresh on that callback as well.
+    private static func verifySameDocumentHistory(
+        host: ChromiumBrowserHostView,
+        delegate: ChromiumRuntimeProbeDelegate,
+        pageURL: URL,
+        timeout: TimeInterval
+    ) async throws {
+        var components = URLComponents(
+            url: pageURL,
+            resolvingAgainstBaseURL: false
+        )
+        components?.fragment = "cockpit-spa-route"
+        guard let pushedURL = components?.url else {
+            throw ChromiumRuntimeProbeError.javaScriptRejected(
+                "same-document history URL"
+            )
+        }
+        let historyStateChangeCount = delegate.historyStateChangeCount
+        guard host.executeJavaScript(
+            "history.pushState({}, '', '#cockpit-spa-route');",
+            sourceURL: pageURL,
+            line: 1
+        ) else {
+            throw ChromiumRuntimeProbeError.javaScriptRejected(
+                "same-document history"
+            )
+        }
+        try await wait(
+            for: "enabling back navigation after History API navigation",
+            timeout: timeout,
+            delegates: [delegate]
+        ) {
+            delegate.lastURL == pushedURL
+                && delegate.historyStateChangeCount > historyStateChangeCount
+                && delegate.lastCanGoBack
+                && host.canGoBack
+        }
+
+        host.back()
+        try await wait(
+            for: "navigating backward after History API navigation",
+            timeout: timeout,
+            delegates: [delegate]
+        ) {
+            delegate.lastURL == pageURL
+                && !host.isLoading
+                && host.canGoForward
+        }
+        logger.notice("Chromium same-document history state observed")
     }
 
     private static func verifyHistory(
@@ -495,7 +555,7 @@ enum ChromiumRuntimeProbe {
                     && delegate.lastTitle?.contains("[ready]") == true
                     && !host.isLoading
             }
-            let restoredTitle = "Pilot Chromium probe restored"
+            let restoredTitle = "Cockpit Chromium probe restored"
             guard host.executeJavaScript(
                 "document.title = '\(restoredTitle)';",
                 sourceURL: restoredURL,
@@ -541,7 +601,7 @@ enum ChromiumRuntimeProbe {
                     && delegate.lastTitle?.contains("[ready]") == true
                     && !host.isLoading
             }
-            let recoveryTitle = "Pilot Chromium probe renderer recovered"
+            let recoveryTitle = "Cockpit Chromium probe renderer recovered"
             guard host.executeJavaScript(
                 "document.title = '\(recoveryTitle)';",
                 sourceURL: recoveryURL,
@@ -617,7 +677,7 @@ enum ChromiumRuntimeProbe {
             to: popupPageURL,
             timeout: timeout
         )
-        let blockedScriptPopupTitle = "Pilot Chromium script popup blocked"
+        let blockedScriptPopupTitle = "Cockpit Chromium script popup blocked"
         guard host.executeJavaScript(
             """
             document.title =
@@ -663,7 +723,7 @@ enum ChromiumRuntimeProbe {
             to: permissionPageURL,
             timeout: timeout
         )
-        let permissionDeniedTitle = "Pilot Chromium permission denied"
+        let permissionDeniedTitle = "Cockpit Chromium permission denied"
         guard host.executeJavaScript(
             """
             navigator.mediaDevices.getUserMedia({audio: true})
@@ -749,7 +809,7 @@ enum ChromiumRuntimeProbe {
             to: hostileURL,
             timeout: timeout
         )
-        let survivorTitle = "Pilot Chromium hostile messages ignored"
+        let survivorTitle = "Cockpit Chromium hostile messages ignored"
         guard host.executeJavaScript(
             """
             document.querySelector('#send').click();
@@ -800,7 +860,7 @@ enum ChromiumRuntimeProbe {
         sourceURL: URL,
         timeout: TimeInterval
     ) async throws {
-        let titlePrefix = "Pilot Chromium click location:"
+        let titlePrefix = "Cockpit Chromium click location:"
         guard host.executeJavaScript(
             """
             (() => {
@@ -990,7 +1050,7 @@ enum ChromiumRuntimeProbe {
         let messagePumpCountBefore = ChromiumEngine.shared.messagePumpWatchdogWorkCount
         guard !before.isEmpty else {
             throw ChromiumRuntimeProbeError.invalidLifecycle(
-                "No Pilot Chromium processes were available to sample."
+                "No Cockpit Chromium processes were available to sample."
             )
         }
         let startedAt = ContinuousClock.now
@@ -1002,7 +1062,7 @@ enum ChromiumRuntimeProbe {
         let commonProcessIDs = Set(before.keys).intersection(after.keys)
         guard !commonProcessIDs.isEmpty else {
             throw ChromiumRuntimeProbeError.invalidLifecycle(
-                "The Pilot Chromium process set changed during idle sampling."
+                "The Cockpit Chromium process set changed during idle sampling."
             )
         }
 
@@ -1225,6 +1285,8 @@ private final class ChromiumRuntimeProbeDelegate:
     private(set) var deniedAuthenticationURLs: [URL] = []
     private(set) var rejectedCertificateErrors: [Int] = []
     private(set) var rejectedCertificateURLs: [URL] = []
+    private(set) var historyStateChangeCount = 0
+    private(set) var lastCanGoBack = false
     var allowsIntentionalRendererCrash = false
 
     func prepareForRendererRecovery() {
@@ -1388,6 +1450,18 @@ private final class ChromiumRuntimeProbeDelegate:
         MainActor.assumeIsolated {
             _ = browserView
             lastTitle = title
+        }
+    }
+
+    @objc(chromiumBrowserHostView:didChangeCanGoBack:)
+    nonisolated func chromiumBrowserHostView(
+        _ browserView: ChromiumBrowserHostView,
+        didChangeCanGoBack canGoBack: Bool
+    ) {
+        MainActor.assumeIsolated {
+            _ = browserView
+            historyStateChangeCount += 1
+            lastCanGoBack = canGoBack
         }
     }
 

@@ -3,16 +3,16 @@
 blau is a native Apple development cockpit: four companion apps, a public web
 site, and an optional rendezvous relay.
 
-- **Pilot** (macOS) combines terminals, editing, browser previews, GitHub work,
+- **Cockpit** (macOS, internal target `Pilot`) combines terminals, editing, browser previews, GitHub work,
   device capture, simulators, remote screens, and local container control (see
   [the Docker section](docs/docker-section.md)).
-- **Copilot** (iOS) supplies a trackpad, voice transcription, settings, and
+- **Walkie** (iOS, internal target `Copilot`) supplies a trackpad, voice transcription, settings, and
   secure peer messaging.
-- **Plotter** (iPadOS) mirrors a Pilot window with low-latency HEVC and sends
+- **Kneeboard** (iPadOS, internal target `Plotter`) mirrors a Cockpit window with low-latency HEVC and sends
   normalized PencilKit annotations. It supports rotation, Split View, and
   Stage Manager; see [the display policy](docs/plotter-display-policy.md).
-- **Wingman** (watchOS) sends live, short-lived terminal control gestures
-  through its paired Copilot.
+- **Trigger** (watchOS, internal target `Wingman`) sends live, short-lived terminal control gestures
+  through its paired Walkie.
 - **Web** is the static Astro site at [blau.app](https://blau.app).
 - **Rendezvous** is a Cloudflare Durable Object WebSocket relay for encrypted
   peers that cannot discover one another locally. It cannot read peer payloads.
@@ -135,7 +135,7 @@ developer account, not checked-in certificates.
 
 ## Security
 
-Pilot Notes is a local plaintext scratchpad. Its value masking is only a visual
+Cockpit Notes is a local plaintext scratchpad. Its value masking is only a visual
 shoulder-surfing aid; it is not encryption or a password manager.
 
 Please report vulnerabilities privately using the process in
@@ -152,4 +152,4 @@ source line references to [TODOS.md](TODOS.md).
 
 ## Optional Chromium browser
 
-Pilot's Chromium-backed browser panel is opt-in; clean Debug and Release builds continue to use WebKit without downloading CEF. Validate the immutable artifact lock with `bash apple/bin/package-chromiumkit.sh manifest`, then follow the [Chromium browser guide](docs/chromium-browser.md) and [ChromiumKit setup](apple/Packages/ChromiumKit/README.md) to install, build, run `apple/bin/test-chromium-runtime.sh`, sign, and validate the Chromium configuration.
+Cockpit's Chromium-backed browser panel is opt-in; clean Debug and Release builds continue to use WebKit without downloading CEF. Validate the immutable artifact lock with `bash apple/bin/package-chromiumkit.sh manifest`, then follow the [Chromium browser guide](docs/chromium-browser.md) and [ChromiumKit setup](apple/Packages/ChromiumKit/README.md) to install, build, run `apple/bin/test-chromium-runtime.sh`, sign, and validate the Chromium configuration.

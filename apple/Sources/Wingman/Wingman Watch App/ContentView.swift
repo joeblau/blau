@@ -26,13 +26,13 @@ struct ContentView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            .navigationTitle("Wingman")
+            .navigationTitle("Trigger")
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 4) {
                     Circle()
                         .fill(isConnected ? .green : .red)
                         .frame(width: 10, height: 10)
-                    Text(isConnected ? "Copilot Connected" : "Copilot Disconnected")
+                    Text(isConnected ? "Walkie Connected" : "Walkie Disconnected")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
@@ -66,7 +66,7 @@ struct ContentView: View {
             Button {
                 triggerDoublePinch(source: "button")
             } label: {
-                Label("Send to Copilot", systemImage: "hand.pinch.fill")
+                Label("Send to Walkie", systemImage: "hand.pinch.fill")
                     .font(.caption2.weight(.semibold))
                     .frame(maxWidth: .infinity)
             }

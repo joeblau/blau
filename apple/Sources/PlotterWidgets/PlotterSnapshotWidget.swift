@@ -41,7 +41,7 @@ struct PlotterSnapshotWidget: Widget {
             PlotterSnapshotView(entry: entry)
                 .containerBackground(.black, for: .widget)
         }
-        .configurationDisplayName("Plotter Mirror")
+        .configurationDisplayName("Kneeboard Mirror")
         .description("The latest screen from the connected Mac.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }

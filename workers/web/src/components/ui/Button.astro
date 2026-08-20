@@ -4,6 +4,9 @@ interface Props {
   size?: 'default' | 'lg';
   rounded?: boolean;
   class?: string;
+  href?: string;
+  target?: '_blank' | '_self';
+  rel?: string;
   type?: 'button' | 'submit' | 'reset';
   disabled?: boolean;
   title?: string;
@@ -15,16 +18,24 @@ const {
   size = 'default',
   rounded = false,
   class: className,
+  href,
+  target,
+  rel,
   ...props
 } = Astro.props;
+
+const Element = href ? 'a' : 'button';
 ---
 
-<button
+<Element
   data-slot="button"
   data-variant={variant}
   data-size={size}
   class:list={['button', rounded && 'button--rounded', className]}
+  href={href}
+  target={target}
+  rel={rel}
   {...props}
 >
   <slot />
-</button>
+</Element>

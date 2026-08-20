@@ -49,6 +49,57 @@ struct ChromiumBrowserCommandTests {
         #expect(state.stopFindingRequestID == 0)
     }
 
+    @Test("Back and forward requests reach the Chromium host")
+    func historyCommandsReachChromiumHost() {
+        let state = BrowserState(engine: .chromium)
+        let coordinator = ChromiumBrowserView.Coordinator(
+            state: state,
+            onSelect: {}
+        )
+        let host = FakeChromiumBrowserHost()
+        coordinator.attach(
+            host,
+            navigationRequestID: state.navigationRequestID,
+            inspectorToggleRequestID: state.inspectorToggleRequestID,
+            findRequestID: state.findRequestID,
+            stopFindingRequestID: state.stopFindingRequestID,
+            printRequestID: state.printRequestID,
+            savePageRequestID: state.savePageRequestID,
+            initialURL: nil,
+            zoom: 1,
+            isActive: true,
+            isSelected: true
+        )
+
+        #expect(state.perform(.back))
+        coordinator.update(
+            navigationRequestID: state.navigationRequestID,
+            inspectorToggleRequestID: state.inspectorToggleRequestID,
+            findRequestID: state.findRequestID,
+            stopFindingRequestID: state.stopFindingRequestID,
+            printRequestID: state.printRequestID,
+            savePageRequestID: state.savePageRequestID,
+            zoom: 1,
+            isActive: true,
+            isSelected: true
+        )
+        #expect(host.events.last == .command(.back))
+
+        #expect(state.perform(.forward))
+        coordinator.update(
+            navigationRequestID: state.navigationRequestID,
+            inspectorToggleRequestID: state.inspectorToggleRequestID,
+            findRequestID: state.findRequestID,
+            stopFindingRequestID: state.stopFindingRequestID,
+            printRequestID: state.printRequestID,
+            savePageRequestID: state.savePageRequestID,
+            zoom: 1,
+            isActive: true,
+            isSelected: true
+        )
+        #expect(host.events.last == .command(.forward))
+    }
+
     @Test("The fake host receives pane commands once and in production order")
     func fakeHostPreservesCommandOrdering() throws {
         let state = BrowserState(engine: .chromium)

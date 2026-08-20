@@ -915,6 +915,13 @@ void BrowserClient::OnAddressChange(CefRefPtr<CefBrowser> browser,
         if (URL) {
             [host_ cefDidChangeURL:URL];
         }
+        // Same-document navigations (for example, history.pushState in an
+        // IDE preview SPA) update the address without necessarily producing
+        // an OnLoadingStateChange callback. Refresh the native history state
+        // here as well so Back and Forward do not remain incorrectly disabled.
+        [host_ cefDidChangeLoading:browser->IsLoading()
+                         canGoBack:browser->CanGoBack()
+                      canGoForward:browser->CanGoForward()];
     }
 }
 
@@ -1463,10 +1470,27 @@ void BrowserClient::Load(NSURL *URL) {
 }
 
 void BrowserClient::Back() {
-    if (browser_ && !closing_) browser_->GoBack();
+    if (!browser_ || closing_) return;
+    CefRefPtr<CefFrame> frame = browser_->GetMainFrame();
+    if (!frame) {
+        browser_->GoBack();
+        return;
+    }
+    // CefBrowser::GoBack does not traverse same-document History API entries
+    // in Chrome runtime style. Asking the document history to navigate does,
+    // and also covers regular cross-document entries.
+    frame->ExecuteJavaScript("window.history.back();",
+                             "pilot://browser-command/back", 1);
 }
 void BrowserClient::Forward() {
-    if (browser_ && !closing_) browser_->GoForward();
+    if (!browser_ || closing_) return;
+    CefRefPtr<CefFrame> frame = browser_->GetMainFrame();
+    if (!frame) {
+        browser_->GoForward();
+        return;
+    }
+    frame->ExecuteJavaScript("window.history.forward();",
+                             "pilot://browser-command/forward", 1);
 }
 void BrowserClient::Reload() {
     if (browser_ && !closing_) browser_->Reload();

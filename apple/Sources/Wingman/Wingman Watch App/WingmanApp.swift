@@ -59,7 +59,7 @@ final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendab
     private func updateReachability(_ isReachable: Bool) {
         self.isReachable = isReachable
         if !isReachable, !deliveryState.isInFlight {
-            deliveryStatus = "Copilot unavailable"
+            deliveryStatus = "Walkie unavailable"
         }
     }
 
@@ -77,7 +77,7 @@ final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendab
         )
 
         guard session.activationState == .activated else {
-            deliveryStatus = "Copilot unavailable"
+            deliveryStatus = "Walkie unavailable"
             play(.failure)
             return
         }
@@ -87,14 +87,14 @@ final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendab
         // "installed" from its perspective.
         #if os(watchOS)
         guard session.isCompanionAppInstalled else {
-            deliveryStatus = "Install Copilot first"
+            deliveryStatus = "Install Walkie first"
             play(.failure)
             return
         }
         #endif
 
         guard session.isReachable else {
-            deliveryStatus = "Copilot unavailable"
+            deliveryStatus = "Walkie unavailable"
             play(.failure)
             return
         }
@@ -190,7 +190,7 @@ final class WatchSessionDelegate: NSObject, WCSessionDelegate, @unchecked Sendab
         ) else { return }
         replyTimeoutTask?.cancel()
         replyTimeoutTask = nil
-        deliveryStatus = accepted ? "Delivered" : (unavailable ? "Copilot unavailable" : "Not delivered")
+        deliveryStatus = accepted ? "Delivered" : (unavailable ? "Walkie unavailable" : "Not delivered")
         play(accepted ? .success : .failure)
     }
 

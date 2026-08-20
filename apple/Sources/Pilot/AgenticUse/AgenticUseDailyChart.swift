@@ -1,0 +1,226 @@
+import Charts
+import SwiftUI
+
+/// The dashboard centerpiece: a stacked per-model area chart of daily cost
+/// (hourly for the 24h range) with a COST/TOKENS toggle and a hover tooltip.
+///
+/// Colors come from the snapshot's fixed `modelOrder` via
+/// `AgenticUseModelPalette`, and the scale domain is built from the matching
+/// `modelDisplayNames`, so the legend, stack order, and every other panel
+/// stay in agreement as the range filter changes the visible series.
+struct AgenticUseDailyChartPanel: View {
+    let snapshot: AgenticUseSnapshot
+
+    @State private var metric: Metric = .cost
+    @State private var selection: Date?
+
+    enum Metric: String, CaseIterable, Identifiable {
+        case cost = "Cost"
+        case tokens = "Tokens"
+
+        var id: String { rawValue }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .scaledFont(size: 12, weight: .medium)
+                Spacer(minLength: 8)
+                Picker("Metric", selection: $metric) {
+                    ForEach(Metric.allCases) { metric in
+                        Text(metric.rawValue.uppercased()).tag(metric)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .labelsHidden()
+                .fixedSize()
+            }
+            chart
+        }
+        .agenticUseCard(minHeight: 280)
+    }
+
+    private var title: String {
+        let unit = snapshot.range == .day ? "Hourly" : "Daily"
+        return metric == .cost ? "\(unit) cost" : "\(unit) tokens"
+    }
+
+    // MARK: - Chart
+
+    private var chart: some View {
+        Chart {
+            ForEach(snapshot.dailySeries) { point in
+                AreaMark(
+                    x: .value("Day", point.day, unit: snapshot.range.bucketUnit),
+                    y: .value(metric == .cost ? "Cost" : "Tokens", value(of: point)),
+                    series: .value("Model", point.displayName),
+                    stacking: .standard
+                )
+                .interpolationMethod(.monotone)
+                .foregroundStyle(by: .value("Model", point.displayName))
+                .opacity(0.8)
+            }
+            if let bucket = selectedBucket {
+                RuleMark(x: .value("Day", bucket))
+                    .foregroundStyle(.secondary.opacity(0.5))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                    .annotation(
+                        position: .top,
+                        alignment: .leading,
+                        spacing: 8,
+                        overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))
+                    ) {
+                        tooltip(for: bucket)
+                    }
+            }
+        }
+        .chartForegroundStyleScale(domain: snapshot.modelDisplayNames, range: seriesColors)
+        .chartLegend(position: .top, alignment: .leading, spacing: 8)
+        .chartXSelection(value: $selection)
+        .chartOverlay { proxy in
+            // `chartXSelection` alone only responds to drag on macOS; hover
+            // is the expected tooltip gesture, so feed the same binding.
+            Color.clear.onContinuousHover { phase in
+                switch phase {
+                case .active(let location):
+                    selection = proxy.value(atX: location.x, as: Date.self)
+                case .ended:
+                    selection = nil
+                }
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: snapshot.range == .quarter ? 6 : 5)) {
+                AxisGridLine().foregroundStyle(.quaternary)
+                AxisValueLabel(format: xAxisFormat)
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .trailing, values: .automatic(desiredCount: 4)) { value in
+                AxisGridLine().foregroundStyle(.quaternary)
+                AxisValueLabel {
+                    if let number = value.as(Double.self) {
+                        Text(axisLabel(for: number))
+                            .scaledFont(size: 10)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+            }
+        }
+        .frame(minHeight: 220)
+    }
+
+    private var seriesColors: [Color] {
+        snapshot.modelOrder.map(AgenticUseModelPalette.color(for:))
+    }
+
+    private var xAxisFormat: Date.FormatStyle {
+        snapshot.range == .day
+            ? .dateTime.hour()
+            : .dateTime.month(.abbreviated).day()
+    }
+
+    private func value(of point: AgenticDailyPoint) -> Double {
+        metric == .cost ? point.cost : Double(point.tokens)
+    }
+
+    private func axisLabel(for number: Double) -> String {
+        metric == .cost ? AgenticUseFormat.axisCost(number) : AgenticUseFormat.tokens(number)
+    }
+
+    // MARK: - Hover tooltip
+
+    /// Snaps the raw hover date to the chart's bucket grid, and only when the
+    /// bucket actually exists in the (zero-filled) series.
+    private var selectedBucket: Date? {
+        guard let selection else { return nil }
+        let calendar = Calendar.current
+        let bucket: Date?
+        if snapshot.range.bucketUnit == .day {
+            bucket = calendar.startOfDay(for: selection)
+        } else {
+            bucket = calendar.dateInterval(of: .hour, for: selection)?.start
+        }
+        guard let bucket, snapshot.dailySeries.contains(where: { $0.day == bucket }) else {
+            return nil
+        }
+        return bucket
+    }
+
+    /// Most rows worth showing before the tooltip collapses the tail into a
+    /// "+ n more" line — with every provider's models in one bucket the full
+    /// list outgrows the chart's height.
+    private static let tooltipRowLimit = 8
+
+    private func tooltip(for bucket: Date) -> some View {
+        let all = snapshot.dailySeries
+            .filter { $0.day == bucket && value(of: $0) > 0 }
+            .sorted { value(of: $0) > value(of: $1) }
+        let total = all.reduce(0) { $0 + value(of: $1) }
+        let points = Array(all.prefix(Self.tooltipRowLimit))
+        let hiddenCount = all.count - points.count
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(bucket, format: tooltipDateFormat)
+                .scaledFont(size: 10, weight: .semibold)
+                .foregroundStyle(.secondary)
+                .contentTransition(.numericText())
+            if points.isEmpty {
+                Text("No usage")
+                    .scaledFont(size: 10)
+                    .foregroundStyle(.tertiary)
+            } else {
+                // Rows keep their model as identity across hover buckets so
+                // values roll numerically instead of the row being rebuilt.
+                ForEach(points, id: \.model) { point in
+                    HStack(spacing: 6) {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(AgenticUseModelPalette.color(for: point.model))
+                            .frame(width: 7, height: 7)
+                        Text(point.displayName)
+                            .scaledFont(size: 10)
+                        Spacer(minLength: 12)
+                        Text(tooltipValue(value(of: point)))
+                            .scaledFont(size: 10)
+                            .monospacedDigit()
+                            .contentTransition(.numericText(value: value(of: point)))
+                    }
+                }
+                if hiddenCount > 0 {
+                    Text("+ \(hiddenCount) more")
+                        .scaledFont(size: 10)
+                        .foregroundStyle(.tertiary)
+                        .contentTransition(.numericText(value: Double(hiddenCount)))
+                }
+                Divider()
+                HStack(spacing: 6) {
+                    Text("Total")
+                        .scaledFont(size: 10, weight: .medium)
+                    Spacer(minLength: 12)
+                    Text(tooltipValue(total))
+                        .scaledFont(size: 10, weight: .medium)
+                        .monospacedDigit()
+                        .contentTransition(.numericText(value: total))
+                }
+            }
+        }
+        .padding(8)
+        .frame(minWidth: 150, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        // One animation context drives both the numeric transitions above and
+        // the box growing/shrinking as the row count changes per bucket.
+        .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.8), value: bucket)
+    }
+
+    private var tooltipDateFormat: Date.FormatStyle {
+        snapshot.range == .day
+            ? .dateTime.month(.abbreviated).day().hour()
+            : .dateTime.weekday(.abbreviated).month(.abbreviated).day()
+    }
+
+    private func tooltipValue(_ number: Double) -> String {
+        metric == .cost ? AgenticUseFormat.cost(number) : AgenticUseFormat.tokens(number)
+    }
+}
