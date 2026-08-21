@@ -47,20 +47,23 @@ fi
 
 # Sign bare Mach-O payloads, then nested bundles (deepest first), then the
 # framework itself, so every seal is created after the code it covers.
+# --preserve-metadata=entitlements keeps upstream's entitlements through the
+# re-sign: Autoupdate must keep its application-identifier entitlement (the
+# release validator pins it exactly) and every other binary carries none.
 while IFS= read -r binary; do
   if file "$binary" | grep -q 'Mach-O'; then
     codesign --force --sign "$identity" --options runtime \
-      "$timestamp_argument" "$binary"
+      --preserve-metadata=entitlements "$timestamp_argument" "$binary"
   fi
 done < <(find "$destination" -type f -print | LC_ALL=C sort)
 
 while IFS= read -r bundle_path; do
   codesign --force --sign "$identity" --options runtime \
-    "$timestamp_argument" "$bundle_path"
+    --preserve-metadata=entitlements "$timestamp_argument" "$bundle_path"
 done < <(find "$destination" \( -name '*.xpc' -o -name '*.app' \) -print |
   LC_ALL=C sort -r)
 
 codesign --force --sign "$identity" --options runtime \
-  "$timestamp_argument" "$destination"
+  --preserve-metadata=entitlements "$timestamp_argument" "$destination"
 
 printf 'Signed Sparkle.framework in %s\n' "$APP"
