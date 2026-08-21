@@ -565,7 +565,7 @@ struct ExtensionWindowView: View {
     @Bindable var controller: ExtensionWorkspaceController
     @Environment(\.openWindow) private var openWindow
 
-    @State private var gitStore = GitCommitStore()
+    @State private var gitStore = RepositoryStore()
     @State private var tasksStore = GitHubTasksStore()
     @State private var usageStore = UsageStore()
     @State private var isDrawingActive = false

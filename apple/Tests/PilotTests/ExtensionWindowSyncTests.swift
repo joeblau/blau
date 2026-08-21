@@ -520,7 +520,7 @@ struct ExtensionWindowSyncTests {
         defer { try? FileManager.default.removeItem(at: nonRepoDirectory) }
 
         let repositoryDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
-        let repositoryRoot = try #require(GitCommitStore.findGitRoot(from: repositoryDirectory))
+        let repositoryRoot = try #require(RepositoryStore.findGitRoot(from: repositoryDirectory))
         let movedTerminal = try #require(fixture.alpha.sortedPanes.first)
         movedTerminal.currentDirectory = repositoryDirectory
         fixture.alpha.addPane(kind: .terminal, side: .right)

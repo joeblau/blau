@@ -585,7 +585,7 @@ struct ContentView: View {
     /// transcription itself runs on the iPhone now — Pilot only paints
     /// the "listening" indicator and pastes the finished text.
     var isPeerRecording: Bool
-    @State private var gitStore = GitCommitStore()
+    @State private var gitStore = RepositoryStore()
     @State private var tasksStore = GitHubTasksStore()
     @State private var usageStore = UsageStore()
     @State private var dockerStore = DockerStore()
@@ -1060,74 +1060,13 @@ struct ContentView: View {
     }
 
     private func workspaceRow(_ workspace: Workspace) -> some View {
-        HStack(spacing: 6) {
-            TextField("Name", text: Bindable(workspace).name)
-                .focused($renamingWorkspaceID, equals: workspace.id)
-                .onSubmit {
-                    renamingWorkspaceID = nil
-                }
-                .layoutPriority(1)
-
-            // Branch trails the name as secondary text. Hidden while renaming so
-            // it never competes with the field the user is typing in.
-            if renamingWorkspaceID != workspace.id,
-               let branch = branchStore.branches[workspace.id] {
-                Text(branch)
-                    .scaledFont(size: 10)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .layoutPriority(0)
-                    .help("On branch \(branch)")
-                    .accessibilityLabel("On branch \(branch)")
-            }
-
-            // The count outranks both the name field and the branch for space.
-            // The field is greedy, so without a higher priority and a fixed
-            // size the digits get truncated away and the capsule renders empty.
-            if workspace.badgeCount > 0 {
-                Text("\(workspace.badgeCount)")
-                    .scaledFont(size: 10, weight: .bold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(.red, in: Capsule())
-                    .fixedSize()
-                    .layoutPriority(2)
-            }
-        }
-        .tag(SidebarSelection.workspace(workspace.id))
-        .contextMenu {
-            Button {
-                let workspaceID = workspace.id
-                DispatchQueue.main.async {
-                    renamingWorkspaceID = workspaceID
-                }
-            } label: {
-                Label("Rename Workspace", systemImage: "pencil")
-            }
-
-            Button {
-                presentRootPathPicker(for: workspace)
-            } label: {
-                Label("Update Root Path", systemImage: "arrow.triangle.2.circlepath")
-            }
-
-            Divider()
-
-            Button {
-                store.togglePin(workspace)
-            } label: {
-                Label(
-                    workspace.isPinned ? "Unpin" : "Pin",
-                    systemImage: workspace.isPinned ? "pin.slash" : "pin"
-                )
-            }
-            Divider()
-            Button("Delete", role: .destructive) {
-                store.deleteWorkspace(workspace)
-            }
-        }
+        WorkspaceSidebarRow(
+            workspace: workspace,
+            branch: branchStore.branches[workspace.id],
+            renamingWorkspaceID: $renamingWorkspaceID,
+            store: store,
+            onUpdateRootPath: { presentRootPathPicker(for: workspace) }
+        )
     }
 
     private var selectedWorkspaceInspectorTabBinding: Binding<InspectorTab> {

@@ -64,7 +64,7 @@ final class GitHubTasksStore {
     private var pollTimer: Timer?
 
     /// How often to re-poll `gh issue list` while the inspector is showing.
-    /// Matches `GitCommitStore`'s commit/Actions cadence.
+    /// Matches `RepositoryStore`'s PR/Actions cadence.
     private static let pollInterval: TimeInterval = 30
 
     /// Point the store at a repo (or `nil` to clear). Fetches immediately and
