@@ -31,20 +31,12 @@ struct WorkspaceSidebarRow: View {
                         .layoutPriority(0)
                 }
 
-                // The count outranks both the name field and the branch for
+                // The gauge outranks both the name field and the branch for
                 // space. The field is greedy, so without a higher priority and
-                // a fixed size the digits get truncated away and the capsule
-                // renders empty.
-                if workspace.badgeCount > 0 {
-                    Text("\(workspace.badgeCount)")
-                        .scaledFont(size: 10, weight: .bold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(.red, in: Capsule())
-                        .fixedSize()
-                        .layoutPriority(2)
-                }
+                // a fixed size the ring gets truncated away.
+                WorkspaceLLMGauge(workspace: workspace)
+                    .fixedSize()
+                    .layoutPriority(2)
             }
 
             if workspace.isPinned, let branch {
@@ -91,5 +83,49 @@ struct WorkspaceSidebarRow: View {
             .truncationMode(.middle)
             .help("On branch \(branch)")
             .accessibilityLabel("On branch \(branch)")
+    }
+}
+
+/// Ring gauge showing how much of a workspace's LLM capacity is in use: the
+/// fraction of its terminal panes whose shell currently has a coding agent
+/// (Claude, Codex, …) running underneath it. A full ring means every terminal
+/// pane is working. Hidden for workspaces with no terminal panes.
+///
+/// Polls the process tree every couple of seconds — the same cheap
+/// kernel-level walk the pane header's agent capsule uses, never a subprocess.
+private struct WorkspaceLLMGauge: View {
+    let workspace: Workspace
+    @State private var working = 0
+    @State private var total = 0
+
+    var body: some View {
+        Group {
+            if total > 0 {
+                let fraction = Double(working) / Double(total)
+                ZStack {
+                    Circle()
+                        .stroke(.secondary.opacity(0.25), lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: fraction)
+                        .stroke(
+                            working == total ? Color.green : Color.accentColor,
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                }
+                .frame(width: 11, height: 11)
+                .animation(.easeInOut(duration: 0.2), value: fraction)
+                .help("\(working) of \(total) LLM panes working")
+                .accessibilityLabel("\(working) of \(total) LLM panes working")
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                let terminals = workspace.panes.filter { $0.kind == .terminal }
+                total = terminals.count
+                working = terminals.count { $0.liveShellAgent() != nil }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
     }
 }
