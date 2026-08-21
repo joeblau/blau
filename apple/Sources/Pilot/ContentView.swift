@@ -585,10 +585,11 @@ struct ContentView: View {
     /// transcription itself runs on the iPhone now — Pilot only paints
     /// the "listening" indicator and pastes the finished text.
     var isPeerRecording: Bool
-    @State private var gitStore = GitCommitStore()
+    @State private var gitStore = RepositoryStore()
     @State private var tasksStore = GitHubTasksStore()
     @State private var usageStore = UsageStore()
     @State private var dockerStore = DockerStore()
+    @State private var agenticUseStore = AgenticUsageStore()
     @State private var branchStore = WorkspaceBranchStore()
     @State private var isDrawingActive = false
     @AppStorage("sidebar.pinnedExpanded") private var pinnedSectionExpanded = true
@@ -619,6 +620,8 @@ struct ContentView: View {
                         .tag(SidebarSelection.remoteDesktop)
                     Label("Docker", systemImage: "shippingbox")
                         .tag(SidebarSelection.docker)
+                    Label("Agentic Use", systemImage: "chart.bar.xaxis")
+                        .tag(SidebarSelection.agenticUse)
                 }
 
                 if !pinned.isEmpty {
@@ -725,6 +728,11 @@ struct ContentView: View {
 
                 if store.isDockerMode {
                     DockerView(store: dockerStore)
+                        .zIndex(100)
+                }
+
+                if store.isAgenticUseMode {
+                    AgenticUseView(store: agenticUseStore)
                         .zIndex(100)
                 }
 
@@ -955,6 +963,7 @@ struct ContentView: View {
         if store.isNotesMode { return "Notes" }
         if store.isRemoteDesktopMode { return "Remote Desktop" }
         if store.isDockerMode { return "Docker" }
+        if store.isAgenticUseMode { return "Agentic Use" }
         return store.selectedWorkspace?.name ?? ""
     }
 
@@ -964,6 +973,7 @@ struct ContentView: View {
                 if store.isNotesMode { return .notes }
                 if store.isRemoteDesktopMode { return .remoteDesktop }
                 if store.isDockerMode { return .docker }
+                if store.isAgenticUseMode { return .agenticUse }
                 if let id = store.selectedWorkspaceID { return .workspace(id) }
                 return nil
             },
@@ -975,6 +985,8 @@ struct ContentView: View {
                     store.enterRemoteDesktopMode()
                 case .docker:
                     store.enterDockerMode()
+                case .agenticUse:
+                    store.enterAgenticUseMode()
                 case .workspace(let id):
                     store.selectWorkspace(id)
                 case nil:
@@ -1048,74 +1060,13 @@ struct ContentView: View {
     }
 
     private func workspaceRow(_ workspace: Workspace) -> some View {
-        HStack(spacing: 6) {
-            TextField("Name", text: Bindable(workspace).name)
-                .focused($renamingWorkspaceID, equals: workspace.id)
-                .onSubmit {
-                    renamingWorkspaceID = nil
-                }
-                .layoutPriority(1)
-
-            // Branch trails the name as secondary text. Hidden while renaming so
-            // it never competes with the field the user is typing in.
-            if renamingWorkspaceID != workspace.id,
-               let branch = branchStore.branches[workspace.id] {
-                Text(branch)
-                    .scaledFont(size: 10)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .layoutPriority(0)
-                    .help("On branch \(branch)")
-                    .accessibilityLabel("On branch \(branch)")
-            }
-
-            // The count outranks both the name field and the branch for space.
-            // The field is greedy, so without a higher priority and a fixed
-            // size the digits get truncated away and the capsule renders empty.
-            if workspace.badgeCount > 0 {
-                Text("\(workspace.badgeCount)")
-                    .scaledFont(size: 10, weight: .bold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(.red, in: Capsule())
-                    .fixedSize()
-                    .layoutPriority(2)
-            }
-        }
-        .tag(SidebarSelection.workspace(workspace.id))
-        .contextMenu {
-            Button {
-                let workspaceID = workspace.id
-                DispatchQueue.main.async {
-                    renamingWorkspaceID = workspaceID
-                }
-            } label: {
-                Label("Rename Workspace", systemImage: "pencil")
-            }
-
-            Button {
-                presentRootPathPicker(for: workspace)
-            } label: {
-                Label("Update Root Path", systemImage: "arrow.triangle.2.circlepath")
-            }
-
-            Divider()
-
-            Button {
-                store.togglePin(workspace)
-            } label: {
-                Label(
-                    workspace.isPinned ? "Unpin" : "Pin",
-                    systemImage: workspace.isPinned ? "pin.slash" : "pin"
-                )
-            }
-            Divider()
-            Button("Delete", role: .destructive) {
-                store.deleteWorkspace(workspace)
-            }
-        }
+        WorkspaceSidebarRow(
+            workspace: workspace,
+            branch: branchStore.branches[workspace.id],
+            renamingWorkspaceID: $renamingWorkspaceID,
+            store: store,
+            onUpdateRootPath: { presentRootPathPicker(for: workspace) }
+        )
     }
 
     private var selectedWorkspaceInspectorTabBinding: Binding<InspectorTab> {
@@ -1454,15 +1405,6 @@ private extension View {
         frame(width: 22, height: 22)
             .contentShape(Rectangle())
     }
-}
-
-/// Single-typed selection model for the sidebar `List`, which mixes the
-/// permanent Notes row with the per-workspace rows.
-enum SidebarSelection: Hashable {
-    case notes
-    case remoteDesktop
-    case docker
-    case workspace(UUID)
 }
 
 @MainActor

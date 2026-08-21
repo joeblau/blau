@@ -162,7 +162,7 @@ struct PilotSchemaMigrationTests {
             workspace.name = "Canonical Workspace"
             workspace.axisRaw = PaneAxis.horizontal.rawValue
             workspace.isInspectorPresented = true
-            workspace.inspectorTabRaw = InspectorTab.commits.rawValue
+            workspace.inspectorTabRaw = InspectorTab.pullRequests.rawValue
             workspace.isPinned = true
             workspace.workspaceSortOrder = 7
             workspace.rootPath = "/tmp/canonical-repository"
@@ -283,7 +283,7 @@ struct PilotSchemaMigrationTests {
         #expect(workspace.name == "Canonical Workspace")
         #expect(workspace.axis == .horizontal)
         #expect(workspace.isInspectorPresented)
-        #expect(workspace.inspectorTab == .commits)
+        #expect(workspace.inspectorTab == .pullRequests)
         #expect(workspace.isPinned)
         #expect(workspace.workspaceSortOrder == 7)
         #expect(workspace.rootPath == "/tmp/canonical-repository")

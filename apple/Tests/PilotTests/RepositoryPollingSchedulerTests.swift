@@ -29,21 +29,20 @@ struct RepositoryPollingSchedulerTests {
         #expect(await scheduler.metrics.coalescedRequests == 1)
     }
 
-    @Test("Different worktrees do not share checkout-local commit data")
-    func separateWorktreeCommitCaches() async throws {
-        let probe = PollingProbe(response: Data("commits".utf8))
+    @Test("Worktrees of one remote share remote-scoped data")
+    func worktreesShareRemoteScopedCaches() async throws {
+        let probe = PollingProbe(response: Data("[]".utf8))
         let scheduler = RepositoryPollingScheduler(jitter: { 0.5 }) { command in
             try await probe.execute(command)
         }
         let first = Self.repository(id: "github.com/example/project", path: "/tmp/worktree-a")
         let second = Self.repository(id: "github.com/example/project", path: "/tmp/worktree-b")
 
-        _ = try await scheduler.data(for: .commits, repository: first)
-        _ = try await scheduler.data(for: .commits, repository: second)
+        _ = try await scheduler.data(for: .pullRequests, repository: first)
+        _ = try await scheduler.data(for: .pullRequests, repository: second)
 
-        #expect(await probe.commandCount == 2)
-        #expect(await scheduler.metrics.cacheHits == 0)
-        #expect(await scheduler.metrics.coalescedRequests == 0)
+        #expect(await probe.commandCount == 1)
+        #expect(await scheduler.metrics.cacheHits == 1)
     }
 
     @Test("Many repositories respect the global GitHub process limit")

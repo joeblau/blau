@@ -20,7 +20,7 @@ struct InspectorTabSelector: View {
 
 /// One geometry for the metadata row directly beneath every inspector tab.
 /// Keeping this shared prevents icon, title, and refresh controls from shifting
-/// when the user switches between Actions, Tasks, Commits, Files, and Usage.
+/// when the user switches between Actions, Tasks, PRs, Files, and Usage.
 struct InspectorSectionHeader: View {
     let title: String
     let systemImage: String
@@ -111,7 +111,7 @@ private struct InspectorListAnimationModifier<Value: Equatable>: ViewModifier {
 }
 
 struct InspectorPanelView: View {
-    let gitStore: GitCommitStore
+    let gitStore: RepositoryStore
     let tasksStore: GitHubTasksStore
     let usageStore: UsageStore
     @Binding var selectedTab: InspectorTab
@@ -132,8 +132,8 @@ struct InspectorPanelView: View {
                     ActionsListView(store: gitStore)
                 case .tasks:
                     GitHubTasksView(store: tasksStore)
-                case .commits:
-                    CommitListView(store: gitStore)
+                case .pullRequests:
+                    PullRequestListView(store: gitStore)
                 case .filesystem:
                     FilesystemListView(store: gitStore)
                 case .usage:
@@ -149,7 +149,7 @@ struct InspectorPanelView: View {
 // MARK: - Filesystem (workspace root project tree)
 
 struct FilesystemListView: View {
-    let store: GitCommitStore
+    let store: RepositoryStore
 
     var body: some View {
         if store.filesystem.isEmpty && !store.isLoadingFilesystem {
@@ -351,7 +351,7 @@ private struct FileSystemOutlineView: NSViewRepresentable {
         private func loadChildrenIfNeeded(for node: FileSystemNode) {
             guard node.entry.isDirectory, !node.hasLoadedChildren else { return }
             let directoryURL = URL(fileURLWithPath: node.entry.path, isDirectory: true)
-            let entries = GitCommitStore.listFilesystemEntries(at: directoryURL, rootURL: rootURL)
+            let entries = RepositoryStore.listFilesystemEntries(at: directoryURL, rootURL: rootURL)
             node.children = entries.map(FileSystemNode.init(entry:))
             node.hasLoadedChildren = true
         }
@@ -467,95 +467,134 @@ private final class FileSystemOutlineCellView: NSTableCellView {
     }
 }
 
-// MARK: - Commits (local git log)
+// MARK: - Pull Requests (gh pr list)
 
-struct CommitListView: View {
-    let store: GitCommitStore
+struct PullRequestListView: View {
+    let store: RepositoryStore
 
     var body: some View {
         VStack(spacing: 0) {
             RepositoryTableHeader(
-                title: store.activeBranchDisplayName,
-                systemImage: "arrow.triangle.branch",
-                refreshHelp: "Refresh commits",
+                title: store.repositoryName,
+                systemImage: "arrow.triangle.pull",
+                refreshHelp: "Refresh pull requests",
                 isRefreshDisabled: store.repoPath.isEmpty
             ) {
-                store.fetchCommits(policy: .manual)
+                store.fetchPullRequests(policy: .manual)
             }
 
             ZStack {
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach(store.commits) { commit in
-                            commitRow(commit)
+                        ForEach(store.pullRequests) { pullRequest in
+                            pullRequestRow(pullRequest)
                                 .inspectorListCard()
                         }
                     }
                     .padding(12)
                 }
 
-                if store.commits.isEmpty && !store.isLoading {
+                if store.pullRequests.isEmpty && !store.isLoading {
                     ContentUnavailableView(
-                        "No Commits",
-                        systemImage: "clock.arrow.circlepath",
-                        description: Text("Select a workspace with a git repo root path.")
+                        "No Pull Requests",
+                        systemImage: "arrow.triangle.pull",
+                        description: Text("Select a workspace with a GitHub repo root path.")
                     )
                     .transition(.opacity)
                 }
             }
         }
-        .inspectorListAnimation(value: store.commits.map(\.id))
+        .inspectorListAnimation(value: store.pullRequests.map(\.id))
     }
 
-    private func commitRow(_ commit: GitCommit) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            commitIcon
-                .frame(width: 14)
-                .padding(.top, 2)
+    private func pullRequestRow(_ pullRequest: GitPullRequest) -> some View {
+        Button {
+            openPullRequestInBrowser(pullRequest)
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                pullRequestStateIcon(pullRequest)
+                    .frame(width: 14)
+                    .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(commit.message)
-                    .font(.callout)
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(pullRequest.title)
+                        .font(.callout)
+                        .lineLimit(2)
 
-                // Hash • user • time ago at .tertiary with .quaternary
-                // separators — the metadata styling shared with the Actions
-                // and Tasks tabs.
-                HStack(spacing: 4) {
-                    Text(commit.id)
-                        .font(.system(.subheadline, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                    Text("•")
-                        .font(.subheadline)
-                        .foregroundStyle(.quaternary)
-                    Text(commit.author)
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Text("•")
-                        .font(.subheadline)
-                        .foregroundStyle(.quaternary)
-                    Text(commit.date)
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                    // Number • user • time ago at .tertiary with .quaternary
+                    // separators — the metadata styling shared with the Actions
+                    // and Tasks tabs.
+                    HStack(spacing: 4) {
+                        Text("#\(pullRequest.id)")
+                            .font(.system(.subheadline, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                        if !pullRequest.author.isEmpty {
+                            Text("•")
+                                .font(.subheadline)
+                                .foregroundStyle(.quaternary)
+                            Text(pullRequest.author)
+                                .font(.subheadline)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        if !pullRequest.elapsed.isEmpty {
+                            Text("•")
+                                .font(.subheadline)
+                                .foregroundStyle(.quaternary)
+                            Text(pullRequest.elapsed)
+                                .font(.subheadline)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                    }
                 }
+
+                Spacer(minLength: 0)
             }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .disabled(pullRequest.url.isEmpty)
+        .help(pullRequest.url.isEmpty ? "" : "Open on GitHub")
     }
 
-    private var commitIcon: some View {
-        Image(systemName: "circle")
-            .scaledFont(size: 12)
-            .foregroundStyle(.blue)
+    private func openPullRequestInBrowser(_ pullRequest: GitPullRequest) {
+        guard let url = URL(string: pullRequest.url) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @ViewBuilder
+    private func pullRequestStateIcon(_ pullRequest: GitPullRequest) -> some View {
+        switch pullRequest.state {
+        case "MERGED":
+            Image(systemName: "arrow.triangle.merge")
+                .scaledFont(size: 12)
+                .foregroundStyle(.purple)
+        case "CLOSED":
+            Image(systemName: "xmark.circle.fill")
+                .scaledFont(size: 12)
+                .foregroundStyle(.red)
+        case "OPEN" where pullRequest.isDraft:
+            Image(systemName: "circle.dashed")
+                .scaledFont(size: 12)
+                .foregroundStyle(.secondary)
+        case "OPEN":
+            Image(systemName: "arrow.triangle.pull")
+                .scaledFont(size: 12)
+                .foregroundStyle(.green)
+        default:
+            Image(systemName: "circle")
+                .scaledFont(size: 12)
+                .foregroundStyle(.quaternary)
+        }
     }
 }
 
 // MARK: - Actions (GitHub Actions workflow runs)
 
 struct ActionsListView: View {
-    let store: GitCommitStore
+    let store: RepositoryStore
 
     var body: some View {
         VStack(spacing: 0) {

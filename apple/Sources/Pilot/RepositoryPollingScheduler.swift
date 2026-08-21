@@ -66,18 +66,13 @@ struct CanonicalRepository: Hashable, Sendable {
 }
 
 enum RepositoryPollResource: String, Hashable, Sendable {
-    case commits
+    case pullRequests
     case workflowRuns
     case issues
 
-    var isGitHubNetworkRequest: Bool { self != .commits }
+    var isGitHubNetworkRequest: Bool { true }
 
-    var foregroundTTL: TimeInterval {
-        switch self {
-        case .commits: 5
-        case .workflowRuns, .issues: 30
-        }
-    }
+    var foregroundTTL: TimeInterval { 30 }
 }
 
 enum RepositoryRefreshPolicy: Sendable, Equatable {
@@ -193,10 +188,7 @@ actor RepositoryPollingScheduler {
         repository: CanonicalRepository,
         policy: RepositoryRefreshPolicy = .automatic
     ) async throws -> Data {
-        let key = CacheKey(
-            repositoryID: Self.cacheRepositoryID(for: resource, repository: repository),
-            resource: resource
-        )
+        let key = CacheKey(repositoryID: repository.id, resource: resource)
         let current = now()
         if policy == .automatic {
             if resource.isGitHubNetworkRequest && !networkAvailable {
@@ -231,36 +223,13 @@ actor RepositoryPollingScheduler {
 
     func invalidate(repository: CanonicalRepository, resource: RepositoryPollResource? = nil) {
         if let resource {
-            let key = CacheKey(
-                repositoryID: Self.cacheRepositoryID(for: resource, repository: repository),
-                resource: resource
-            )
+            let key = CacheKey(repositoryID: repository.id, resource: resource)
             cache[key] = nil
             failures[key] = nil
             return
         }
-        let repositoryIDs = [
-            repository.id,
-            Self.cacheRepositoryID(for: .commits, repository: repository),
-        ]
-        cache = cache.filter { key, _ in
-            !repositoryIDs.contains(key.repositoryID)
-        }
-        failures = failures.filter { !repositoryIDs.contains($0.key.repositoryID) }
-    }
-
-    private static func cacheRepositoryID(
-        for resource: RepositoryPollResource,
-        repository: CanonicalRepository
-    ) -> String {
-        switch resource {
-        case .commits:
-            // Git history is checkout-specific: two worktrees of one remote can
-            // point at different branches and must never share commit data.
-            "checkout:\(repository.rootURL.path)"
-        case .workflowRuns, .issues:
-            repository.id
-        }
+        cache = cache.filter { key, _ in key.repositoryID != repository.id }
+        failures = failures.filter { $0.key.repositoryID != repository.id }
     }
 
     private func effectiveExpiration(
@@ -340,13 +309,18 @@ actor RepositoryPollingScheduler {
     private static func execute(_ command: RepositoryPollCommand) async throws -> Data {
         let root = command.repository.rootURL
         let invocation: ProcessInvocation = switch command.resource {
-        case .commits:
+        case .pullRequests:
+            // All states, not just open: in a merge-fast workflow the open list
+            // is usually empty, and the recent-history view is the useful one.
             .developerTool(
-                "git",
-                arguments: ["log", "--oneline", "--format=%H||%h||%s||%an||%aI", "-10"],
+                "gh",
+                arguments: [
+                    "pr", "list", "--state", "all", "--limit", "20",
+                    "--json", "number,title,url,state,isDraft,author,headRefName,createdAt",
+                ],
                 currentDirectoryURL: root,
-                timeout: .seconds(15),
-                standardOutputLimit: 2 * 1_024 * 1_024
+                timeout: .seconds(30),
+                standardOutputLimit: 4 * 1_024 * 1_024
             )
         case .workflowRuns:
             // `gh run list --json` has no field for who triggered a run, so this

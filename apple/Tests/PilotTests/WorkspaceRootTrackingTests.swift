@@ -64,7 +64,7 @@ struct WorkspaceRootTrackingTests {
         defer { try? FileManager.default.removeItem(at: nonRepoDirectory) }
 
         let repoDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
-        guard let expectedRoot = GitCommitStore.findGitRoot(from: repoDirectory) else {
+        guard let expectedRoot = RepositoryStore.findGitRoot(from: repoDirectory) else {
             Issue.record("Expected test fixture to live inside a git repository")
             return
         }
@@ -108,16 +108,13 @@ struct WorkspaceRootTrackingTests {
     @Test
     @MainActor
     func inspectorRepositoryHeadersDescribeTheirCurrentContext() {
-        let store = GitCommitStore()
+        let store = RepositoryStore()
 
         #expect(store.repositoryName == "Repository")
-        #expect(store.activeBranchDisplayName == "Branch")
 
         store.repoPath = "/tmp/example-repository"
-        store.activeBranch = "feature/inspector-header"
 
         #expect(store.repositoryName == "example-repository")
-        #expect(store.activeBranchDisplayName == "feature/inspector-header")
     }
 
     @Test

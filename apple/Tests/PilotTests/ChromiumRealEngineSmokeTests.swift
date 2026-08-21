@@ -73,7 +73,10 @@ final class ChromiumRealEngineSmokeTests: XCTestCase {
             secondURL: server.baseURL.appendingPathComponent(
                 "second-page.html"
             ),
-            invalidCertificateURL: tlsServer.baseURL
+            invalidCertificateURL: tlsServer.baseURL,
+            // The release gate runs on shared CI VMs; give each phase room
+            // for cold-start latency and let the budgets be the contract.
+            timeout: 60
         )
         let budgets = try performanceBudgets()
         let runtimeBudget = budgets.runtime.current

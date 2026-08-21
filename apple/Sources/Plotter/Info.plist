@@ -4,24 +4,33 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 	<key>CFBundleDisplayName</key>
 	<string>Kneeboard</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
-	<key>CFBundleName</key>
-	<string>Kneeboard</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Kneeboard</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_blau-frames._tcp</string>
+		<string>_blau-annotate._tcp</string>
+		<string>_blau-sync._tcp</string>
+		<string>_blau-sync._udp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Kneeboard connects to your Mac running Cockpit over the local network to mirror its screen and sync drawings.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UILaunchScreen</key>
@@ -32,15 +41,6 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Kneeboard connects to your Mac running Cockpit over the local network to mirror its screen and sync drawings.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_blau-frames._tcp</string>
-		<string>_blau-annotate._tcp</string>
-		<string>_blau-sync._tcp</string>
-		<string>_blau-sync._udp</string>
 	</array>
 </dict>
 </plist>

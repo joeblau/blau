@@ -247,6 +247,7 @@ verify_exact_entitlements "$framework" "" "CEF framework"
 printf '%s\n' "${framework#"$APP/"}" >> "$expected_signing_paths"
 
 bundle_id_base="$(jq -r '.helperLayout.bundleIdentifierBase' "$MANIFEST")"
+expected_lsui_element="$(jq -r '.helperLayout.lsUIElement' "$MANIFEST")"
 while IFS= read -r helper; do
   role="$(jq -r '.role' <<<"$helper")"
   bundle_name="$(jq -r '.bundleName' <<<"$helper")"
@@ -261,8 +262,9 @@ while IFS= read -r helper; do
       "$executable_name" ]] || fail "$role helper executable metadata differs"
   [[ "$(plutil -extract CFBundleIdentifier raw "$plist")" == \
       "$bundle_id_base$id_suffix" ]] || fail "$role helper bundle ID differs"
-  [[ "$(plutil -extract LSUIElement raw "$plist")" == "true" ]] ||
-    fail "$role helper must set LSUIElement"
+  [[ "$(plutil -extract LSUIElement raw "$plist")" == \
+      "$expected_lsui_element" ]] ||
+    fail "$role helper LSUIElement differs from the manifest"
   [[ "$(sorted_architectures "$binary")" == "arm64 x86_64" ]] ||
     fail "$role helper is not universal"
   verify_signature "$helper_path" "$role helper" "$app_team"

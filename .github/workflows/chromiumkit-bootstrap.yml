@@ -198,6 +198,7 @@ jobs:
             --target "$GITHUB_SHA" \
             --latest=false \
             --title "${{ steps.release.outputs.tag }}" \
+            --latest=false \
             --notes 'Pinned, reproducible, signed, notarized ChromiumKit release.' \
             "$RUNNER_TEMP/ChromiumKitCEF.runtime.zip" \
             "$RUNNER_TEMP/ChromiumKitCEF.release.json" \

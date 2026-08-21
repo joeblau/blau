@@ -194,6 +194,9 @@ struct PilotPaneCreationCommands: Commands {
 @main
 struct PilotApp: App {
     let modelContainer: ModelContainer
+    /// Sparkle's standard updater controller. Starting it here schedules the
+    /// automatic background checks (per the user's Sparkle preference) and
+    /// powers the Settings → General "Check for Updates…" button.
     private let updaterController: SPUStandardUpdaterController
 
     @State private var store: WorkspaceStore
@@ -761,7 +764,7 @@ struct PilotApp: App {
         // first real use is peer key sharing (#51), which drops into the
         // shared Identity & Keys section.
         Settings {
-            PilotSettingsView()
+            PilotSettingsView(updater: updaterController.updater)
                 .environment(secureIdentity)
         }
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
@@ -994,6 +997,8 @@ private struct PilotSettingsView: View {
     @AppStorage(SettingsTab.storageKey) private var selectedTab = SettingsTab.general
     @State private var searchText = ""
 
+    let updater: SPUUpdater
+
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
@@ -1012,7 +1017,7 @@ private struct PilotSettingsView: View {
                 Divider()
 
                 List(selection: sidebarSelection) {
-                    if matchesSearch("General identity keys about version") {
+                    if matchesSearch("General identity keys about version updates") {
                         Label("General", systemImage: "gearshape")
                             .tag(SettingsTab.general)
                     }
@@ -1058,6 +1063,11 @@ private struct PilotSettingsView: View {
                     systemImage: "gearshape.fill",
                     tint: .blue
                 )
+                Section("Updates") {
+                    Button("Check for Updates…") {
+                        updater.checkForUpdates()
+                    }
+                }
                 SettingsSections()
                 ChromiumDiagnosticsSettingsSection()
             }

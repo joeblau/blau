@@ -28,7 +28,7 @@ struct ActionCompletionTracker {
 /// Background poller that badges a workspace when a GitHub Action run completes
 /// for its repo while you're looking at a *different* workspace. Complements
 /// the terminal-bell badge (which already covers "a CLI finished"). The active
-/// `GitCommitStore` only polls the selected repo, so this sweeps them all.
+/// `RepositoryStore` only polls the selected repo, so this sweeps them all.
 @MainActor
 final class WorkspaceActionWatcher {
     private weak var store: WorkspaceStore?

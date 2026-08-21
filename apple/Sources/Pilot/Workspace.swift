@@ -106,7 +106,7 @@ enum AppearanceMode: String, Codable, CaseIterable {
 enum InspectorTab: String, Codable, CaseIterable {
     case actions = "Actions"
     case tasks = "Tasks"
-    case commits = "Commits"
+    case pullRequests = "PRs"
     case filesystem = "Files"
     case usage = "Usage"
 
@@ -114,7 +114,7 @@ enum InspectorTab: String, Codable, CaseIterable {
         switch self {
         case .actions: "gearshape.2"
         case .tasks: "checklist"
-        case .commits: "arrow.triangle.branch"
+        case .pullRequests: "arrow.triangle.pull"
         case .filesystem: "folder"
         case .usage: "chart.bar.xaxis"
         }
@@ -1205,7 +1205,7 @@ final class Workspace {
         let cachedDirectory = rootTrackingTerminalPane.currentDirectory
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let directory = (liveDirectory?.isEmpty == false ? liveDirectory! : cachedDirectory)
-        let repoRoot = directory.isEmpty ? nil : GitCommitStore.findGitRoot(from: directory)
+        let repoRoot = directory.isEmpty ? nil : RepositoryStore.findGitRoot(from: directory)
         let nextRootPath = repoRoot ?? ""
 
         guard rootPath != nextRootPath else { return }

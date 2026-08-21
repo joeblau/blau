@@ -34,6 +34,10 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
 	<false/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/joeblau/blau/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>BIQoEzT2ALEKrU/qHI6ZCBZXrHMmq+GQxRgy9dCpEBg=</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Cockpit listens for push-to-talk dictation from the Walkie app.</string>
 	<key>NSCameraUsageDescription</key>

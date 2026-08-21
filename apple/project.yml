@@ -160,6 +160,14 @@ targets:
       - package: RoyalVNCKit
         product: RoyalVNCKit
         embed: true
+      - package: Sparkle
+        product: Sparkle
+        # Link-only: Sparkle's product is a binary xcframework and XcodeGen's
+        # Embed Frameworks phase cannot copy it ("Sparkle-product" build
+        # error). Xcode embeds and root-signs it implicitly on link; the
+        # Sign Sparkle prebuild phase re-signs its nested code to match the
+        # release validator's same-team/no-entitlements policy.
+        embed: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.pilot
@@ -169,6 +177,10 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: "c++20"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Sources/Pilot/Pilot.entitlements
+        # The Assemble Chromium Runtime script phase copies and signs
+        # frameworks inside the built app bundle, which the user-script
+        # sandbox forbids.
+        ENABLE_USER_SCRIPT_SANDBOXING: false
         GENERATE_INFOPLIST_FILE: false
         INFOPLIST_FILE: Sources/Pilot/Info.plist
         OTHER_LDFLAGS: ["-lc++", "-framework", "Metal", "-framework", "MetalKit", "-framework", "QuartzCore", "-framework", "CoreText", "-framework", "IOKit", "-framework", "IOSurface", "-framework", "CoreGraphics", "-framework", "Foundation", "-framework", "Carbon", "-framework", "CoreFoundation", "-framework", "AppKit", "-framework", "CoreServices", "-framework", "AVFoundation", "-framework", "CoreMedia", "-framework", "CoreMediaIO"]
@@ -188,7 +200,6 @@ targets:
           ENABLE_HARDENED_RUNTIME: true
           ARCHS: "arm64 x86_64"
           ONLY_ACTIVE_ARCH: false
-          ENABLE_USER_SCRIPT_SANDBOXING: false
           BLAU_CHROMIUM_CODESIGN_TIMESTAMP: YES
           GCC_PREPROCESSOR_DEFINITIONS:
             - "$(inherited)"
@@ -206,6 +217,19 @@ targets:
             - "$(inherited)"
             - "-lcef_dll_wrapper"
     postBuildScripts:
+      - name: Embed Sparkle
+        # Xcode embeds the linked Sparkle binary product implicitly; this
+        # phase re-signs that copy in place (see embed-sparkle.sh). The inputs
+        # order the phase after Xcode's copy/sign-on-copy; no outputFiles are
+        # declared, so the phase still runs on every build (the signing
+        # identity differs between lanes: ad-hoc smoke, Apple Development,
+        # Developer ID).
+        basedOnDependencyAnalysis: true
+        inputFiles:
+          - "$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Frameworks/Sparkle.framework"
+          - "$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Frameworks/Sparkle.framework/Versions/Current/_CodeSignature/CodeResources"
+        script: |
+          "$SRCROOT/bin/embed-sparkle.sh"
       - name: Assemble Chromium Runtime
         basedOnDependencyAnalysis: false
         script: |

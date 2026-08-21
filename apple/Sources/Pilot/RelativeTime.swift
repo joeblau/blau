@@ -1,8 +1,8 @@
 import Foundation
 
 /// Shared "8 minutes ago" formatting for the inspector's metadata lines, so
-/// commits, workflow runs, and issues phrase and parse time identically instead
-/// of each tab drifting into its own wording.
+/// pull requests, workflow runs, and issues phrase and parse time identically
+/// instead of each tab drifting into its own wording.
 enum RelativeTime {
 
     /// Formats an ISO-8601 timestamp, returning the input unchanged when it

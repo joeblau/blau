@@ -55,6 +55,8 @@ ditto "$source_framework" "$staged/$framework_name"
 template_executable="$(/usr/libexec/PlistBuddy \
   -c 'Print :CFBundleExecutable' "$HELPER_TEMPLATE/Contents/Info.plist")"
 bundle_id_base="$(jq -r '.helperLayout.bundleIdentifierBase' "$MANIFEST")"
+ls_ui_element="$(jq -r \
+  'if .helperLayout.lsUIElement then "YES" else "NO" end' "$MANIFEST")"
 while IFS= read -r helper; do
   bundle_name="$(jq -r '.bundleName' <<<"$helper")"
   executable_name="$(jq -r '.executableName' <<<"$helper")"
@@ -70,7 +72,8 @@ while IFS= read -r helper; do
     "$helper_path/Contents/Info.plist"
   plutil -replace CFBundleIdentifier -string "$bundle_id_base$id_suffix" \
     "$helper_path/Contents/Info.plist"
-  plutil -replace LSUIElement -bool YES "$helper_path/Contents/Info.plist"
+  plutil -replace LSUIElement -bool "$ls_ui_element" \
+    "$helper_path/Contents/Info.plist"
 done < <(jq -c '.helperLayout.helpers[]' "$MANIFEST")
 
 frameworks="$APP/Contents/Frameworks"

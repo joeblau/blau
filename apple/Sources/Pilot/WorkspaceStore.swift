@@ -30,11 +30,12 @@ final class WorkspaceStore {
     var isNotesMode: Bool = false {
         didSet {
             UserDefaults.standard.set(isNotesMode, forKey: "notesMode")
-            // Notes, Remote Desktop, and Docker are all full-detail global
-            // modes; entering one exits the others.
+            // Notes, Remote Desktop, Docker, and Agentic Use are all
+            // full-detail global modes; entering one exits the others.
             if isNotesMode {
                 isRemoteDesktopMode = false
                 isDockerMode = false
+                isAgenticUseMode = false
             }
         }
     }
@@ -47,6 +48,7 @@ final class WorkspaceStore {
             if isRemoteDesktopMode {
                 isNotesMode = false
                 isDockerMode = false
+                isAgenticUseMode = false
             }
         }
     }
@@ -59,6 +61,20 @@ final class WorkspaceStore {
             if isDockerMode {
                 isNotesMode = false
                 isRemoteDesktopMode = false
+                isAgenticUseMode = false
+            }
+        }
+    }
+
+    /// True while the global Agentic Use mode is showing in the detail area.
+    /// Mutually exclusive with the other global modes.
+    var isAgenticUseMode: Bool = false {
+        didSet {
+            UserDefaults.standard.set(isAgenticUseMode, forKey: "agenticUseMode")
+            if isAgenticUseMode {
+                isNotesMode = false
+                isRemoteDesktopMode = false
+                isDockerMode = false
             }
         }
     }
@@ -68,7 +84,7 @@ final class WorkspaceStore {
     /// (pane activation, the ink overlay, ⌘W) keys off this rather than
     /// re-listing the modes.
     var isWorkspaceDetailVisible: Bool {
-        !isNotesMode && !isRemoteDesktopMode && !isDockerMode
+        !isNotesMode && !isRemoteDesktopMode && !isDockerMode && !isAgenticUseMode
     }
 
     var selectedRemoteConnectionID: UUID? {
@@ -196,6 +212,7 @@ final class WorkspaceStore {
         if isNotesMode { isNotesMode = false }
         if isRemoteDesktopMode { isRemoteDesktopMode = false }
         if isDockerMode { isDockerMode = false }
+        if isAgenticUseMode { isAgenticUseMode = false }
         if selectedWorkspaceID != workspaceID {
             selectedWorkspaceID = workspaceID
         }
@@ -369,6 +386,19 @@ final class WorkspaceStore {
         isDockerMode = true
     }
 
+    // MARK: - Agentic Use
+
+    /// Flip into Agentic Use mode or back out to the selected workspace. Like
+    /// Docker there is nothing to seed first — the usage analytics are derived
+    /// state, owned by `AgenticUsageStore`, not persisted here.
+    func toggleAgenticUseMode() {
+        isAgenticUseMode.toggle()
+    }
+
+    func enterAgenticUseMode() {
+        isAgenticUseMode = true
+    }
+
     @discardableResult
     func addRemoteConnection(host: String, port: Int = 5900, nickname: String = "", username: String = "") -> RemoteDesktopConnection {
         let maxOrder = remoteConnections.map(\.sortOrder).max() ?? -1
@@ -473,6 +503,7 @@ final class WorkspaceStore {
         }
         self.isRemoteDesktopMode = UserDefaults.standard.bool(forKey: "remoteDesktopMode")
         self.isDockerMode = UserDefaults.standard.bool(forKey: "dockerMode")
+        self.isAgenticUseMode = UserDefaults.standard.bool(forKey: "agenticUseMode")
         cleanupBadDirectories()
         if let selectedWorkspaceID, !workspaces.contains(where: { $0.id == selectedWorkspaceID }) {
             self.selectedWorkspaceID = workspaces.first?.id

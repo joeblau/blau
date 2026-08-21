@@ -128,9 +128,91 @@ jobs:
       - name: Run unit tests
         run: apple/bin/test.sh all
 
+  # Exercises the signed Chromium assembly + validation path on every PR so
+  # signing regressions surface here instead of at release time. Signs ad-hoc;
+  # the release workflow remains the only lane with real credentials.
+  apple-chromium-smoke:
+    needs: changes
+    if: needs.changes.outputs.apple == 'true'
+    runs-on: macos-26
+    permissions:
+      attestations: read
+      contents: read
+    env:
+      BLAU_SOURCE_PACKAGES: ${{ github.workspace }}/apple/.ci-source-packages
+      CEF_DOWNLOAD_CACHE: ${{ github.workspace }}/apple/.cef-download-cache
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          lfs: true
+      - name: Verify supported toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -version | grep -E '^Xcode 26\.'
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apple/.ci-source-packages
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode26-${{ hashFiles('apple/blau.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'apple/Packages/GhosttyKit/Package.swift', 'apple/Packages/ChromiumKit/Package.swift', 'apple/Packages/ChromiumKit/cef-artifacts.json') }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/Packages/ChromiumKit/Artifacts
+            apple/.cef-download-cache
+          key: cef-runtime-${{ runner.os }}-${{ runner.arch }}-xcode26-${{ hashFiles('apple/Packages/ChromiumKit/cef-artifacts.json', 'apple/bin/package-chromiumkit.sh', 'apple/bin/update-chromiumkit-artifact.sh') }}
+      - name: Install the pinned Chromium runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash apple/bin/package-chromiumkit.sh manifest
+          if ! apple/bin/verify-installed-chromiumkit.sh >/dev/null 2>&1; then
+            release_id="$(jq -r '.releaseID' \
+              apple/Packages/ChromiumKit/cef-artifacts.json)"
+            runtime_tag="chromiumkit-$release_id"
+            runtime_directory="$RUNNER_TEMP/chromiumkit-release"
+            mkdir -p "$runtime_directory"
+
+            if gh release view "$runtime_tag" >/dev/null 2>&1; then
+              gh release verify "$runtime_tag"
+              for asset in \
+                ChromiumKitCEF.runtime.zip \
+                ChromiumKitCEF.release.json \
+                ChromiumKitCEF.checksums.txt; do
+                gh release download "$runtime_tag" \
+                  --pattern "$asset" --dir "$runtime_directory"
+                gh release verify-asset \
+                  "$runtime_tag" "$runtime_directory/$asset"
+              done
+              apple/bin/update-chromiumkit-artifact.sh \
+                --release-directory "$runtime_directory"
+            else
+              printf '%s\n' \
+                'No immutable ChromiumKit release found; reproducing the pinned runtime.'
+              apple/bin/update-chromiumkit-artifact.sh
+            fi
+          fi
+          apple/bin/verify-installed-chromiumkit.sh
+      - name: Build and validate an ad-hoc signed Chromium Pilot
+        run: |
+          derived_data="$RUNNER_TEMP/chromium-smoke-derived-data"
+          DISABLE_SWIFTLINT=1 xcodebuild build -quiet \
+            -project apple/blau.xcodeproj \
+            -scheme Pilot \
+            -configuration Chromium \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath "$derived_data" \
+            -clonedSourcePackagesDirPath "$BLAU_SOURCE_PACKAGES" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipPackagePluginValidation \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY=- \
+            DEVELOPMENT_TEAM= \
+            BLAU_CHROMIUM_CODESIGN_TIMESTAMP=NO
+          apple/bin/validate-chromium-archive.sh --allow-ad-hoc \
+            "$derived_data/Build/Products/Chromium/Pilot.app"
+
   complete:
     if: always()
-    needs: [changes, docs, workers, apple-lint, apple-build-test]
+    needs: [changes, docs, workers, apple-lint, apple-build-test, apple-chromium-smoke]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected gate
