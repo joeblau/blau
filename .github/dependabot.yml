@@ -1,16 +1,11 @@
 version: 2
 updates:
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: weekly
-    groups:
-      worker-tooling:
-        patterns:
-          - astro
-          - wrangler
-          - vitest
-          - '@cloudflare/*'
+  # The npm ecosystem is deliberately absent. Dependabot cannot regenerate a
+  # Bun lockfile, so every npm PR it opened changed package.json alone and CI
+  # rejected it at `bun install --frozen-lockfile`. Update Worker dependencies
+  # with `bun update <package>`, which writes package.json and bun.lock
+  # together. Dependabot security alerts are unaffected; they are repository
+  # settings, not this file.
   - package-ecosystem: github-actions
     directory: /
     schedule:
