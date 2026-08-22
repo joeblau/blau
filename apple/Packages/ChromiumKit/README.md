@@ -122,8 +122,12 @@ signature, and swaps the destination atomically so an interrupted copy cannot
 replace a working app with a partial one. The destination defaults to
 `/Applications/Pilot.app` and is overridable with `--destination` or
 `BLAU_PILOT_INSTALL_PATH`. Pass `--skip-build` to install the current build as
-is. This installs a development-signed build for local use; distribution still
-goes through the signed, notarized release workflow.
+is, or `--quit-running` to ask a copy already running from the destination to
+quit and wait up to 30 seconds for it, rather than refusing the install. The
+quit is a request, never a forced kill, so the running app keeps ownership of
+its unsaved editor and SwiftData state; `bun run pilot` passes the flag. This
+installs a development-signed build for local use; distribution still goes
+through the signed, notarized release workflow.
 
 ## Run the real engine smoke test
 

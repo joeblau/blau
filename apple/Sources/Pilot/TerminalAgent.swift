@@ -9,6 +9,7 @@ enum TerminalAgent: String, CaseIterable, Sendable {
     case codex
     case gemini
     case aider
+    case kimi
 
     var displayName: String {
         switch self {
@@ -16,6 +17,7 @@ enum TerminalAgent: String, CaseIterable, Sendable {
         case .codex: "Codex"
         case .gemini: "Gemini"
         case .aider: "Aider"
+        case .kimi: "Kimi"
         }
     }
 
@@ -29,6 +31,9 @@ enum TerminalAgent: String, CaseIterable, Sendable {
         case .codex: ["codex-cli", "codex"]
         case .gemini: ["gemini-cli", "gemini"]
         case .aider: ["aider"]
+        // Installs to `~/.kimi-code/bin/kimi` but execs with argv[0]
+        // `kimi-code`, so neither name alone covers both halves.
+        case .kimi: ["kimi-code", "kimi-cli", "kimi"]
         }
     }
 
