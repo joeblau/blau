@@ -1409,7 +1409,7 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         # Pilot: install OSC 7 working directory reporting and shell pid tracking
         __pilot_osc7_precmd() {
             printf '\\e]7;file://%s%s\\a' "$(hostname)" "$(pwd)"
-            if [[ -n "$PILOT_PANE_ID" && -n "$PILOT_PIDS_DIR" ]]; then
+            if [[ -n "$PILOT_PANE_ID" && -n "$PILOT_PIDS_DIR" && -n "$TMUX" ]]; then
                 print -n -- "$$" > "$PILOT_PIDS_DIR/$PILOT_PANE_ID.pid" 2>/dev/null
             fi
         }

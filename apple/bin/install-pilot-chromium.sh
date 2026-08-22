@@ -12,6 +12,7 @@ set -euo pipefail
 APPLE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DESTINATION="${BLAU_PILOT_INSTALL_PATH:-/Applications/Pilot.app}"
 SKIP_BUILD=0
+QUIT_RUNNING=0
 
 fail() {
   printf 'Pilot Chromium install error: %s\n' "$*" >&2
@@ -20,18 +21,58 @@ fail() {
 
 usage() {
   printf '%s\n' \
-    'Usage: install-pilot-chromium.sh [--skip-build] [--destination <Pilot.app>]' \
+    'Usage: install-pilot-chromium.sh [--skip-build] [--quit-running]' \
+    '                                 [--destination <Pilot.app>]' \
     '' \
     'Builds the Chromium configuration and installs it to a stable location.' \
     'Destination defaults to /Applications/Pilot.app and can also be set with' \
-    'BLAU_PILOT_INSTALL_PATH.' >&2
+    'BLAU_PILOT_INSTALL_PATH.' \
+    '' \
+    '--quit-running asks a copy already running from the destination to quit' \
+    'and waits for it, instead of refusing the install.' >&2
   exit 2
+}
+
+# Terminate the app running from the destination bundle so it can be replaced.
+# Only ever asks: a workspace app owns unsaved editor and SwiftData state, and
+# a forced kill would trade that state for a few seconds of convenience. If the
+# app will not go quietly the caller gets the same refusal as before.
+quit_running_app() {
+  local destination="$1"
+  local name
+  name="$(basename "$destination")"
+
+  printf 'Asking the running %s to quit\n' "$name"
+  # An app showing a modal sheet never acknowledges the quit event, and
+  # AppleScript's default is to wait two minutes for a reply it will not get.
+  # Bound it so the poll below is what decides the outcome, not osascript.
+  osascript \
+    -e 'on run argv' \
+    -e '  with timeout of 5 seconds' \
+    -e '    tell application (item 1 of argv) to quit' \
+    -e '  end timeout' \
+    -e 'end run' \
+    "$destination" >/dev/null 2>&1 || true
+
+  local waited=0
+  while pgrep -f "^${destination}/Contents/MacOS/" >/dev/null; do
+    if (( waited >= 30 )); then
+      return 1
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  printf '%s quit; installing over it\n' "$name"
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-build)
       SKIP_BUILD=1
+      shift
+      ;;
+    --quit-running)
+      QUIT_RUNNING=1
       shift
       ;;
     --destination)
@@ -97,8 +138,13 @@ codesign --verify "$SOURCE_APP" 2>/dev/null \
 
 if [[ -e "$DESTINATION" ]]; then
   running_from_destination="$(pgrep -f "^${DESTINATION}/Contents/MacOS/" || true)"
+  if [[ -n "$running_from_destination" && "$QUIT_RUNNING" -eq 1 ]]; then
+    quit_running_app "$DESTINATION" \
+      || fail "$(basename "$DESTINATION") did not quit within 30s — an open dialog or sheet blocks the quit event; dismiss it, quit the app, and retry"
+    running_from_destination=""
+  fi
   [[ -z "$running_from_destination" ]] \
-    || fail "quit the running $(basename "$DESTINATION") before installing over it"
+    || fail "quit the running $(basename "$DESTINATION") before installing over it (or pass --quit-running)"
 fi
 
 # Stage beside the destination and swap, so an interrupted copy cannot leave a

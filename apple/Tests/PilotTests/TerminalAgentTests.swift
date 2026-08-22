@@ -60,6 +60,29 @@ struct TerminalAgentTests {
         #expect(agent == .aider)
     }
 
+    // MARK: - Kimi
+
+    /// Kimi installs to `~/.kimi-code/bin/kimi` but execs with argv[0]
+    /// `kimi-code`, so the executable basename and the argument vector
+    /// disagree about its name. Both spellings have to resolve.
+    @Test
+    func matchesKimiByExecutablePath() {
+        let agent = TerminalAgent.match(
+            executablePath: "/Users/j/.kimi-code/bin/kimi",
+            arguments: ["kimi-code"]
+        )
+        #expect(agent == .kimi)
+    }
+
+    @Test
+    func matchesKimiByArgvName() {
+        let agent = TerminalAgent.match(
+            executablePath: nil,
+            arguments: ["kimi-code"]
+        )
+        #expect(agent == .kimi)
+    }
+
     // MARK: - Non-agents
 
     /// The case that motivates restricting argv inspection to script runtimes:
