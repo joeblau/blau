@@ -437,14 +437,16 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         // Install OSC 7 hook silently via ZDOTDIR override.
         // We create a temp .zshenv that installs the precmd hook, then restores
         // the real ZDOTDIR so the user's normal config loads.
+        //
+        // Pane process discovery does not belong in this spawn environment.
+        // Persistent tmux sessions can outlive Pilot, which makes app-scoped
+        // pid files stale after relaunch. Workspace asks tmux for each pane's
+        // root shell pid instead.
         let zdotdir = Self.setupOSC7ZdotDir()
-        let pidsDir = Self.shellPidsDirectory()
         let envVars: [(key: String, value: String)] = zdotdir != nil
             ? [
                 ("ZDOTDIR", zdotdir!),
                 ("__PILOT_REAL_ZDOTDIR", NSHomeDirectory()),
-                ("PILOT_PANE_ID", pane.id.uuidString.lowercased()),
-                ("PILOT_PIDS_DIR", pidsDir),
               ]
             : []
         let persistentSessionInput = PersistentTerminalSession.bootstrapCommand(
@@ -1399,19 +1401,23 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         return expandedDirectory
     }
 
-    /// Creates a temp directory with a .zshenv that installs an OSC 7 precmd hook,
-    /// then restores the real ZDOTDIR so the user's normal config loads.
+    /// Creates a temp directory with a .zshenv that installs an OSC 7 precmd
+    /// hook, then restores the real ZDOTDIR so the user's normal config loads.
+    /// This hook intentionally reports only the working directory. Runtime
+    /// process identity comes from tmux and stays valid across an app restart.
+    /// It never depends on an app-scoped pid file.
     private nonisolated static func setupOSC7ZdotDir() -> String? {
         let dir = NSTemporaryDirectory() + "pilot-zsh-\(ProcessInfo.processInfo.processIdentifier)"
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 
         let zshenv = """
-        # Pilot: install OSC 7 working directory reporting and shell pid tracking
+        # Pilot: install OSC 7 working directory reporting
+        # Shell pid reporting deliberately stays out of this hook.
+        # A persistent tmux session may predate this Pilot process;
+        # app-scoped pid files would therefore be stale after relaunch.
+        # The live tmux server remains the authority for pane ownership.
         __pilot_osc7_precmd() {
             printf '\\e]7;file://%s%s\\a' "$(hostname)" "$(pwd)"
-            if [[ -n "$PILOT_PANE_ID" && -n "$PILOT_PIDS_DIR" && -n "$TMUX" ]]; then
-                print -n -- "$$" > "$PILOT_PIDS_DIR/$PILOT_PANE_ID.pid" 2>/dev/null
-            fi
         }
         precmd_functions+=(__pilot_osc7_precmd)
         # Restore real ZDOTDIR and source the user's .zshenv if it exists
@@ -1426,12 +1432,6 @@ class GhosttyMetalView: NSView, CALayerDelegate {
         } catch {
             return nil
         }
-    }
-
-    static func shellPidsDirectory() -> String {
-        let dir = NSTemporaryDirectory() + "pilot-panes-\(ProcessInfo.processInfo.processIdentifier)"
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        return dir
     }
 
     /// Best guess at which screen a brand-new terminal view will end up

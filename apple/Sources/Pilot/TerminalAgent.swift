@@ -10,6 +10,7 @@ enum TerminalAgent: String, CaseIterable, Sendable {
     case gemini
     case aider
     case kimi
+    case grok
 
     var displayName: String {
         switch self {
@@ -18,6 +19,7 @@ enum TerminalAgent: String, CaseIterable, Sendable {
         case .gemini: "Gemini"
         case .aider: "Aider"
         case .kimi: "Kimi"
+        case .grok: "Grok"
         }
     }
 
@@ -34,6 +36,9 @@ enum TerminalAgent: String, CaseIterable, Sendable {
         // Installs to `~/.kimi-code/bin/kimi` but execs with argv[0]
         // `kimi-code`, so neither name alone covers both halves.
         case .kimi: ["kimi-code", "kimi-cli", "kimi"]
+        // Native installs exec `~/.local/bin/grok`; npm installs exec a
+        // runtime against the `grok-cli` package script.
+        case .grok: ["grok-cli", "grok"]
         }
     }
 
@@ -49,9 +54,64 @@ enum TerminalAgent: String, CaseIterable, Sendable {
     /// wrappers like `env`, `npx`, or a nested shell.
     private static let maxDepth = 4
 
+    /// Claude can leave its composer cursor visible while delegated work is
+    /// active, while Kimi and Grok keep the native cursor hidden even when
+    /// idle. Those agents therefore also need status text near the bottom of
+    /// the viewport to distinguish an active turn from an open, idle TUI.
+    var needsVisibleTerminalContentsForActivity: Bool {
+        self == .claude || self == .grok || self == .kimi
+    }
+
+    func activity(
+        cursorVisible: Bool,
+        visibleTerminalContents: String? = nil
+    ) -> TerminalProcessActivity {
+        // Only inspect the status area. Completed responses can contain words
+        // such as "thinking" or "running" higher in the viewport, and a
+        // background command is not the same thing as an active agent turn.
+        let statusLines = visibleTerminalContents?
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .suffix(14)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() } ?? []
+        switch self {
+        case .claude:
+            // Claude's footer is authoritative when a background task or
+            // subagent leaves the input composer usable during the turn.
+            let isActive = statusLines.suffix(4).contains { line in
+                line.contains("esc to interrupt")
+            }
+            return !cursorVisible || isActive ? .running : .idle
+        case .grok:
+            let activeStatusMarkers = [
+                "command still running",
+                "commands still running",
+                "compacting",
+                "responding",
+                "retrying (",
+                "running tool",
+                "running:",
+                "thinking",
+            ]
+            let isActive = statusLines.contains { line in
+                activeStatusMarkers.contains { line.contains($0) }
+                    && !line.contains("expand thinking")
+            }
+            return isActive ? .running : .idle
+        case .kimi:
+            let isActive = statusLines.contains { line in
+                line.contains("coder agent running")
+                    || line.contains("thinking...")
+                    || line.contains("thinking…")
+            }
+            return isActive ? .running : .idle
+        case .codex, .gemini, .aider:
+            return cursorVisible ? .idle : .running
+        }
+    }
+
     /// The first agent found among `pid`'s descendants, or `nil` if none is
-    /// running. `pid` itself is the shell, so it is never matched.
-    static func running(under pid: pid_t) -> TerminalAgent? {
+    /// started. `pid` itself is the shell, so it is never matched.
+    static func started(under pid: pid_t) -> TerminalAgent? {
         descendantAgent(of: pid, depth: 0)
     }
 
@@ -155,4 +215,9 @@ enum TerminalAgent: String, CaseIterable, Sendable {
         }
         return arguments
     }
+}
+
+struct LiveTerminalAgent: Equatable, Sendable {
+    let agent: TerminalAgent
+    let activity: TerminalProcessActivity
 }

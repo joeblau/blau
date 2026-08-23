@@ -83,6 +83,26 @@ struct TerminalAgentTests {
         #expect(agent == .kimi)
     }
 
+    // MARK: - Grok
+
+    @Test
+    func matchesGrokByExecutablePath() {
+        let agent = TerminalAgent.match(
+            executablePath: "/Users/j/.local/bin/grok",
+            arguments: ["/Users/j/.local/bin/grok"]
+        )
+        #expect(agent == .grok)
+    }
+
+    @Test
+    func matchesGrokThroughScriptRuntime() {
+        let agent = TerminalAgent.match(
+            executablePath: "/usr/local/bin/node",
+            arguments: ["node", "/usr/local/lib/node_modules/grok-cli/dist/cli.js"]
+        )
+        #expect(agent == .grok)
+    }
+
     // MARK: - Non-agents
 
     /// The case that motivates restricting argv inspection to script runtimes:
@@ -156,6 +176,108 @@ struct TerminalProcessActivityTests {
     func classifiesMissingCommandAsIdle() {
         #expect(TerminalProcessActivity.classify(currentCommand: nil) == .idle)
         #expect(TerminalProcessActivity.classify(currentCommand: " \n") == .idle)
+    }
+
+    @Test("Native cursor distinguishes working agents from agents awaiting input")
+    func classifiesAgentCursorActivity() {
+        #expect(TerminalAgent.claude.activity(cursorVisible: true) == .idle)
+        #expect(TerminalAgent.claude.activity(cursorVisible: false) == .running)
+    }
+
+    @Test("Claude background work is active even while its composer cursor is visible")
+    func classifiesClaudeBackgroundActivity() {
+        let contents = """
+        · Slithering… (1m 36s · ↓ 1.0k tokens)
+        ───────────────────────────────────────
+        ❯
+        ───────────────────────────────────────
+        ⏵⏵ bypass permissions on · esc to interrupt · ← 2 agents
+        """
+        #expect(
+            TerminalAgent.claude.activity(
+                cursorVisible: true,
+                visibleTerminalContents: contents
+            ) == .running
+        )
+    }
+
+    @Test("An idle Grok composer has no active status")
+    func classifiesIdleGrokComposer() {
+        let contents = """
+        Worked for 16m27s           stop  [hooks: 1]
+
+        ╭──────────────────────────────╮
+        │ ❯ Build anything             │
+        ╰──────── Grok 4.6 (xhigh) ─────╯
+        Space:prompt  │  Enter:open  │  Ctrl+e:expand thinking
+        """
+        #expect(
+            TerminalAgent.grok.activity(
+                cursorVisible: false,
+                visibleTerminalContents: contents
+            ) == .idle
+        )
+    }
+
+    @Test("A Grok background command counts as active work")
+    func classifiesGrokBackgroundActivity() {
+        let contents = """
+        Worked for 16m27s           stop  [hooks: 1]
+
+        ○ 1 command still running
+
+        ╭──────────────────────────────╮
+        │ ❯ Build anything             │
+        ╰──────── Grok 4.6 (xhigh) ─────╯
+        """
+        #expect(
+            TerminalAgent.grok.activity(
+                cursorVisible: false,
+                visibleTerminalContents: contents
+            ) == .running
+        )
+    }
+
+    @Test("Grok working statuses are active")
+    func classifiesActiveGrokStatus() {
+        let contents = """
+        ╭──────────────────────────────╮
+        │ ❯ Add the terminal counter   │
+        ╰──────────────────────────────╯
+        ⠋ Running tool
+        """
+        #expect(
+            TerminalAgent.grok.activity(
+                cursorVisible: false,
+                visibleTerminalContents: contents
+            ) == .running
+        )
+    }
+
+    @Test("Kimi status distinguishes an active coder from its idle model label")
+    func classifiesKimiStatus() {
+        let idleContents = """
+        ╭──────────────────────────────╮
+        │ >                            │
+        ╰──────────────────────────────╯
+        auto  K3 thinking: high
+        """
+        let activeContents = """
+        ⠸ thinking...
+        Coder Agent Running (Fix IMG-1 icon system)
+        """
+        #expect(
+            TerminalAgent.kimi.activity(
+                cursorVisible: false,
+                visibleTerminalContents: idleContents
+            ) == .idle
+        )
+        #expect(
+            TerminalAgent.kimi.activity(
+                cursorVisible: false,
+                visibleTerminalContents: activeContents
+            ) == .running
+        )
     }
 }
 

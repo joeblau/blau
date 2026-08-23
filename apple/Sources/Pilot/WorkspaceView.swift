@@ -555,10 +555,10 @@ struct TabItemContent: View {
     }
 }
 
-/// Accent capsule naming the coding agent (Claude, Codex, …) currently running
-/// in a terminal pane, shown right after "Terminal". Polls the shell's process
-/// tree every couple of seconds while its workspace is active; renders nothing
-/// when the shell is idle at its prompt.
+/// Accent capsule naming the coding agent (Claude, Codex, …) currently open in
+/// a terminal pane, shown right after "Terminal". Polls the shell's process tree
+/// every couple of seconds while its workspace is active; renders nothing when
+/// no supported agent is open.
 private struct TerminalAgentBadge: View {
     let pane: Pane
     let isWorkspaceActive: Bool
@@ -573,7 +573,7 @@ private struct TerminalAgentBadge: View {
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(Color.accentColor.opacity(0.15), in: Capsule())
-                    .help("\(agent.displayName) is running in this terminal")
+                    .help("\(agent.displayName) is open in this terminal")
             }
         }
         .animation(.easeInOut(duration: 0.2), value: agent)
