@@ -568,9 +568,7 @@ struct PullRequestListView: View {
     private func pullRequestStateIcon(_ pullRequest: GitPullRequest) -> some View {
         switch pullRequest.state {
         case "MERGED":
-            Image(systemName: "arrow.triangle.merge")
-                .scaledFont(size: 12)
-                .foregroundStyle(.purple)
+            CircledStateIcon(systemName: "arrow.triangle.merge", tint: .purple)
         case "CLOSED":
             Image(systemName: "xmark.circle.fill")
                 .scaledFont(size: 12)
@@ -580,14 +578,42 @@ struct PullRequestListView: View {
                 .scaledFont(size: 12)
                 .foregroundStyle(.secondary)
         case "OPEN":
-            Image(systemName: "arrow.triangle.pull")
-                .scaledFont(size: 12)
-                .foregroundStyle(.green)
+            CircledStateIcon(systemName: "arrow.triangle.pull", tint: .green)
         default:
             Image(systemName: "circle")
                 .scaledFont(size: 12)
                 .foregroundStyle(.quaternary)
         }
+    }
+}
+
+/// A state glyph inside a drawn ring, so the merged and open arrows read as
+/// circular badges like the `xmark.circle.fill` and `circle.dashed` states
+/// they sit beside. SF Symbols ships no `.circle` variant for
+/// `arrow.triangle.pull` or `arrow.triangle.merge`, so the ring is drawn here.
+///
+/// Sizing reads `uiZoom` for the same reason `scaledFont` does: the glyph
+/// grows with the text-size ladder, and a fixed-point ring would drift out of
+/// register with it as soon as the ladder moves off 1.0.
+private struct CircledStateIcon: View {
+    @Environment(\.uiZoom) private var uiZoom
+
+    let systemName: String
+    let tint: Color
+
+    /// 12pt matches the circle the neighbouring `.circle` symbols already
+    /// draw, which is what keeps the column uniform. The glyph is inset to
+    /// clear the ring, and gains weight to stay legible at that size.
+    private var diameter: CGFloat { 12 * uiZoom }
+    private var glyphSize: CGFloat { 8.5 * uiZoom }
+    private var lineWidth: CGFloat { 1.1 * uiZoom }
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: glyphSize, weight: .semibold))
+            .foregroundStyle(tint)
+            .frame(width: diameter, height: diameter)
+            .background(Circle().strokeBorder(tint, lineWidth: lineWidth))
     }
 }
 
