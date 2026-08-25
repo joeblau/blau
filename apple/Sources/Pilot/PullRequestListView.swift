@@ -587,13 +587,18 @@ struct PullRequestListView: View {
     }
 }
 
-/// A state glyph inside a drawn ring, so the merged and open arrows read as
-/// circular badges like the `xmark.circle.fill` and `circle.dashed` states
-/// they sit beside. SF Symbols ships no `.circle` variant for
-/// `arrow.triangle.pull` or `arrow.triangle.merge`, so the ring is drawn here.
+/// A state glyph knocked out of a filled disc, so the merged and open arrows
+/// read as solid badges like the `xmark.circle.fill` state they sit beside.
+/// SF Symbols ships no `.circle.fill` variant for `arrow.triangle.pull` or
+/// `arrow.triangle.merge`, so the disc is drawn here.
+///
+/// The glyph takes the window background rather than a fixed black or white.
+/// Against a saturated fill that reads as a hole punched through the disc in
+/// either appearance — dark grey on dark, near-white on light — where a
+/// hardcoded black would sink into the purple merged fill in dark mode.
 ///
 /// Sizing reads `uiZoom` for the same reason `scaledFont` does: the glyph
-/// grows with the text-size ladder, and a fixed-point ring would drift out of
+/// grows with the text-size ladder, and a fixed-point disc would drift out of
 /// register with it as soon as the ladder moves off 1.0.
 private struct CircledStateIcon: View {
     @Environment(\.uiZoom) private var uiZoom
@@ -601,19 +606,18 @@ private struct CircledStateIcon: View {
     let systemName: String
     let tint: Color
 
-    /// 12pt matches the circle the neighbouring `.circle` symbols already
-    /// draw, which is what keeps the column uniform. The glyph is inset to
-    /// clear the ring, and gains weight to stay legible at that size.
+    /// 12pt matches the disc `xmark.circle.fill` already draws in this column,
+    /// which is what keeps the states aligned. The glyph is inset to leave a
+    /// ring of fill around it, and runs bold to hold its counters at this size.
     private var diameter: CGFloat { 12 * uiZoom }
-    private var glyphSize: CGFloat { 8.5 * uiZoom }
-    private var lineWidth: CGFloat { 1.1 * uiZoom }
+    private var glyphSize: CGFloat { 7.5 * uiZoom }
 
     var body: some View {
         Image(systemName: systemName)
-            .font(.system(size: glyphSize, weight: .semibold))
-            .foregroundStyle(tint)
+            .font(.system(size: glyphSize, weight: .bold))
+            .foregroundStyle(Color(nsColor: .windowBackgroundColor))
             .frame(width: diameter, height: diameter)
-            .background(Circle().strokeBorder(tint, lineWidth: lineWidth))
+            .background(Circle().fill(tint))
     }
 }
 
