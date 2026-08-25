@@ -31,7 +31,7 @@ struct WorkspaceSidebarRow: View {
                 // The gauge outranks the name field for space. The field is
                 // greedy, so without a higher priority and a fixed size the
                 // ring gets truncated away.
-                WorkspaceLLMGauge(workspace: workspace)
+                WorkspaceLLMGauge(workspace: workspace, store: store)
                     .fixedSize()
                     .layoutPriority(2)
             }
@@ -83,78 +83,115 @@ struct WorkspaceSidebarRow: View {
     }
 }
 
-/// Ring gauge showing how much of a workspace's LLM capacity is in use: the
-/// fraction of its terminal panes whose shell currently has a coding agent
-/// (Claude, Codex, …) running underneath it. A full ring means every terminal
-/// pane is working. Hidden for workspaces with no terminal panes.
+/// Ring gauge showing `agents working / agents started` for a workspace. A
+/// terminal with an idle agent TUI contributes only to the denominator, so
+/// three agents all waiting for input reads `0/3`. Hidden when no agent is
+/// currently started, even if the workspace has ordinary terminal panes.
 ///
-/// Polls the process tree every couple of seconds — the same cheap
-/// kernel-level walk the pane header's agent capsule uses, never a subprocess.
+/// Polls the process tree every couple of seconds — the same walk the pane
+/// header's agent capsule uses, resolving each pane's shell pid from tmux.
+///
+/// Clicking the ring while at least one agent is running jumps straight to
+/// the working pane: it activates the workspace (leaving Notes or any other
+/// full-detail mode), expands the pane if collapsed, and selects it.
 private struct WorkspaceLLMGauge: View {
     let workspace: Workspace
-    @State private var working = 0
-    @State private var total = 0
+    let store: WorkspaceStore
+    @State private var running = 0
+    @State private var started = 0
+    @State private var runningPaneIDs: Set<UUID> = []
 
     /// Row budget for the gauge, and the factor that gets `.accessoryCircular`
     /// down to it. Kept together so the two never drift apart: the scale is
     /// what makes the style fit the frame, not an independent tuning knob.
-    private static let diameter: CGFloat = 22
-    private static let scale: CGFloat = 0.42
+    private static let diameter: CGFloat = 26
+    private static let scale: CGFloat = 0.5
 
     var body: some View {
         // A ZStack, never a Group: Group hands its modifiers to its children,
-        // and this one starts with no children because `total` is 0 until the
+        // and this one starts with no children because `started` is 0 until the
         // first poll. The `.task` had nothing to attach to, so the poll never
-        // ran, so `total` stayed 0 — the gauge could never appear. A real
+        // ran, so `started` stayed 0 — the gauge could never appear. A real
         // container keeps the task alive while the ring is still absent.
         ZStack {
-            if total > 0 {
-                // No label view: `.accessoryCircular` renders one under the
-                // ring, where a word at this scale is an illegible smudge.
-                // VoiceOver still gets the full description below.
-                Gauge(value: Double(working), in: 0...Double(total)) {
+            if started > 0 {
+                // Keep the title label empty so the compact style spends all
+                // of its center on the explicit running/started ratio.
+                Gauge(value: Double(running), in: 0...Double(started)) {
                     EmptyView()
                 } currentValueLabel: {
-                    Text("\(working)")
+                    Text("\(running)/\(started)")
+                        .monospacedDigit()
                 }
                 .gaugeStyle(.accessoryCircular)
-                .tint(working == total ? Color.green : Color.accentColor)
+                .tint(gaugeTint)
                 // `.accessoryCircular` is sized for widgets and watch
                 // complications, so at natural size it is several times the
                 // height of a sidebar row. Scale the rendered gauge down and
                 // pin the layout box to what the row can actually spend.
                 .scaleEffect(Self.scale)
                 .frame(width: Self.diameter, height: Self.diameter)
-                // Idle is the common state, so the whole gauge recedes rather
-                // than sitting at full strength on every quiet workspace. The
-                // system draws `.accessoryCircular`'s track for us, so this is
-                // the knob we have for "very subtle".
-                .opacity(working == 0 ? 0.35 : 1)
-                .animation(.easeInOut(duration: 0.2), value: working)
+                .animation(.easeInOut(duration: 0.2), value: running)
+                .animation(.easeInOut(duration: 0.2), value: started)
                 .help(gaugeDescription)
                 .accessibilityLabel(gaugeDescription)
+                // Tappable only while an agent is running; an idle ring has
+                // no pane to jump to.
+                .contentShape(Rectangle())
+                .onTapGesture(perform: selectRunningPane)
+                .allowsHitTesting(running > 0)
             }
         }
-        // Zero-width while empty so a workspace with no terminal panes does not
+        // Zero-width while empty so a workspace with no started agent does not
         // reserve a hole where the ring would be.
-        .frame(width: total > 0 ? Self.diameter : 0)
+        .frame(width: started > 0 ? Self.diameter : 0)
         .task {
             while !Task.isCancelled {
                 let terminals = workspace.panes.filter { $0.kind == .terminal }
-                total = terminals.count
-                working = terminals.count { $0.liveShellAgent() != nil }
+                var nextStarted = 0
+                var nextRunningPaneIDs: Set<UUID> = []
+                for pane in terminals {
+                    guard let status = await pane.liveShellAgentStatus() else { continue }
+                    nextStarted += 1
+                    if status.activity == .running {
+                        nextRunningPaneIDs.insert(pane.id)
+                    }
+                }
+                started = nextStarted
+                runningPaneIDs = nextRunningPaneIDs
+                running = nextRunningPaneIDs.count
                 try? await Task.sleep(for: .seconds(2))
             }
         }
     }
 
-    /// Spelled out for the tooltip and VoiceOver, where "0 of 4" alone reads as
-    /// a broken gauge rather than an idle one.
-    private var gaugeDescription: String {
-        let panes = total == 1 ? "pane" : "panes"
-        if working == 0 {
-            return "No agents running in \(total) terminal \(panes)"
+    /// Jump to the first pane reported active by the latest poll.
+    private func selectRunningPane() {
+        let terminals = workspace.panes.filter { $0.kind == .terminal }
+        guard let pane = terminals.first(where: { runningPaneIDs.contains($0.id) }) else { return }
+        store.selectWorkspace(workspace.id)
+        if pane.isCollapsed {
+            workspace.expandPane(pane)
         }
-        return "\(working) of \(total) terminal \(panes) running an agent"
+        workspace.selectedPaneID = pane.id
+    }
+
+    /// Idle drops to the quaternary label color so quiet workspaces recede
+    /// into the sidebar instead of every ring sitting at accent strength. A
+    /// concrete NSColor, not the hierarchical `.quaternary`: the gauge's tint
+    /// doesn't resolve hierarchical styles and falls back to accent.
+    private var gaugeTint: Color {
+        if running == 0 { return Color(nsColor: .quaternaryLabelColor) }
+        if running == started { return .green }
+        return .accentColor
+    }
+
+    /// Spell out both sides for the tooltip and VoiceOver.
+    private var gaugeDescription: String {
+        let agents = started == 1 ? "agent" : "agents"
+        if running == 0 {
+            return "0 of \(started) started \(agents) working"
+        }
+        return "\(running) of \(started) started \(agents) working. Click to jump to a pane."
     }
 }

@@ -217,6 +217,67 @@ enum PersistentTerminalSession {
         }
     }
 
+    struct PaneRuntime: Sendable {
+        let shellPID: pid_t
+        let cursorVisible: Bool
+    }
+
+    /// Runtime state reported by tmux for the pane. `#{pane_pid}` stays the
+    /// shell while a foreground job owns the pty, so its descendants include
+    /// the agent. Cursor visibility distinguishes an agent working from one
+    /// parked at its input composer for agents that use the native cursor.
+    static func paneRuntime(sessionName: String) -> PaneRuntime? {
+        guard let tmuxPath = tmuxExecutablePath() else { return nil }
+
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: tmuxPath)
+        process.arguments = [
+            "display-message",
+            "-p",
+            "-t",
+            sessionName,
+            "#{pane_pid}\t#{cursor_flag}",
+        ]
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else { return nil }
+        let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let fields = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "\t", omittingEmptySubsequences: false)
+        guard fields.count == 2,
+              let pid = pid_t(fields[0]),
+              pid > 0 else { return nil }
+        return PaneRuntime(shellPID: pid, cursorVisible: fields[1] == "1")
+    }
+
+    static func paneShellPID(sessionName: String) -> pid_t? {
+        paneRuntime(sessionName: sessionName)?.shellPID
+    }
+
+    /// The visible viewport only, bounded so arbitrary terminal output cannot
+    /// grow an allocation without limit. Used for agents whose TUI does not
+    /// expose native-cursor state while waiting for input.
+    static func visibleContents(sessionName: String) async -> String? {
+        guard let tmuxPath = tmuxExecutablePath() else { return nil }
+        let invocation = ProcessInvocation(
+            executableURL: URL(fileURLWithPath: tmuxPath),
+            arguments: ["capture-pane", "-p", "-t", sessionName],
+            timeout: .seconds(1),
+            standardOutputLimit: 128 * 1_024,
+            standardErrorLimit: 4 * 1_024
+        )
+        return try? await ProcessRunner.run(invocation).standardOutputString
+    }
+
     static func foregroundActivity(sessionName: String) async -> TerminalProcessActivity {
         guard let tmuxPath = tmuxExecutablePath() else { return .idle }
 
@@ -669,22 +730,44 @@ final class Pane {
         "pilot-\(id.uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
     }
 
-    /// The pid of the pane's in-session shell, recorded by the injected zsh
-    /// `precmd` hook. Panes run inside tmux, so this is the shell attached to
-    /// the pane's tmux session, not a direct child of the Ghostty pty.
+    /// The pid of the pane's in-session shell, straight from tmux: the root
+    /// process of the pane's session, which stays the shell even while a
+    /// foreground job (the agent) owns the pty. Asking the server beats
+    /// recording pids from the pane's spawn environment — tmux sessions
+    /// outlive the app, so anything keyed to the app instance or the spawning
+    /// shell goes stale across a relaunch and every pane reads as shell-less.
     func liveShellPID() -> pid_t? {
-        let dir = "\(NSTemporaryDirectory())pilot-panes-\(ProcessInfo.processInfo.processIdentifier)"
-        let pidFile = "\(dir)/\(id.uuidString.lowercased()).pid"
-        guard let raw = try? String(contentsOfFile: pidFile, encoding: .utf8) else { return nil }
-        guard let pid = pid_t(raw.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 0 else { return nil }
-        return pid
+        guard kind == .terminal else { return nil }
+        return PersistentTerminalSession.paneShellPID(sessionName: persistentSessionName)
     }
 
-    /// The coding agent running under the pane's shell, or `nil` when the shell
-    /// is at its prompt or running something else.
+    /// The coding agent started under the pane's shell, or `nil` when no
+    /// supported agent process is open in the terminal.
     func liveShellAgent() -> TerminalAgent? {
         guard let pid = liveShellPID() else { return nil }
-        return TerminalAgent.running(under: pid)
+        return TerminalAgent.started(under: pid)
+    }
+
+    /// A started coding agent plus whether its current turn is active. Keeping
+    /// these separate is important: an idle TUI remains a live child of the
+    /// shell, but it should contribute only to the sidebar denominator.
+    @MainActor
+    func liveShellAgentStatus() async -> LiveTerminalAgent? {
+        guard kind == .terminal,
+              let runtime = PersistentTerminalSession.paneRuntime(sessionName: persistentSessionName),
+              let agent = TerminalAgent.started(under: runtime.shellPID) else { return nil }
+        let contents: String? = if agent.needsVisibleTerminalContentsForActivity {
+            await PersistentTerminalSession.visibleContents(sessionName: persistentSessionName)
+        } else {
+            nil
+        }
+        return LiveTerminalAgent(
+            agent: agent,
+            activity: agent.activity(
+                cursorVisible: runtime.cursorVisible,
+                visibleTerminalContents: contents
+            )
+        )
     }
 
     /// Reads the live cwd of the pane's shell process from the kernel.
