@@ -609,6 +609,9 @@ struct ExtensionWindowView: View {
                         .allowsHitTesting(isActive)
                         .accessibilityHidden(!isActive)
                         .accessibilityIdentifier("extension.workspace-surface")
+                        // Layout-only surface: frame updates must be instant,
+                        // never interpolated by an ambient animation.
+                        .transaction { $0.animation = nil }
                 }
 
                 if extensionWorkspace == nil {
