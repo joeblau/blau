@@ -55,14 +55,19 @@ struct BrowserStartPageView: View {
             Text("Local")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            VStack(spacing: 10) {
-                ForEach(Array(servers.enumerated()), id: \.element.id) { index, server in
-                    LocalServerCard(
-                        hotkey: index < 9 ? index + 1 : nil,
-                        server: server,
-                        isLive: liveness[server.port] ?? false,
-                        onTap: { onSelect(server) }
-                    )
+            // Scroll when the workspace has more dev servers than fit: an
+            // unbounded card list's ideal height outgrows the pane and
+            // pushes the whole pane layout down.
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(Array(servers.enumerated()), id: \.element.id) { index, server in
+                        LocalServerCard(
+                            hotkey: index < 9 ? index + 1 : nil,
+                            server: server,
+                            isLive: liveness[server.port] ?? false,
+                            onTap: { onSelect(server) }
+                        )
+                    }
                 }
             }
         }
