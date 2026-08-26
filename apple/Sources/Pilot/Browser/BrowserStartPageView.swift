@@ -85,7 +85,10 @@ struct BrowserStartPageView: View {
         servers = discovered
         hasScanned = true
         await LocalServerLivenessMonitor.monitor(servers: discovered) { latest in
-            liveness = latest
+            // The monitor re-probes every couple of seconds; only touch state
+            // when a port actually flips so a stable server list doesn't
+            // re-render the start page (and re-layout the pane) forever.
+            if latest != liveness { liveness = latest }
         }
     }
 }

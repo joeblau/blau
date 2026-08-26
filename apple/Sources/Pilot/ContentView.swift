@@ -701,6 +701,10 @@ struct ContentView: View {
                                 .accessibilityHidden(!isActive)
                         }
                     }
+                    // Same hardening as the pane slots inside WorkspaceView:
+                    // workspace frames are pure layout for AppKit surfaces and
+                    // must apply instantly, never via an ambient animation.
+                    .transaction { $0.animation = nil }
 
                     if store.isWorkspaceDetailVisible && !hasSelectedWorkspace {
                         ContentUnavailableView {
