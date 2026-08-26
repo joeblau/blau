@@ -16,13 +16,13 @@ struct BrowserStartPageView: View {
             if hasScanned {
                 if servers.isEmpty {
                     emptyState
+                        .padding(20)
                 } else {
                     serverList
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .padding(20)
         .task(id: rootPath ?? "") { await refresh() }
         .onAppear { syncKeyHandler() }
         .onChange(of: servers) { syncKeyHandler() }
@@ -55,9 +55,12 @@ struct BrowserStartPageView: View {
             Text("Local")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, 20)
             // Scroll when the workspace has more dev servers than fit: an
             // unbounded card list's ideal height outgrows the pane and
-            // pushes the whole pane layout down.
+            // pushes the whole pane layout down. The ScrollView spans the
+            // full pane width with the padding inside it, so the overlay
+            // scroll indicator at the edge never covers card content.
             ScrollView {
                 VStack(spacing: 10) {
                     ForEach(Array(servers.enumerated()), id: \.element.id) { index, server in
@@ -69,6 +72,9 @@ struct BrowserStartPageView: View {
                         )
                     }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             }
         }
     }
