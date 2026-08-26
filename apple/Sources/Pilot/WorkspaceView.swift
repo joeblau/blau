@@ -303,6 +303,11 @@ struct WorkspaceView: View {
                     }
                 }
             }
+            // Pane geometry must never ride an ambient animation: while an
+            // animation transaction is alive (e.g. a new browser pane's start
+            // page re-rendering), interpolated slot frames can stick, leaving
+            // dead space above AppKit surfaces until the next window resize.
+            .transaction { $0.animation = nil }
         }
     }
 
