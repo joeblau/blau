@@ -38,6 +38,30 @@ struct ScreenMirrorBitrateTests {
         #expect(selectedID == mainWindowID)
     }
 
+    @Test("A registered Main window never falls back to Extension")
+    func missingRegisteredMainWindowDoesNotSelectExtension() {
+        let bundleID = "app.blau.pilot"
+        let candidates = [
+            ScreenMirrorWindowCandidate(
+                windowID: 20,
+                bundleIdentifier: bundleID,
+                isOnScreen: true,
+                width: 1_600,
+                height: 1_200,
+                hasTitle: true,
+                windowLayer: 0
+            )
+        ]
+
+        let selectedID = ScreenMirrorWindowSelectionPolicy.pickWindowID(
+            from: candidates,
+            bundleIdentifier: bundleID,
+            preferredWindowID: 10
+        )
+
+        #expect(selectedID == nil)
+    }
+
     @Test("First congestion report never raises the initial bitrate")
     func firstCongestionReportDoesNotIncreaseBitrate() {
         let initial = StreamBitratePolicy.initial
