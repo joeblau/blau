@@ -33,6 +33,22 @@ struct CopilotRecordingAttemptState: Equatable, Sendable {
     }
 }
 
+enum CopilotVolumeHoldAction: Equatable, Sendable {
+    case record(workspaceID: UUID?)
+    case send(workspaceID: UUID?)
+
+    init?(direction: VolumeDirection, selectedWorkspaceID: UUID?) {
+        switch direction {
+        case .down:
+            self = .record(workspaceID: selectedWorkspaceID)
+        case .up:
+            self = .send(workspaceID: selectedWorkspaceID)
+        case .none:
+            return nil
+        }
+    }
+}
+
 struct ContentView: View {
     let syncService: PeerSyncService
     let watchDelegate: PhoneSessionDelegate
@@ -46,7 +62,6 @@ struct ContentView: View {
     /// A unique token distinguishes "no workspace selected" from "no active
     /// attempt" and prevents a released hold from completing asynchronously.
     @State private var recordingAttempt = CopilotRecordingAttemptState()
-    @State private var preHoldWorkspaceID: UUID?
     @State private var transcription = TranscriptionService()
     /// Bumped after each recording cycle to re-arm volume observation, since
     /// `transcription.stop()` deactivates the shared audio session.
@@ -205,24 +220,28 @@ struct ContentView: View {
             onHighlightChanged: { workspace in
                 syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspace.id)))
             },
-            onFirstEvent: {
-                preHoldWorkspaceID = selectedID
-            },
             onVolumeHoldStart: { direction in
-                switch direction {
-                case .down:
+                switch CopilotVolumeHoldAction(
+                    direction: direction,
+                    selectedWorkspaceID: selectedID
+                ) {
+                case .record(let workspaceID):
                     // Hold volume DOWN to record into the selected workspace.
-                    let workspaceID = preHoldWorkspaceID ?? selectedID
                     if transcription.isModelLoaded || transcription.hasCachedModel {
                         beginRecording(workspaceID: workspaceID)
                     } else {
                         pendingRecordingWorkspaceID = workspaceID
                         showModelDownloadConfirmation = true
                     }
-                case .up:
-                    // Hold volume UP to press Enter in the selected terminal.
+                case .send(let workspaceID):
+                    // Select first so Enter is delivered to the workspace this
+                    // gesture targeted even if Cockpit's latest state update is
+                    // still in flight. Reliable peer messages preserve order.
+                    if let workspaceID {
+                        syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspaceID)))
+                    }
                     syncService.send(.terminalInput(.enter))
-                case .none:
+                case nil:
                     break
                 }
             },
@@ -232,7 +251,6 @@ struct ContentView: View {
                 guard direction == .down else { return }
                 pendingRecordingWorkspaceID = nil
                 let attempt = recordingAttempt.end()
-                preHoldWorkspaceID = nil
                 // No recording was attempted (the model-download alert showed
                 // instead): leave an approved download running and send
                 // nothing — Pilot never got a .start, so a .stop would be a
@@ -266,7 +284,9 @@ struct ContentView: View {
         Task {
             let started = await transcription.start(allowRestrictedNetwork: allowRestrictedNetwork)
             guard started else {
-                recordingAttempt.cancel(id: attempt.id)
+                // Keep the unstarted attempt until release. Its teardown
+                // re-arms volume observation if AVAudioSession was activated
+                // and then the microphone stream failed to become ready.
                 return
             }
             guard let startedAttempt = recordingAttempt.markStarted(id: attempt.id) else {
