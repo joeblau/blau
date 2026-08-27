@@ -92,7 +92,9 @@ trap cleanup EXIT
 # CoreDevice remembers disconnected hardware and lists simulators alongside real
 # devices. Filter before choosing so a stale pairing or similarly named
 # simulator can never become an install target.
-device_filter="Platform = 'iOS' AND Reality = 'physical' AND State = 'available' AND Model BEGINSWITH '$device_type'"
+# A reachable device reports a composite state such as "available (paired)",
+# so match the prefix; "State = 'available'" never matches anything.
+device_filter="Platform = 'iOS' AND Reality = 'physical' AND State BEGINSWITH 'available' AND Model BEGINSWITH '$device_type'"
 if ! xcrun devicectl list devices \
   --filter "$device_filter" \
   --quiet \
