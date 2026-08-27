@@ -33,9 +33,13 @@ enum ScreenMirrorWindowSelectionPolicy {
                 && candidate.bundleIdentifier == bundleIdentifier
         }
 
-        if let preferredWindowID,
-           ownWindows.contains(where: { $0.windowID == preferredWindowID }) {
-            return preferredWindowID
+        if let preferredWindowID {
+            // Once Main has registered its AppKit window, that identity is an
+            // invariant: falling back to another same-process window would
+            // mirror one coordinate space while remote ink renders in Main's.
+            return ownWindows.first {
+                $0.windowID == preferredWindowID
+            }?.windowID
         }
 
         // Preserve the pre-extension fallback for app launch and restoration,
@@ -244,10 +248,13 @@ final class ScreenMirror {
         }
     }
 
-    /// Picks the exact registered main Pilot window. During early launch, before
-    /// the AppKit reader is attached, it falls back to the largest normal Pilot
-    /// window to preserve the prior behavior.
+    /// Picks the exact registered main Pilot window. Before the AppKit reader
+    /// attaches (or while Main is briefly absent from ScreenCaptureKit's list),
+    /// returning nil makes capture retry instead of mirroring Extension and
+    /// projecting its annotations into Main's differently sized coordinate
+    /// space.
     private func pickPilotWindow(from windows: [SCWindow]) -> SCWindow? {
+        guard let mainWindowID else { return nil }
         let bundleID = Bundle.main.bundleIdentifier
         let candidates = windows.map { window in
             ScreenMirrorWindowCandidate(
