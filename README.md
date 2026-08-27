@@ -93,6 +93,11 @@ at the narrowest declaration and explain why; do not grow the baseline.
 ## Local development and screenshots
 
 ```bash
+# Build, install, and launch the desktop, phone, and tablet apps
+bun cockpit
+bun walkie
+bun kneeboard
+
 # Astro + rendezvous development servers through Turborepo
 bun run dev
 
@@ -106,6 +111,13 @@ fastlane snapshotAll
 ./bin/capture-pilot.sh
 ./bin/capture-wingman.sh
 ```
+
+`bun walkie` selects an available physical iPhone, and `bun kneeboard` selects
+an available physical iPad. Connect and unlock the device, enable Developer
+Mode, and let Xcode manage development signing. If multiple matching devices
+are connected, select one with `--device`, for example
+`bun kneeboard --device "My iPad"`. Set `BLAU_IOS_DEVICE` for the equivalent
+non-interactive selection.
 
 The screenshot harness uses deterministic demo state and writes to
 `workers/web/public/screenshots/`. It never requires a live peer.

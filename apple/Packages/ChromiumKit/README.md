@@ -125,7 +125,7 @@ replace a working app with a partial one. The destination defaults to
 is, or `--quit-running` to ask a copy already running from the destination to
 quit and wait up to 30 seconds for it, rather than refusing the install. The
 quit is a request, never a forced kill, so the running app keeps ownership of
-its unsaved editor and SwiftData state; `bun run pilot` passes the flag. This
+its unsaved editor and SwiftData state; `bun cockpit` passes the flag. This
 installs a development-signed build for local use; distribution still goes
 through the signed, notarized release workflow.
 
