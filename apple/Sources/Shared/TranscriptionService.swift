@@ -687,7 +687,14 @@ final class TranscriptionService: @unchecked Sendable {
     private static func activateRecordingAudioSession() {
         #if canImport(AVFAudio) && os(iOS)
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+        // Keep an output route while recording. Walkie's volume-button hold
+        // detector observes outputVolume auto-repeat to know that the button
+        // remains down; a record-only category makes that signal disappear.
+        try? session.setCategory(
+            .playAndRecord,
+            mode: .measurement,
+            options: [.allowBluetoothHFP, .defaultToSpeaker]
+        )
         try? session.setActive(true)
         #endif
     }

@@ -13,7 +13,6 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
     let sections: [VolumeScrollSection<Item>]
     @Binding var selectedID: Item.ID?
     var onHighlightChanged: ((Item) -> Void)?
-    var onFirstEvent: (() -> Void)?
     var onVolumeHoldStart: ((VolumeDirection) -> Void)?
     var onVolumeHoldEnd: ((VolumeDirection) -> Void)?
     /// Incrementing this from the parent re-arms volume observation. Used
@@ -28,7 +27,6 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
         items: [Item],
         selectedID: Binding<Item.ID?>,
         onHighlightChanged: ((Item) -> Void)? = nil,
-        onFirstEvent: (() -> Void)? = nil,
         onVolumeHoldStart: ((VolumeDirection) -> Void)? = nil,
         onVolumeHoldEnd: ((VolumeDirection) -> Void)? = nil,
         rearmToken: Int = 0,
@@ -39,7 +37,6 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
         ]
         self._selectedID = selectedID
         self.onHighlightChanged = onHighlightChanged
-        self.onFirstEvent = onFirstEvent
         self.onVolumeHoldStart = onVolumeHoldStart
         self.onVolumeHoldEnd = onVolumeHoldEnd
         self.rearmToken = rearmToken
@@ -50,7 +47,6 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
         sections: [VolumeScrollSection<Item>],
         selectedID: Binding<Item.ID?>,
         onHighlightChanged: ((Item) -> Void)? = nil,
-        onFirstEvent: (() -> Void)? = nil,
         onVolumeHoldStart: ((VolumeDirection) -> Void)? = nil,
         onVolumeHoldEnd: ((VolumeDirection) -> Void)? = nil,
         rearmToken: Int = 0,
@@ -59,7 +55,6 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
         self.sections = sections
         self._selectedID = selectedID
         self.onHighlightChanged = onHighlightChanged
-        self.onFirstEvent = onFirstEvent
         self.onVolumeHoldStart = onVolumeHoldStart
         self.onVolumeHoldEnd = onVolumeHoldEnd
         self.rearmToken = rearmToken
@@ -88,18 +83,22 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
                     volumeObserver.attach(volumeView: volumeView)
                 }
             }
-            .onChange(of: volumeObserver.eventID) {
+            .onChange(of: volumeObserver.tapEventID) {
+                let directions = volumeObserver.consumeTapDirections()
                 guard !items.isEmpty else { return }
-                let currentIndex = highlightedIndex ?? 0
-                let newIndex = nextIndex(
-                    from: currentIndex,
-                    direction: volumeObserver.direction,
-                    itemCount: items.count
-                )
-                selectedID = items[newIndex].id
-                onHighlightChanged?(items[newIndex])
-                withAnimation {
-                    proxy.scrollTo(items[newIndex].id, anchor: .center)
+                var currentIndex = highlightedIndex
+                for direction in directions {
+                    guard let newIndex = VolumeListNavigation.nextIndex(
+                        from: currentIndex,
+                        direction: direction,
+                        itemCount: items.count
+                    ) else { continue }
+                    currentIndex = newIndex
+                    selectedID = items[newIndex].id
+                    onHighlightChanged?(items[newIndex])
+                    withAnimation {
+                        proxy.scrollTo(items[newIndex].id, anchor: .center)
+                    }
                 }
             }
             .onChange(of: selectedID) {
@@ -110,7 +109,6 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
             }
         }
         .onAppear {
-            volumeObserver.onFirstEvent = onFirstEvent
             volumeObserver.onHoldStart = onVolumeHoldStart
             volumeObserver.onHoldEnd = onVolumeHoldEnd
             volumeObserver.start()
@@ -144,12 +142,16 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
                 .id(item.id)
         }
     }
+}
 
-    private func nextIndex(
-        from current: Int,
+enum VolumeListNavigation {
+    static func nextIndex(
+        from current: Int?,
         direction: VolumeDirection,
         itemCount: Int
-    ) -> Int {
+    ) -> Int? {
+        guard itemCount > 0 else { return nil }
+        guard let current else { return 0 }
         switch direction {
         case .up:
             return max(current - 1, 0)
@@ -163,46 +165,169 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
 
 // MARK: - Volume Observer
 
-enum VolumeDirection {
+enum VolumeDirection: Equatable, Sendable {
     case none, up, down
 }
 
-// Volume-button PTT state machine:
-//
-//   IDLE ──(1st event)──▶ NAVIGATE ──(2nd event <300ms)──▶ HOLDING
-//    ▲                       │                                 │
-//    │                 (no 2nd event)                          │
-//    │                       │                         (events flow)
-//    │                       ▼                                 │
-//    │                  reset to mid                           ▼
-//    │                                              (2s silence) ──▶ TESTING
-//    │                                                                 │
-//    │                                              reset to mid ──────┤
-//    │                                              events resume:     │
-//    │                                              → HOLDING    no events:
-//    │                                                           → RELEASED
-//    └─────────────────────────────────────────────────────────────────┘
-//
-// True push-to-talk: hold same button to record, release to stop.
-// Release is detected by resetting volume to midpoint and checking
-// if auto-repeat resumes.  The hold NEVER ends during testing, it
-// stays active.  Only a confirmed release (no events after reset)
-// ends the hold.
+enum VolumeGestureEvent: Equatable, Sendable {
+    case tap(VolumeDirection)
+    case holdStarted(VolumeDirection)
+    case holdRepeated(VolumeDirection)
+    case holdEnded(VolumeDirection)
+}
+
+/// Separates taps from iOS hardware-key auto-repeat without treating an
+/// ordinary double tap as a hold. A hold requires the observed three-event
+/// cadence: initial press, delayed first repeat, then a faster repeat in the
+/// same direction. Opposite-direction or too-fast events remain taps.
+struct VolumeGestureClassifier: Sendable {
+    private struct PendingPresses: Sendable {
+        let token: Int
+        let direction: VolumeDirection
+        let firstEventAt: ContinuousClock.Instant
+        let lastEventAt: ContinuousClock.Instant
+        let count: Int
+    }
+
+    /// Confirmed on supported hardware: the first repeat arrives around
+    /// 400 ms after key-down. The range leaves scheduling headroom while
+    /// excluding the usual cadence of deliberate rapid taps.
+    static let minimumInitialRepeatDelay: Duration = .milliseconds(250)
+    static let maximumInitialRepeatDelay: Duration = .milliseconds(500)
+    /// Once auto-repeat begins, subsequent events arrive much faster.
+    static let minimumRepeatDelay: Duration = .milliseconds(40)
+    static let maximumRepeatDelay: Duration = .milliseconds(250)
+
+    private var pending: PendingPresses?
+    private var nextToken = 0
+    private(set) var heldDirection: VolumeDirection = .none
+
+    var isHolding: Bool { heldDirection != .none }
+
+    var pendingResolution: (token: Int, deadline: ContinuousClock.Instant)? {
+        guard let pending else { return nil }
+        let delay = pending.count == 1
+            ? Self.maximumInitialRepeatDelay
+            : Self.maximumRepeatDelay
+        return (pending.token, pending.lastEventAt.advanced(by: delay))
+    }
+
+    mutating func receive(
+        _ direction: VolumeDirection,
+        at instant: ContinuousClock.Instant
+    ) -> [VolumeGestureEvent] {
+        guard direction != .none else { return [] }
+
+        if isHolding {
+            // Lock the action to the direction that established the hold.
+            // Route/category changes can also move outputVolume; while held,
+            // any event is only evidence that the physical repeat is alive.
+            return [.holdRepeated(heldDirection)]
+        }
+
+        guard let pending else {
+            beginPending(direction, at: instant)
+            return []
+        }
+
+        if pending.count == 1 {
+            let delay = pending.firstEventAt.duration(to: instant)
+            if direction == pending.direction,
+               delay >= Self.minimumInitialRepeatDelay,
+               delay <= Self.maximumInitialRepeatDelay {
+                replacePending(
+                    direction: direction,
+                    firstEventAt: pending.firstEventAt,
+                    lastEventAt: instant,
+                    count: 2
+                )
+                return []
+            }
+        } else {
+            let delay = pending.lastEventAt.duration(to: instant)
+            if direction == pending.direction,
+               delay >= Self.minimumRepeatDelay,
+               delay <= Self.maximumRepeatDelay {
+                self.pending = nil
+                heldDirection = direction
+                return [.holdStarted(direction)]
+            }
+        }
+
+        let taps = Array(
+            repeating: VolumeGestureEvent.tap(pending.direction),
+            count: pending.count
+        )
+        beginPending(direction, at: instant)
+        return taps
+    }
+
+    mutating func expirePending(token: Int) -> [VolumeGestureEvent] {
+        guard let pending, pending.token == token else { return [] }
+        self.pending = nil
+        return Array(
+            repeating: VolumeGestureEvent.tap(pending.direction),
+            count: pending.count
+        )
+    }
+
+    mutating func endHold() -> VolumeGestureEvent? {
+        guard isHolding else { return nil }
+        let direction = heldDirection
+        heldDirection = .none
+        return .holdEnded(direction)
+    }
+
+    /// Clears unresolved taps and returns the direction of an interrupted
+    /// hold, if one was active, so its owner can finish any held resource.
+    mutating func reset() -> VolumeDirection {
+        let interruptedDirection = heldDirection
+        pending = nil
+        heldDirection = .none
+        return interruptedDirection
+    }
+
+    private mutating func beginPending(
+        _ direction: VolumeDirection,
+        at instant: ContinuousClock.Instant
+    ) {
+        replacePending(
+            direction: direction,
+            firstEventAt: instant,
+            lastEventAt: instant,
+            count: 1
+        )
+    }
+
+    private mutating func replacePending(
+        direction: VolumeDirection,
+        firstEventAt: ContinuousClock.Instant,
+        lastEventAt: ContinuousClock.Instant,
+        count: Int
+    ) {
+        nextToken &+= 1
+        pending = PendingPresses(
+            token: nextToken,
+            direction: direction,
+            firstEventAt: firstEventAt,
+            lastEventAt: lastEventAt,
+            count: count
+        )
+    }
+}
+
+// True push-to-talk release detection uses the same public signal iOS exposes
+// for presses: output-volume changes. After repeat events go quiet at a volume
+// limit, the observer moves to a safe probe point. Resumed repeats mean "still
+// held"; no repeats after the probe confirms release.
 
 @MainActor
 @Observable
 final class VolumeObserver {
-    var direction: VolumeDirection = .none
-    var eventID: Int = 0
-    private(set) var isVolumeHeld = false
+    private(set) var tapEventID = 0
 
     var onHoldStart: ((VolumeDirection) -> Void)?
     var onHoldEnd: ((VolumeDirection) -> Void)?
-    var onFirstEvent: (() -> Void)?
-
-    /// Direction of the in-progress hold, so the parent can map hold-down vs
-    /// hold-up to different actions (record vs. press Enter).
-    private(set) var heldDirection: VolumeDirection = .none
 
     private var cancellable: AnyCancellable?
     private var previousVolume: Float?
@@ -210,27 +335,21 @@ final class VolumeObserver {
     private var resetTask: Task<Void, Never>?
     private var holdDetectTask: Task<Void, Never>?
     private var releaseTestTask: Task<Void, Never>?
+    private var gestureClassifier = VolumeGestureClassifier()
+    private var pendingTapDirections: [VolumeDirection] = []
     private weak var volumeView: MPVolumeView?
     private let session = AVAudioSession.sharedInstance()
+    private let clock = ContinuousClock()
     private let midpointVolume: Float = 0.5
-    /// How long to wait after the first volume event before treating it as a
-    /// single tap. A press-and-hold's first auto-repeat must land inside this
-    /// window to register as a hold, so this MUST sit above iOS's hardware
-    /// key-repeat initial delay (~0.4s); otherwise the window closes before the
-    /// repeat lands and the hold is never seen — the press just navigates the
-    /// list (moves down) instead of recording. Confirmed on device: 400ms (and
-    /// below) fails this way; 450ms catches the hold. The cost is that a short
-    /// tap's navigation lags by this much.
-    private static let holdDetectWindow: Duration = .milliseconds(450)
 
     private let tapHaptic = UIImpactFeedbackGenerator(style: .medium)
     private let holdHaptic = UINotificationFeedbackGenerator()
-    private var eventCount = 0
-    private var lastDirection: VolumeDirection = .none
 
     /// True while we've reset to midpoint to test if the user released.
     /// Events during this phase are "still holding" signals, not new holds.
     private var isTestingRelease = false
+
+    private var isVolumeHeld: Bool { gestureClassifier.isHolding }
 
     func attach(volumeView: MPVolumeView) {
         guard self.volumeView !== volumeView else { return }
@@ -245,7 +364,7 @@ final class VolumeObserver {
 
     func start() {
         guard cancellable == nil else { return }
-        try? session.setActive(true)
+        activateVolumeObservationSession()
         previousVolume = session.outputVolume
         if !isVolumeHeld { setVolumeMidpoint() }
 
@@ -265,15 +384,23 @@ final class VolumeObserver {
     /// KVO subscription itself stays alive — only the session needs re-arming.
     /// Call once transcription has fully stopped.
     func rearm() {
-        isVolumeHeld = false
+        let interruptedDirection = gestureClassifier.reset()
         isTestingRelease = false
-        eventCount = 0
         holdDetectTask?.cancel(); holdDetectTask = nil
         releaseTestTask?.cancel(); releaseTestTask = nil
         pendingProgrammaticVolume = nil
-        try? session.setActive(true)
+        pendingTapDirections.removeAll(keepingCapacity: true)
+        activateVolumeObservationSession()
         previousVolume = session.outputVolume
         setVolumeMidpoint()
+        if interruptedDirection != .none {
+            onHoldEnd?(interruptedDirection)
+        }
+    }
+
+    func consumeTapDirections() -> [VolumeDirection] {
+        defer { pendingTapDirections.removeAll(keepingCapacity: true) }
+        return pendingTapDirections
     }
 
     private func handleVolumeChange(_ newVolume: Float) {
@@ -309,71 +436,78 @@ final class VolumeObserver {
     }
 
     private func publish(_ dir: VolumeDirection) {
-        // During a release test: events mean the user is still holding.
-        // Cancel the release confirmation and go back to normal holding.
-        if isVolumeHeld && isTestingRelease {
-            isTestingRelease = false
-            releaseTestTask?.cancel()
-            // Reschedule the next release test (events will flow until
-            // volume hits the limit again, then 2s silence triggers test).
-            scheduleReleaseTest()
-            return
-        }
+        apply(gestureClassifier.receive(dir, at: clock.now))
+        scheduleGestureResolution()
+    }
 
-        // Hold active (not testing): absorb events, reset release timer.
-        if isVolumeHeld {
-            scheduleReleaseTest()
-            return
-        }
-
-        // Not in a hold. Normal tap/hold detection.
-        eventCount += 1
-
-        if eventCount == 1 {
-            onFirstEvent?()
-            lastDirection = dir
-
-            // Don't navigate yet. Wait `holdDetectWindow` to distinguish tap
-            // from hold. If a 2nd event arrives (hold), skip navigation
-            // entirely. If no 2nd event (tap), navigate then. The window
-            // must be wide enough to span the hardware key-repeat initial
-            // delay; too short and a real press-and-hold leaks through as a
-            // tap before auto-repeat fires.
-            holdDetectTask?.cancel()
-            holdDetectTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: Self.holdDetectWindow)
-                guard let self, !Task.isCancelled else { return }
-                // Single tap confirmed. Navigate now.
-                self.direction = dir
-                self.eventID += 1
-                self.tapHaptic.impactOccurred()
-                self.eventCount = 0
-                self.scheduleMidpointReset()
+    private func apply(_ events: [VolumeGestureEvent]) {
+        for event in events {
+            switch event {
+            case .tap(let direction):
+                pendingTapDirections.append(direction)
+                tapEventID &+= 1
+                tapHaptic.impactOccurred()
+                scheduleMidpointReset()
+            case .holdStarted(let direction):
+                holdDetectTask?.cancel()
+                holdDetectTask = nil
+                resetTask?.cancel()
+                resetTask = nil
+                isTestingRelease = false
+                holdHaptic.notificationOccurred(.success)
+                onHoldStart?(direction)
+                scheduleReleaseTest()
+            case .holdRepeated:
+                if isTestingRelease {
+                    isTestingRelease = false
+                    releaseTestTask?.cancel()
+                    releaseTestTask = nil
+                }
+                scheduleReleaseTest()
+            case .holdEnded(let direction):
+                isTestingRelease = false
+                releaseTestTask?.cancel()
+                releaseTestTask = nil
+                holdHaptic.notificationOccurred(.warning)
+                onHoldEnd?(direction)
+                scheduleMidpointReset()
             }
-            return
         }
+    }
 
-        // 2nd event within the detection window: this is a hold.
+    private func scheduleGestureResolution() {
         holdDetectTask?.cancel()
         holdDetectTask = nil
-        isVolumeHeld = true
-        heldDirection = dir
-        holdHaptic.notificationOccurred(.success)
-        onHoldStart?(dir)
-        scheduleReleaseTest()
+        guard let pending = gestureClassifier.pendingResolution else { return }
+        let remaining = clock.now.duration(to: pending.deadline)
+        holdDetectTask = Task { @MainActor [weak self] in
+            if remaining > .zero {
+                try? await Task.sleep(for: remaining)
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.holdDetectTask = nil
+            self.apply(self.gestureClassifier.expirePending(token: pending.token))
+        }
     }
 
     /// After 2 seconds of silence during a hold, test if the user released
-    /// by resetting volume to midpoint and checking for resumed events.
+    /// by moving to a probe volume and checking for resumed events.
     private func scheduleReleaseTest() {
         releaseTestTask?.cancel()
         releaseTestTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard let self, !Task.isCancelled, self.isVolumeHeld else { return }
 
-            // No events for 2 seconds. Reset to midpoint to test release.
+            // No events for 2 seconds. Move to a probe volume to test release.
             self.isTestingRelease = true
-            self.setVolumeMidpointForTest()
+            guard self.setReleaseProbeVolume() else {
+                // Without moving the slider there is no valid release probe.
+                // Keep the hold alive and retry instead of firing a false end.
+                self.isTestingRelease = false
+                self.releaseTestTask = nil
+                self.scheduleReleaseTest()
+                return
+            }
 
             // Wait 1 second for events to resume.
             try? await Task.sleep(for: .seconds(1))
@@ -382,35 +516,44 @@ final class VolumeObserver {
             if self.isTestingRelease {
                 // No events arrived after reset. User released.
                 self.isTestingRelease = false
-                self.isVolumeHeld = false
-                self.eventCount = 0
-                self.holdHaptic.notificationOccurred(.warning)
-                let endedDirection = self.heldDirection
-                self.heldDirection = .none
-                self.onHoldEnd?(endedDirection)
-                self.scheduleMidpointReset()
+                if let event = self.gestureClassifier.endHold() {
+                    self.apply([event])
+                }
             }
             // If isTestingRelease was cleared by publish(), user is still
             // holding and scheduleReleaseTest was already called.
         }
     }
 
-    /// Reset volume to midpoint during a release test. Unlike the normal
-    /// setVolumeMidpoint(), this is allowed during a hold because we need
-    /// to probe whether the user is still pressing the button.
-    private func setVolumeMidpointForTest() {
+    /// Move the volume during a release test. Unlike the normal midpoint
+    /// reset, this is allowed during a hold because resumed auto-repeat is
+    /// what proves that the user is still pressing the button.
+    private func setReleaseProbeVolume() -> Bool {
         guard let slider = volumeView?.subviews.compactMap({ $0 as? UISlider }).first else {
-            return
+            return false
         }
-        guard abs(session.outputVolume - midpointVolume) >= 0.001 else {
-            previousVolume = session.outputVolume
-            pendingProgrammaticVolume = nil
-            return
+        let currentVolume = session.outputVolume
+        let targetVolume: Float
+        if abs(currentVolume - midpointVolume) >= 0.001 {
+            targetVolume = midpointVolume
+        } else {
+            // A route change can land exactly on midpoint while a hold is
+            // active. Use headroom in the held direction so the probe still
+            // produces both a programmatic change and a possible repeat.
+            switch gestureClassifier.heldDirection {
+            case .up:
+                targetVolume = 0.25
+            case .down:
+                targetVolume = 0.75
+            case .none:
+                return false
+            }
         }
-        pendingProgrammaticVolume = midpointVolume
-        previousVolume = midpointVolume
-        slider.setValue(midpointVolume, animated: false)
+        pendingProgrammaticVolume = targetVolume
+        previousVolume = targetVolume
+        slider.setValue(targetVolume, animated: false)
         slider.sendActions(for: .valueChanged)
+        return true
     }
 
     private func scheduleMidpointReset() {
@@ -440,7 +583,16 @@ final class VolumeObserver {
         slider.sendActions(for: .valueChanged)
     }
 
+    private func activateVolumeObservationSession() {
+        // Transcription temporarily owns this process-wide session. Restore an
+        // output-capable category before observing hardware volume again;
+        // leaving the record-only category active makes outputVolume silent.
+        try? session.setCategory(.ambient, mode: .default)
+        try? session.setActive(true)
+    }
+
     func stop() {
+        let interruptedDirection = gestureClassifier.reset()
         cancellable?.cancel()
         resetTask?.cancel()
         holdDetectTask?.cancel()
@@ -449,15 +601,12 @@ final class VolumeObserver {
         resetTask = nil
         holdDetectTask = nil
         releaseTestTask = nil
-        eventCount = 0
         isTestingRelease = false
         previousVolume = nil
         pendingProgrammaticVolume = nil
-        if isVolumeHeld {
-            isVolumeHeld = false
-            let endedDirection = heldDirection
-            heldDirection = .none
-            onHoldEnd?(endedDirection)
+        pendingTapDirections.removeAll(keepingCapacity: true)
+        if interruptedDirection != .none {
+            onHoldEnd?(interruptedDirection)
         }
     }
 }
