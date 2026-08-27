@@ -176,15 +176,23 @@ enum PersistentTerminalSession {
         let sessionName = shellEscape(pane.persistentSessionName)
         let tmux = shellEscape(tmuxPath)
         let createCommand: String
+        // Panes render in Ghostty, a truecolor terminal, so a NO_COLOR leaked
+        // from whatever launched Pilot (agent shells, scripts) must not reach
+        // pane shells: the tmux server snapshots its environment at birth and
+        // seeds every session from it. Strip it from the server, the session,
+        // and the server-creating new-session itself.
         let configureSessionCommand = """
         \(tmux) set-option -t \(sessionName) status off >/dev/null 2>&1
         \(tmux) set-option -t \(sessionName) mouse on >/dev/null 2>&1
+        \(tmux) set-environment -gu NO_COLOR >/dev/null 2>&1
+        \(tmux) set-environment -t \(sessionName) -u NO_COLOR >/dev/null 2>&1
+        \(tmux) set-environment -t \(sessionName) COLORTERM truecolor >/dev/null 2>&1
         """
 
         if let workingDirectory = validWorkingDirectory(workingDirectory) {
-            createCommand = "\(tmux) new-session -d -s \(sessionName) -c \(shellEscape(workingDirectory))"
+            createCommand = "env -u NO_COLOR \(tmux) new-session -d -s \(sessionName) -c \(shellEscape(workingDirectory))"
         } else {
-            createCommand = "\(tmux) new-session -d -s \(sessionName)"
+            createCommand = "env -u NO_COLOR \(tmux) new-session -d -s \(sessionName)"
         }
 
         return """
