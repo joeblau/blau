@@ -10,7 +10,7 @@ set -euo pipefail
 # notarized release workflow and validate-chromium-archive.sh.
 
 APPLE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DESTINATION="${BLAU_PILOT_INSTALL_PATH:-/Applications/Pilot.app}"
+DESTINATION="${BLAU_PILOT_INSTALL_PATH:-/Applications/Cockpit.app}"
 SKIP_BUILD=0
 QUIT_RUNNING=0
 
@@ -22,10 +22,10 @@ fail() {
 usage() {
   printf '%s\n' \
     'Usage: install-pilot-chromium.sh [--skip-build] [--quit-running]' \
-    '                                 [--destination <Pilot.app>]' \
+    '                                 [--destination <Cockpit.app>]' \
     '' \
     'Builds the Chromium configuration and installs it to a stable location.' \
-    'Destination defaults to /Applications/Pilot.app and can also be set with' \
+    'Destination defaults to /Applications/Cockpit.app and can also be set with' \
     'BLAU_PILOT_INSTALL_PATH.' \
     '' \
     '--quit-running asks a copy already running from the destination to quit' \
@@ -122,7 +122,7 @@ BUILT_PRODUCTS_DIR="$(
 )"
 [[ -n "$BUILT_PRODUCTS_DIR" ]] || fail "could not resolve BUILT_PRODUCTS_DIR"
 
-SOURCE_APP="$BUILT_PRODUCTS_DIR/Pilot.app"
+SOURCE_APP="$BUILT_PRODUCTS_DIR/Cockpit.app"
 [[ -d "$SOURCE_APP" ]] || fail "no built app at $SOURCE_APP (run without --skip-build)"
 
 # Refuse to install something that would not actually run Chromium: the whole

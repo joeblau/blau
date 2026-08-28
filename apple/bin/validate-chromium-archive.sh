@@ -31,13 +31,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ $# == 1 ]] ||
-  fail "usage: validate-chromium-archive.sh [--require-notarization] [--allow-ad-hoc] <Pilot.app|xcarchive>"
+  fail "usage: validate-chromium-archive.sh [--require-notarization] [--allow-ad-hoc] <Cockpit.app|xcarchive>"
 [[ "$REQUIRE_NOTARIZATION" == 0 || "$ALLOW_AD_HOC" == 0 ]] ||
   fail "--require-notarization cannot be combined with --allow-ad-hoc"
 
 input="$1"
 if [[ "$input" == *.xcarchive ]]; then
-  APP="$input/Products/Applications/Pilot.app"
+  APP="$input/Products/Applications/Cockpit.app"
 else
   APP="$input"
 fi

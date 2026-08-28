@@ -208,7 +208,7 @@ jobs:
             DEVELOPMENT_TEAM= \
             BLAU_CHROMIUM_CODESIGN_TIMESTAMP=NO
           apple/bin/validate-chromium-archive.sh --allow-ad-hoc \
-            "$derived_data/Build/Products/Chromium/Pilot.app"
+            "$derived_data/Build/Products/Chromium/Cockpit.app"
 
   complete:
     if: always()

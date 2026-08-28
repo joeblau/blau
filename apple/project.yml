@@ -138,6 +138,7 @@ targets:
   Pilot:
     type: application
     platform: macOS
+    productName: Cockpit
     sources:
       - Sources/Pilot
       - path: Sources/Shared
@@ -171,7 +172,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.pilot
-        PRODUCT_NAME: Pilot
+        PRODUCT_NAME: Cockpit
+        # The Swift module keeps the Pilot name: tests and qualified references
+        # use it, and only the bundle/executable were renamed to Cockpit.
+        PRODUCT_MODULE_NAME: Pilot
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: 1
         CLANG_CXX_LANGUAGE_STANDARD: "c++20"
@@ -398,7 +402,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.pilot.tests
         GENERATE_INFOPLIST_FILE: true
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Pilot.app/Contents/MacOS/Pilot"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Cockpit.app/Contents/MacOS/Cockpit"
         BUNDLE_LOADER: "$(TEST_HOST)"
       configs:
         Chromium:

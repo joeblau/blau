@@ -669,6 +669,28 @@ class EngineCore final {
         CefString(&settings.root_cache_path) = path;
         CefString(&settings.cache_path) = path;
 
+        // CEF's default helper lookup is "<main executable name> Helper.app"
+        // under Contents/Frameworks. The helper bundle names are fixed by
+        // cef-artifacts.json (helperLayout.helpers, role "base") and are
+        // independent of the app's PRODUCT_NAME, so name the base helper
+        // explicitly; Chromium derives the (GPU)/(Renderer)/... variants
+        // from this path.
+        NSURL *helperURL = [NSBundle.mainBundle.bundleURL
+            URLByAppendingPathComponent:
+                @"Contents/Frameworks/Pilot Helper.app/Contents/MacOS/Pilot Helper"];
+        if (![NSFileManager.defaultManager fileExistsAtPath:helperURL.path]) {
+            if (error) {
+                *error = ChromiumKitError(
+                    ChromiumKitErrorInitializationFailed,
+                    @"The Chromium base helper is missing from the app bundle.",
+                    @{NSFilePathErrorKey: helperURL.path});
+            }
+            loader_.reset();
+            return false;
+        }
+        CefString(&settings.browser_subprocess_path) =
+            helperURL.path.fileSystemRepresentation;
+
         app_ = new ChromiumApp(this);
         ExternalMessagePump::Shared().Start();
         CefMainArgs main_args(*_NSGetArgc(), *_NSGetArgv());
