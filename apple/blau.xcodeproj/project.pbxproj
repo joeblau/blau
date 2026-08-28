@@ -432,7 +432,6 @@
 		158C2018D7407AF1E5F146CB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1A34F794F92162E19581AA82 /* UsageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSettingsView.swift; sourceTree = "<group>"; };
 		1B3448A85CDA9475511475C2 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
-		1C98BD914066A308C6C6C1C9 /* Pilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1D01836EA0410C1776CF8D4E /* PullRequestListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PullRequestListView.swift; sourceTree = "<group>"; };
 		1E59DAB0A4EFD8A5F838D0A8 /* SignalingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalingClient.swift; sourceTree = "<group>"; };
 		1F61599BA0EAFD351421F570 /* TranscriptionLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionLifecycleTests.swift; sourceTree = "<group>"; };
@@ -588,6 +587,7 @@
 		BB738978DB9781187E413172 /* WalletExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletExtension.swift; sourceTree = "<group>"; };
 		BCACC65C389DB2551F3D872F /* DockerHTTPParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockerHTTPParsingTests.swift; sourceTree = "<group>"; };
 		BD28E5020B361E0FCED3EDF2 /* PilotChromiumHelperTemplate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PilotChromiumHelperTemplate.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BFFA00533765E8A7088D19F0 /* Cockpit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cockpit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0DED687E84AB4C8801AC4CE /* SimulatorSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorSession.swift; sourceTree = "<group>"; };
 		C2CBBCF17697E060CCB469C9 /* BrowserController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserController.swift; sourceTree = "<group>"; };
 		C367CD809AB561EB25F80458 /* PeerSyncAuthenticationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerSyncAuthenticationTests.swift; sourceTree = "<group>"; };
@@ -1143,9 +1143,9 @@
 			isa = PBXGroup;
 			children = (
 				FA4E1F9E882FC561420A0F98 /* ChromiumKit.framework */,
+				BFFA00533765E8A7088D19F0 /* Cockpit.app */,
 				F430B621891B5DED12E1CF39 /* Copilot.app */,
 				37AF3DF097D535DA68029E46 /* CopilotUITests.xctest */,
-				1C98BD914066A308C6C6C1C9 /* Pilot.app */,
 				BD28E5020B361E0FCED3EDF2 /* PilotChromiumHelperTemplate.app */,
 				52D5914A6EBA1115A33AE425 /* PilotTests.xctest */,
 				46C4196429C52AD7709CA4CF /* Plotter.app */,
@@ -1268,7 +1268,7 @@
 				508B0703930743D90F7BAD33 /* Sparkle */,
 			);
 			productName = Pilot;
-			productReference = 1C98BD914066A308C6C6C1C9 /* Pilot.app */;
+			productReference = BFFA00533765E8A7088D19F0 /* Cockpit.app */;
 			productType = "com.apple.product-type.application";
 		};
 		478609A031F3B4AB51EDD75F /* PilotTests */ = {
@@ -2098,7 +2098,8 @@
 					CoreMediaIO,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot;
-				PRODUCT_NAME = Pilot;
+				PRODUCT_MODULE_NAME = Pilot;
+				PRODUCT_NAME = Cockpit;
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -2181,7 +2182,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot.tests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pilot.app/Contents/MacOS/Pilot";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Cockpit.app/Contents/MacOS/Cockpit";
 			};
 			name = Debug;
 		};
@@ -2643,7 +2644,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot.tests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pilot.app/Contents/MacOS/Pilot";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Cockpit.app/Contents/MacOS/Cockpit";
 			};
 			name = Release;
 		};
@@ -2686,7 +2687,7 @@
 					"$(inherited)",
 					BLAU_CHROMIUM_REAL_ENGINE_TESTS,
 				);
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pilot.app/Contents/MacOS/Pilot";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Cockpit.app/Contents/MacOS/Cockpit";
 			};
 			name = Chromium;
 		};
@@ -2742,7 +2743,8 @@
 					CoreMediaIO,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot;
-				PRODUCT_NAME = Pilot;
+				PRODUCT_MODULE_NAME = Pilot;
+				PRODUCT_NAME = Cockpit;
 				SDKROOT = macosx;
 			};
 			name = Debug;
@@ -2945,7 +2947,8 @@
 					"-lcef_dll_wrapper",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.blau.pilot;
-				PRODUCT_NAME = Pilot;
+				PRODUCT_MODULE_NAME = Pilot;
+				PRODUCT_NAME = Cockpit;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = (
 					"$(inherited)",
