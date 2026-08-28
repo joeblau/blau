@@ -97,54 +97,52 @@ struct WorkspaceSidebarRow: View {
 private struct WorkspaceLLMGauge: View {
     let workspace: Workspace
     let store: WorkspaceStore
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var running = 0
     @State private var started = 0
     @State private var runningPaneIDs: Set<UUID> = []
 
-    /// Row budget for the gauge, and the factor that gets `.accessoryCircular`
-    /// down to it. Kept together so the two never drift apart: the scale is
-    /// what makes the style fit the frame, not an independent tuning knob.
+    /// Row budget for the gauge. The ring is drawn at this size instead of
+    /// scaling the much larger `.accessoryCircular` control into the row.
     private static let diameter: CGFloat = 26
-    private static let scale: CGFloat = 0.5
 
     var body: some View {
-        // A ZStack, never a Group: Group hands its modifiers to its children,
-        // and this one starts with no children because `started` is 0 until the
-        // first poll. The `.task` had nothing to attach to, so the poll never
-        // ran, so `started` stayed 0 — the gauge could never appear. A real
-        // container keeps the task alive while the ring is still absent.
+        let isVisible = started > 0
+
+        // Keep the gauge mounted even before the first poll. Besides giving
+        // `.task` a permanent host, this gives SwiftUI a zero-value ring to
+        // interpolate from when the first agent status arrives.
         ZStack {
-            if started > 0 {
-                // Keep the title label empty so the compact style spends all
-                // of its center on the explicit running/started ratio.
-                Gauge(value: Double(running), in: 0...Double(started)) {
-                    EmptyView()
-                } currentValueLabel: {
-                    Text("\(running)/\(started)")
-                        .monospacedDigit()
-                }
-                .gaugeStyle(.accessoryCircular)
-                .tint(gaugeTint)
-                // `.accessoryCircular` is sized for widgets and watch
-                // complications, so at natural size it is several times the
-                // height of a sidebar row. Scale the rendered gauge down and
-                // pin the layout box to what the row can actually spend.
-                .scaleEffect(Self.scale)
-                .frame(width: Self.diameter, height: Self.diameter)
-                .animation(.easeInOut(duration: 0.2), value: running)
-                .animation(.easeInOut(duration: 0.2), value: started)
-                .help(gaugeDescription)
-                .accessibilityLabel(gaugeDescription)
-                // Tappable only while an agent is running; an idle ring has
-                // no pane to jump to.
-                .contentShape(Rectangle())
-                .onTapGesture(perform: selectRunningPane)
-                .allowsHitTesting(running > 0)
-            }
+            // Draw the ring ourselves instead of using `.accessoryCircular`.
+            // That native style renders a detached value marker which looks
+            // like a stray dot at zero. The custom arc also exposes its
+            // fraction as animatable data, so progress cannot snap.
+            AnimatedWorkspaceGauge(
+                fraction: gaugeFraction,
+                running: running,
+                started: started,
+                tint: gaugeTint
+            )
+            .scaleEffect(isVisible ? 1 : 0.75)
+            .opacity(isVisible ? 1 : 0)
+            .frame(width: Self.diameter, height: Self.diameter)
+            .help(gaugeDescription)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(gaugeDescription)
+            .accessibilityHidden(!isVisible)
+            // Tappable only while an agent is running; an idle ring has
+            // no pane to jump to.
+            .contentShape(Rectangle())
+            .onTapGesture(perform: selectRunningPane)
+            .allowsHitTesting(running > 0)
         }
         // Zero-width while empty so a workspace with no started agent does not
         // reserve a hole where the ring would be.
-        .frame(width: started > 0 ? Self.diameter : 0)
+        .frame(
+            width: isVisible ? Self.diameter : 0,
+            height: isVisible ? Self.diameter : 0
+        )
+        .clipped()
         .task {
             while !Task.isCancelled {
                 let terminals = workspace.panes.filter { $0.kind == .terminal }
@@ -157,12 +155,26 @@ private struct WorkspaceLLMGauge: View {
                         nextRunningPaneIDs.insert(pane.id)
                     }
                 }
-                started = nextStarted
                 runningPaneIDs = nextRunningPaneIDs
-                running = nextRunningPaneIDs.count
+                let nextRunning = nextRunningPaneIDs.count
+                if started != nextStarted || running != nextRunning {
+                    withAnimation(gaugeAnimation) {
+                        started = nextStarted
+                        running = nextRunning
+                    }
+                }
                 try? await Task.sleep(for: .seconds(2))
             }
         }
+    }
+
+    private var gaugeFraction: Double {
+        guard started > 0 else { return 0 }
+        return min(1, max(0, Double(running) / Double(started)))
+    }
+
+    private var gaugeAnimation: Animation? {
+        accessibilityReduceMotion ? nil : .easeInOut(duration: 0.4)
     }
 
     /// Jump to the first pane reported active by the latest poll.
@@ -177,9 +189,8 @@ private struct WorkspaceLLMGauge: View {
     }
 
     /// Idle drops to the quaternary label color so quiet workspaces recede
-    /// into the sidebar instead of every ring sitting at accent strength. A
-    /// concrete NSColor, not the hierarchical `.quaternary`: the gauge's tint
-    /// doesn't resolve hierarchical styles and falls back to accent.
+    /// into the sidebar instead of every ring sitting at accent strength. Use
+    /// a concrete dynamic NSColor so selected-row appearances resolve it too.
     private var gaugeTint: Color {
         if running == 0 { return Color(nsColor: .quaternaryLabelColor) }
         if running == started { return .green }
@@ -193,5 +204,92 @@ private struct WorkspaceLLMGauge: View {
             return "0 of \(started) started \(agents) working"
         }
         return "\(running) of \(started) started \(agents) working. Click to jump to a pane."
+    }
+}
+
+/// Compact gauge face with a neutral track and an explicitly animatable
+/// progress arc. A zero fraction produces no foreground path, avoiding the
+/// detached round-cap dot shown by the native accessory gauge.
+private struct AnimatedWorkspaceGauge: View {
+    let fraction: Double
+    let running: Int
+    let started: Int
+    let tint: Color
+
+    private static let lineWidth: CGFloat = 3
+    /// Label size for a 26pt ring: leaves the stroke visible around `0/1`.
+    private static let labelSize: CGFloat = 8
+
+    var body: some View {
+        ZStack {
+            WorkspaceGaugeArc(fraction: 1)
+                .strokeBorder(
+                    Color(nsColor: .quaternaryLabelColor),
+                    style: StrokeStyle(lineWidth: Self.lineWidth, lineCap: .round)
+                )
+
+            WorkspaceGaugeArc(fraction: fraction)
+                .strokeBorder(
+                    tint,
+                    style: StrokeStyle(lineWidth: Self.lineWidth, lineCap: .round)
+                )
+
+            // Fixed size rather than `scaledFont`: the ring diameter does not
+            // follow UI zoom, so a zoom-scaled label would outgrow its face.
+            // Two-digit counts shrink instead of colliding with the stroke.
+            Text("\(running)/\(started)")
+                .font(.system(size: Self.labelSize, weight: .medium))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .padding(Self.lineWidth + 1)
+                .contentTransition(.numericText())
+        }
+    }
+}
+
+/// A 270-degree ring with its opening at the bottom. The progress value is the
+/// shape's animatable data, so SwiftUI interpolates the path on every frame.
+/// Returning an empty path at zero is intentional: stroking a zero-length path
+/// with round caps produces the detached dot this gauge is designed to avoid.
+struct WorkspaceGaugeArc: InsettableShape {
+    var fraction: Double
+    private var insetAmount: CGFloat = 0
+
+    init(fraction: Double) {
+        self.fraction = fraction
+    }
+
+    var animatableData: Double {
+        get { fraction }
+        set { fraction = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let progress = min(1, max(0, fraction))
+        guard progress > 0 else { return Path() }
+
+        let drawingRect = rect.insetBy(dx: insetAmount, dy: insetAmount)
+        guard drawingRect.width > 0, drawingRect.height > 0 else { return Path() }
+
+        let center = CGPoint(x: drawingRect.midX, y: drawingRect.midY)
+        let radius = min(drawingRect.width, drawingRect.height) / 2
+        let start = Angle.degrees(135)
+        let end = Angle.degrees(135 + (270 * progress))
+        var path = Path()
+        path.addArc(
+            center: center,
+            radius: radius,
+            startAngle: start,
+            endAngle: end,
+            clockwise: false
+        )
+        return path
+    }
+
+    func inset(by amount: CGFloat) -> WorkspaceGaugeArc {
+        var copy = self
+        copy.insetAmount += amount
+        return copy
     }
 }
