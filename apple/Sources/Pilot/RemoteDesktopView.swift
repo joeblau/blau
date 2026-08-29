@@ -8,6 +8,8 @@ import SwiftUI
 /// the editor pane's "new tab → fuzzy finder" gesture.
 struct RemoteDesktopView: View {
     @Bindable var store: WorkspaceStore
+    /// App-lifetime session owner. Injectable so tests can supply their own.
+    var sessions: RemoteDesktopSessionManager = .shared
     @State private var showPicker = false
     @State private var discovery = RemoteScreenDiscovery()
 
@@ -41,6 +43,8 @@ struct RemoteDesktopView: View {
             presenting: store.remoteConnectionPendingClose
         ) { connection in
             Button("Remove Connection", role: .destructive) {
+                // Drop the live socket before the row goes; nothing else owns it.
+                sessions.endSession(for: connection.id)
                 store.deleteRemoteConnection(connection)
                 store.remoteConnectionPendingClose = nil
             }
@@ -51,10 +55,20 @@ struct RemoteDesktopView: View {
         .onChange(of: showPicker) {
             if showPicker { discovery.start() } else { discovery.stop() }
         }
+        .onChange(of: store.selectedRemoteConnectionID) {
+            sessions.setActive(store.selectedRemoteConnectionID)
+        }
         .onAppear {
+            sessions.setActive(store.selectedRemoteConnectionID)
             // Entering the section with nothing saved drops straight into the
             // picker so the first thing you see is "which computers can I reach".
             if connections.isEmpty { showPicker = true }
+        }
+        .onDisappear {
+            // Leaving Remote Desktop mode backgrounds every session, including
+            // the one that was visible — nothing is on screen to justify a
+            // stream once this view is gone.
+            sessions.setActive(nil)
         }
     }
 
@@ -103,10 +117,14 @@ struct RemoteDesktopView: View {
     @ViewBuilder
     private func content(connections: [RemoteDesktopConnection]) -> some View {
         if let connection = store.selectedRemoteConnection {
-            RemoteConnectionPane(connection: connection)
-                // Re-create the pane (and its VNC session) when the selected
-                // connection changes so a tab switch rebinds cleanly.
-                .id(connection.id)
+            // `.id` resets the *form* state (typed password, checkboxes) per
+            // connection. It no longer resets the VNC session: that lives in
+            // `sessions` and outlives both this pane and Remote Desktop mode.
+            RemoteConnectionPane(
+                connection: connection,
+                session: sessions.session(for: connection.id)
+            )
+            .id(connection.id)
         } else {
             ContentUnavailableView {
                 Label("No Connection", systemImage: "macbook.and.iphone")
@@ -169,12 +187,14 @@ private struct RemoteTab: View {
 /// handshake completes, and an inline error on failure).
 private struct RemoteConnectionPane: View {
     @Bindable var connection: RemoteDesktopConnection
-    @Environment(\.colorScheme) private var colorScheme
+    /// Owned by `RemoteDesktopSessionManager`, not by this view — it survives
+    /// tab switches and leaving Remote Desktop mode.
+    let session: RemoteDesktopSession
 
-    @State private var session = RemoteConnectionSession()
     @State private var password = ""
     @State private var savePassword = false
     @State private var shareClipboard = false
+    @State private var didTryAutoConnect = false
 
     var body: some View {
         ZStack {
@@ -185,12 +205,8 @@ private struct RemoteConnectionPane: View {
                 connectForm(error: message)
             case .connecting, .connected:
                 RemoteDesktopViewer(
-                    host: connection.host,
-                    port: connection.port,
-                    username: connection.username,
-                    password: password,
-                    isClipboardRedirectionEnabled: shareClipboard,
-                    session: session
+                    session: session,
+                    framebufferGeneration: session.framebufferGeneration
                 )
                 .background(Color.black)
 
@@ -200,17 +216,31 @@ private struct RemoteConnectionPane: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // Auto-connect on tab switch when a password is saved. The pane (and its
-        // `session`) is recreated per connection via `.id(connection.id)`, so this
-        // fires once each time you tab to a machine.
         .onAppear {
             shareClipboard = VNCPreferences.isClipboardRedirectionEnabled(id: connection.id)
             restoreSavedPasswordAndConnect()
         }
+        // The connection is only *recorded* once the server has accepted it, so
+        // a tab that never authenticated does not claim a connection time.
+        .onChange(of: session.status) { _, status in
+            guard status == .connected else { return }
+            connection.lastConnectedAt = Date()
+            _ = connection.modelContext?.saveReporting(operation: "Recording remote desktop connection")
+        }
     }
 
+    /// Auto-connect when a password was saved. A session that is already live
+    /// (the common case when tabbing back) is left exactly as it is — that is
+    /// the whole point of hoisting session ownership out of this view.
     private func restoreSavedPasswordAndConnect() {
-        guard password.isEmpty, case .idle = session.status else { return }
+        guard !didTryAutoConnect else { return }
+        didTryAutoConnect = true
+        // `.failed` is deliberately excluded: a rejected credential must not be
+        // retried on every tab-in, which is the loop this whole change removes.
+        switch session.status {
+        case .idle, .disconnected: break
+        case .connecting, .connected, .failed: return
+        }
         guard let saved = VNCKeychain.load(id: connection.id), !saved.isEmpty else { return }
         password = saved
         savePassword = true
@@ -223,7 +253,7 @@ private struct RemoteConnectionPane: View {
             Text("Connecting to \(connection.displayTitle)…")
                 .foregroundStyle(.white.opacity(0.85))
                 .font(.callout)
-            Button("Cancel") { session.status = .idle }
+            Button("Cancel") { session.disconnect() }
                 .buttonStyle(.bordered)
                 .tint(.white)
         }
@@ -288,16 +318,20 @@ private struct RemoteConnectionPane: View {
         .background(Color(nsColor: .textBackgroundColor))
     }
 
+    /// Start a connection. Deliberately does *not* touch the Keychain: the
+    /// password is only persisted once the server accepts it (and dropped when
+    /// the server rejects it), which is what stops a wrong password from being
+    /// cached and replayed on every tab-in.
     private func connect() {
-        if savePassword, !password.isEmpty {
-            VNCKeychain.save(password, id: connection.id)
-        } else if !savePassword {
-            VNCKeychain.delete(id: connection.id)
-        }
         VNCPreferences.setClipboardRedirectionEnabled(shareClipboard, id: connection.id)
-        connection.lastConnectedAt = Date()
-        _ = connection.modelContext?.saveReporting(operation: "Saving remote desktop connection")
-        session.status = .connecting
+        session.connect(
+            host: connection.host,
+            port: connection.port,
+            username: connection.username,
+            password: password,
+            savePasswordOnSuccess: savePassword,
+            isClipboardRedirectionEnabled: shareClipboard
+        )
     }
 }
 
