@@ -594,7 +594,7 @@ final class UsageStore {
             "Authorization": "Bearer \(session.accessToken)",
             "Accept": "application/json",
         ]
-        let url = URL(string: "https://api.kimi.com/coding/v1/usages")!
+        let url = URL(string: "https://api.kimi.ai/coding/v1/usages")!
         do {
             let root = try await getJSONObject(url: url, headers: headers)
             return .success(Self.parseKimiUsage(root, receivedAt: Date()))

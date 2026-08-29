@@ -378,6 +378,60 @@ struct UsageReportingTests {
         #expect(abs((credits.utilization ?? 0) - 0.2468) < 0.000_001)
     }
 
+    @Test("Kimi.ai dashboard figures map to plan usage and extra usage")
+    func kimiAIDashboardFigures() throws {
+        let usage = UsageStore.parseKimiUsage([
+            "user": [
+                "membership": ["level": "LEVEL_STANDARD"],
+            ],
+            "parallel": ["limit": 30],
+            "usage": [
+                "used": 33.06,
+                "limit": 100,
+            ],
+            "limits": [
+                [
+                    "window": ["duration": 300, "timeUnit": "MINUTE"],
+                    "detail": ["used": 61.45, "limit": 100],
+                ],
+                [
+                    "window": ["duration": 7, "timeUnit": "DAY"],
+                    "detail": ["used": 100, "limit": 100],
+                ],
+            ],
+            "boosterWallet": [
+                "balance": [
+                    "type": "BOOSTER",
+                    "amount": 5_000_000_000,
+                    "amountLeft": 4_321_000_000,
+                ],
+                "monthlyChargeLimitEnabled": true,
+                "monthlyChargeLimit": [
+                    "priceInCents": 5_000,
+                    "currency": "USD",
+                ],
+                "monthlyUsed": [
+                    "priceInCents": 679,
+                    "currency": "USD",
+                ],
+            ],
+        ])
+
+        #expect(usage.planLabel == "Vivace")
+        let total = try #require(usage.windows.first { $0.id == "kimi-summary" })
+        #expect(abs(total.utilization - 0.3306) < 0.000_001)
+        let fiveHour = try #require(usage.windows.first { $0.name == "5h limit" })
+        #expect(abs(fiveHour.utilization - 0.6145) < 0.000_001)
+        let sevenDay = try #require(usage.windows.first { $0.name == "7d limit" })
+        #expect(sevenDay.utilization == 1)
+
+        let credits = try #require(usage.credits)
+        #expect(credits.balance == 43.21)
+        #expect(credits.used == 6.79)
+        #expect(credits.limit == 50)
+        #expect(abs((credits.utilization ?? 0) - 0.1358) < 0.000_001)
+    }
+
     @Test("Kimi treats a disabled monthly cap as unlimited and defaults spend to zero")
     func kimiUnlimitedBoosterWallet() throws {
         let usage = UsageStore.parseKimiUsage([
