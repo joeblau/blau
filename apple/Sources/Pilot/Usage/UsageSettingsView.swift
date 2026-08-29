@@ -18,7 +18,9 @@ struct UsageSettingsView: View {
     private static let claudeDocsURL = URL(string: "https://code.claude.com/docs/en/overview")!
     private static let codexDocsURL = URL(string: "https://developers.openai.com/codex/cli")!
     private static let grokDocsURL = URL(string: "https://docs.x.ai/build/overview")!
-    private static let kimiDocsURL = URL(string: "https://www.kimi.com/code/docs/en/")!
+    private static let kimiDocsURL = URL(
+        string: "https://www.kimi.ai/help/kimi-code/cli-getting-started"
+    )!
 
     var body: some View {
         Form {
@@ -67,7 +69,7 @@ struct UsageSettingsView: View {
                 Text(
                     "When enabled, Cockpit reads Kimi Code's credential file under "
                         + "$KIMI_CODE_HOME (or ~/.kimi-code), with legacy ~/.kimi fallback, "
-                        + "and sends its bearer token only to api.kimi.com/coding/v1/usages."
+                        + "and sends its bearer token only to api.kimi.ai/coding/v1/usages."
                 )
             }
 
