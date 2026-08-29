@@ -126,7 +126,7 @@ enum BrowserAnnotate {
         return nil
     }
 
-    /// Injected at document end on every frame. Guarded so re-injection (SPA
+    /// Injected at document start in the main frame. Guarded so re-injection (SPA
     /// navigations, reloads) is harmless; `window.__pilotAnnotate.setEnabled`
     /// toggles it from Swift.
     static let userScript = """
@@ -140,6 +140,9 @@ enum BrowserAnnotate {
       var bridgeToken = null, selectionBridgeToken = null;
       var fallbackSelectionSequence = 0;
       var lastPointerX = null, lastPointerY = null, pointerInside = false;
+      var pendingRawTarget = null, pendingHover = false;
+      var hoverFrame = 0, hoverTimer = 0, layoutFrame = 0;
+      var lastHighlightedElement = null, lastHighlightKey = null;
 
       var interactiveSelector = [
         'a[href]', 'button', 'input:not([type="hidden"])', 'textarea', 'select', 'summary',
@@ -153,19 +156,28 @@ enum BrowserAnnotate {
       };
 
       function ensureCursorStyle() {
-        if (cursorStyle && cursorStyle.isConnected) return;
-        cursorStyle = document.createElement('style');
-        cursorStyle.setAttribute('data-pilot-annotate-cursor', '');
-        cursorStyle.textContent = 'html.__pilot-lasso-active, html.__pilot-lasso-active body, html.__pilot-lasso-active body * { cursor: crosshair !important; } html.__pilot-lasso-active [data-pilot-annotate-box], html.__pilot-lasso-active [data-pilot-annotate-box] * { cursor: default !important; } html.__pilot-lasso-active [data-pilot-annotate-box] textarea { cursor: text !important; } html.__pilot-lasso-active [data-pilot-annotate-box] button { cursor: pointer !important; }';
-        document.documentElement.appendChild(cursorStyle);
+        var root = document.documentElement;
+        if (!root) return null;
+        if (!cursorStyle) {
+          cursorStyle = document.createElement('style');
+          cursorStyle.setAttribute('data-pilot-annotate-cursor', '');
+          cursorStyle.textContent = 'html.__pilot-lasso-active, html.__pilot-lasso-active body, html.__pilot-lasso-active body * { cursor: crosshair !important; } html.__pilot-lasso-active [data-pilot-annotate-box], html.__pilot-lasso-active [data-pilot-annotate-box] * { cursor: default !important; } html.__pilot-lasso-active [data-pilot-annotate-box] textarea { cursor: text !important; } html.__pilot-lasso-active [data-pilot-annotate-box] button { cursor: pointer !important; }';
+        }
+        if (!cursorStyle.isConnected) root.appendChild(cursorStyle);
+        return cursorStyle;
       }
 
       function ensureHighlight() {
-        if (highlight && highlight.isConnected) return highlight;
-        highlight = document.createElement('div');
-        highlight.setAttribute('data-pilot-annotate-highlight', '');
-        highlight.style.cssText = 'all:initial!important;position:fixed!important;pointer-events:none!important;z-index:2147483646!important;box-sizing:border-box!important;border:2px solid #3b82f6!important;background:rgba(59,130,246,0.12)!important;border-radius:3px!important;display:none!important;';
-        document.documentElement.appendChild(highlight);
+        var root = document.documentElement;
+        if (!root) return null;
+        if (!highlight) {
+          highlight = document.createElement('div');
+          highlight.setAttribute('data-pilot-annotate-highlight', '');
+          highlight.style.cssText = 'all:initial!important;position:fixed!important;pointer-events:none!important;z-index:2147483646!important;box-sizing:border-box!important;border:2px solid #3b82f6!important;background:rgba(59,130,246,0.12)!important;border-radius:3px!important;display:none!important;';
+          lastHighlightedElement = null;
+          lastHighlightKey = null;
+        }
+        if (!highlight.isConnected) root.appendChild(highlight);
         return highlight;
       }
 
@@ -221,6 +233,16 @@ enum BrowserAnnotate {
         var interactive = typeof raw.closest === 'function' ? raw.closest(interactiveSelector) : null;
         var interactiveRect = visibleRect(interactive);
         if (interactiveRect && rectContainsPoint(interactiveRect, x, y)) return interactive;
+
+        // Once a useful container owns the pointer, keep it while traversing
+        // its non-interactive descendants. This avoids flicker between a card,
+        // its labels, and its icons, and skips the expensive ancestor scoring
+        // path for the common case. Interactive descendants still win above.
+        if (hovered && hovered.isConnected &&
+            (hovered === raw || (typeof hovered.contains === 'function' && hovered.contains(raw)))) {
+          var hoveredRect = visibleRect(hovered);
+          if (hoveredRect && rectContainsPoint(hoveredRect, x, y)) return hovered;
+        }
 
         var viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
         var best = null, bestScore = -Infinity;
@@ -309,24 +331,37 @@ enum BrowserAnnotate {
         var r = el.getBoundingClientRect();
         ensureCursorStyle();
         var h = ensureHighlight();
+        if (!h || !Number.isFinite(r.left) || !Number.isFinite(r.top) ||
+            !Number.isFinite(r.width) || !Number.isFinite(r.height) ||
+            r.width < 1 || r.height < 1) { hideHighlight(); return; }
+        var isSelected = selected === el;
+        var key = [r.left, r.top, r.width, r.height, isSelected ? 1 : 0].join('|');
+        if (lastHighlightedElement === el && lastHighlightKey === key &&
+            h.style.getPropertyValue('display') === 'block') return;
         h.style.setProperty('display', 'block', 'important');
         h.style.setProperty('left', r.left + 'px', 'important');
         h.style.setProperty('top', r.top + 'px', 'important');
         h.style.setProperty('width', r.width + 'px', 'important');
         h.style.setProperty('height', r.height + 'px', 'important');
-        h.style.setProperty('border-color', selected === el ? '#0a84ff' : '#3b82f6', 'important');
-        h.style.setProperty('background', selected === el ? 'rgba(10,132,255,0.18)' : 'rgba(59,130,246,0.12)', 'important');
-        h.style.setProperty('box-shadow', selected === el ? '0 0 0 1px rgba(255,255,255,0.8)' : 'none', 'important');
+        h.style.setProperty('border-color', isSelected ? '#0a84ff' : '#3b82f6', 'important');
+        h.style.setProperty('background', isSelected ? 'rgba(10,132,255,0.18)' : 'rgba(59,130,246,0.12)', 'important');
+        h.style.setProperty('box-shadow', isSelected ? '0 0 0 1px rgba(255,255,255,0.8)' : 'none', 'important');
+        lastHighlightedElement = el;
+        lastHighlightKey = key;
       }
 
       function hideHighlight() {
         if (highlight) highlight.style.setProperty('display', 'none', 'important');
+        lastHighlightedElement = null;
+        lastHighlightKey = null;
       }
 
-      function refreshHoverAtPointer() {
+      function resolveHoverAtPointer(raw) {
         if (!enabled || selected || sending || !pointerInside ||
             !Number.isFinite(lastPointerX) || !Number.isFinite(lastPointerY)) return;
-        var raw = document.elementFromPoint(lastPointerX, lastPointerY);
+        if (!raw || !raw.isConnected || isPilotUI(raw)) {
+          raw = document.elementFromPoint(lastPointerX, lastPointerY);
+        }
         var el = smartElement(raw, lastPointerX, lastPointerY);
         if (!el) {
           hovered = null;
@@ -337,17 +372,57 @@ enum BrowserAnnotate {
         positionHighlight(el);
       }
 
+      function flushPendingHover() {
+        if (!pendingHover) return;
+        var raw = pendingRawTarget;
+        pendingHover = false;
+        pendingRawTarget = null;
+        resolveHoverAtPointer(raw);
+      }
+
+      function cancelScheduledHover() {
+        if (hoverFrame) window.cancelAnimationFrame(hoverFrame);
+        if (hoverTimer) window.clearTimeout(hoverTimer);
+        hoverFrame = 0;
+        hoverTimer = 0;
+        pendingHover = false;
+        pendingRawTarget = null;
+      }
+
+      // Resolve the first movement immediately, then collapse every additional
+      // event in the same display frame to the latest pointer target. Complex
+      // pages commonly emit pointermove + mousemove + mouseover together; doing
+      // ancestor style/layout work for all three makes the lasso trail badly.
+      function scheduleHover(raw) {
+        pendingRawTarget = raw || pendingRawTarget;
+        pendingHover = true;
+        if (hoverFrame || hoverTimer) return;
+        flushPendingHover();
+        hoverFrame = window.requestAnimationFrame(function () {
+          hoverFrame = 0;
+          if (hoverTimer) window.clearTimeout(hoverTimer);
+          hoverTimer = 0;
+          flushPendingHover();
+        });
+        // WebKit may pause animation frames while a view is being attached,
+        // uncovered, or moved between panes. Never let the latest target wait
+        // indefinitely for a frame that the web process has throttled.
+        hoverTimer = window.setTimeout(function () {
+          hoverTimer = 0;
+          if (hoverFrame) window.cancelAnimationFrame(hoverFrame);
+          hoverFrame = 0;
+          flushPendingHover();
+        }, 16);
+      }
+
+      function refreshHoverAtPointer() {
+        resolveHoverAtPointer(null);
+      }
+
       function onMove(e) {
         rememberPointer(e);
         if (!enabled || selected || sending) return;
-        var el = eventElement(e);
-        if (!el) {
-          hovered = null;
-          hideHighlight();
-          return;
-        }
-        hovered = el;
-        positionHighlight(el);
+        scheduleHover(rawEventElement(e));
       }
 
       function onPointerLeave(e) {
@@ -355,6 +430,7 @@ enum BrowserAnnotate {
         // position when the pointer actually exits the document/WebView.
         if (e && (e.relatedTarget || e.toElement)) return;
         pointerInside = false;
+        cancelScheduledHover();
         if (!enabled || selected || sending) return;
         hovered = null;
         hideHighlight();
@@ -363,15 +439,19 @@ enum BrowserAnnotate {
       // Keep the highlight glued to its element while the page scrolls; the box
       // is position:fixed so it stays put on its own.
       function onScroll() {
-        if (!enabled) return;
-        var target = selected || hovered;
-        if (target && target.isConnected) {
-          positionHighlight(target);
-        } else {
-          if (selected) clearSelection();
-          hovered = null;
-          hideHighlight();
-        }
+        if (!enabled || layoutFrame) return;
+        layoutFrame = window.requestAnimationFrame(function () {
+          layoutFrame = 0;
+          if (!enabled) return;
+          var target = selected || hovered;
+          if (target && target.isConnected) {
+            positionHighlight(target);
+          } else {
+            if (selected) clearSelection();
+            hovered = null;
+            hideHighlight();
+          }
+        });
       }
 
       function blockPageEvent(e) {
@@ -383,6 +463,7 @@ enum BrowserAnnotate {
         if (!enabled || (box && box.contains(e.target))) return;
         var target = eventElement(e);
         blockPageEvent(e);
+        cancelScheduledHover();
         if (sending) return;
         if (target) showBox(target);
       }
@@ -405,6 +486,7 @@ enum BrowserAnnotate {
         sendingID = null;
         selectionBridgeToken = null;
         hideHighlight();
+        if (enabled) refreshHoverAtPointer();
       }
 
       function showBox(el) {
@@ -463,7 +545,9 @@ enum BrowserAnnotate {
         send.style.cssText = 'display:none;background:#0a84ff;color:#fff;border:none;border-radius:7px;padding:6px 14px;font:600 12px -apple-system,system-ui;cursor:pointer;transition:background 0.12s;';
         footer.appendChild(send);
         box.appendChild(footer);
-        document.documentElement.appendChild(box);
+        var root = document.documentElement;
+        if (!root) { clearSelection(); return; }
+        root.appendChild(box);
         ta.focus();
 
         ta.addEventListener('keydown', function (ev) {
@@ -504,9 +588,21 @@ enum BrowserAnnotate {
         enabled = !!v;
         bridgeToken = enabled && typeof token === 'string' ? token : null;
         ensureCursorStyle();
-        document.documentElement.classList.toggle('__pilot-lasso-active', enabled);
-        if (!enabled) clearSelection();
+        if (document.documentElement) {
+          document.documentElement.classList.toggle('__pilot-lasso-active', enabled);
+        }
+        if (!enabled) {
+          cancelScheduledHover();
+          clearSelection();
+        }
         else refreshHoverAtPointer();
+      }
+
+      function syncDocumentState() {
+        if (!document.documentElement) return;
+        ensureCursorStyle();
+        document.documentElement.classList.toggle('__pilot-lasso-active', enabled);
+        if (enabled) refreshHoverAtPointer();
       }
 
       function finishSend(completedSelectionID) {
@@ -523,13 +619,21 @@ enum BrowserAnnotate {
         hideHighlight();
       }
 
-      document.addEventListener('mousemove', onMove, true);
-      document.addEventListener('mouseover', onMove, true);
-      document.addEventListener('mouseout', onPointerLeave, true);
-      document.addEventListener('pointerdown', onPointerDown, true);
-      document.addEventListener('click', onClick, true);
-      document.addEventListener('scroll', onScroll, true);
+      // Install on `window` at document start, before page scripts can register
+      // capture handlers that stop propagation before events reach `document`.
+      // Mouse listeners remain as a WebKit compatibility fallback; the frame
+      // scheduler above coalesces duplicate pointer/mouse delivery.
+      window.addEventListener('pointermove', onMove, true);
+      window.addEventListener('mousemove', onMove, true);
+      window.addEventListener('pointerover', onMove, true);
+      window.addEventListener('mouseover', onMove, true);
+      window.addEventListener('pointerout', onPointerLeave, true);
+      window.addEventListener('mouseout', onPointerLeave, true);
+      window.addEventListener('pointerdown', onPointerDown, true);
+      window.addEventListener('click', onClick, true);
+      window.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll, true);
+      document.addEventListener('DOMContentLoaded', syncDocumentState, true);
       window.__pilotAnnotate = { setEnabled: setEnabled, finishSend: finishSend };
       setEnabled(initiallyEnabled, null);
     })();

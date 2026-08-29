@@ -1026,7 +1026,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         config.userContentController.addUserScript(
             WKUserScript(
                 source: BrowserAnnotate.userScript,
-                injectionTime: .atDocumentEnd,
+                injectionTime: .atDocumentStart,
                 forMainFrameOnly: true,
                 in: BrowserAnnotate.contentWorld
             )
@@ -1341,6 +1341,8 @@ struct WebViewRepresentable: NSViewRepresentable {
                 state.urlText = url.absoluteString
             }
             updateNavState(webView)
+            // Arm before slow or perpetual subresources can delay `didFinish`.
+            if state.annotateMode { setAnnotateMode(true, in: webView) }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -1350,9 +1352,8 @@ struct WebViewRepresentable: NSViewRepresentable {
                 state.pendingURL = nil
             }
             updateNavState(webView)
-            // The user script re-injects (disabled) on each load — re-assert
-            // annotate mode so it survives navigation.
-            if state.annotateMode {
+            // Retry without rotating a grant captured by an early selection.
+            if state.annotateMode, annotateGrant == nil {
                 setAnnotateMode(true, in: webView)
             }
         }

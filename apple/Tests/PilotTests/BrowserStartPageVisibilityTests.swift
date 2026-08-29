@@ -356,7 +356,7 @@ struct BrowserLassoTests {
         )
         configuration.userContentController.addUserScript(WKUserScript(
             source: BrowserAnnotate.userScript,
-            injectionTime: .atDocumentEnd,
+            injectionTime: .atDocumentStart,
             forMainFrameOnly: true,
             in: BrowserAnnotate.contentWorld
         ))
@@ -503,7 +503,7 @@ struct BrowserLassoTests {
         )
         configuration.userContentController.addUserScript(WKUserScript(
             source: BrowserAnnotate.userScript,
-            injectionTime: .atDocumentEnd,
+            injectionTime: .atDocumentStart,
             forMainFrameOnly: true,
             in: BrowserAnnotate.contentWorld
         ))
@@ -551,27 +551,30 @@ struct BrowserLassoTests {
         // A deeply nested SVG leaf still represents the card. Conversely, an
         // interactive control is useful on its own and must not be promoted to
         // an ancestor DIV.
-        let nestedSVG = try await evaluateString(in: webView, script: """
+        _ = try await evaluateString(in: webView, script: """
         var glyph = document.getElementById('glyph');
         glyph.dispatchEvent(new MouseEvent('mousemove', {bubbles:true, composed:true, clientX:120, clientY:50}));
-        var h = document.querySelector('[data-pilot-annotate-highlight]');
-        [h.style.left,h.style.top,h.style.width,h.style.height].join('|');
+        'moved';
         """)
-        let interactiveChild = try await evaluateString(in: webView, script: """
+        try await Task.sleep(for: .milliseconds(40))
+        let nestedSVG = try await highlightGeometry(in: webView)
+        _ = try await evaluateString(in: webView, script: """
         var buttonLabel = document.getElementById('button-label');
         buttonLabel.dispatchEvent(new MouseEvent('mousemove', {bubbles:true, composed:true, clientX:260, clientY:50}));
-        var h = document.querySelector('[data-pilot-annotate-highlight]');
-        [h.style.left,h.style.top,h.style.width,h.style.height].join('|');
+        'moved';
         """)
+        try await Task.sleep(for: .milliseconds(40))
+        let interactiveChild = try await highlightGeometry(in: webView)
 
         // The full-viewport DIV is a layout shell, not a useful annotation
         // target. With no better bounded container, retain the precise leaf.
-        let boundedLeaf = try await evaluateString(in: webView, script: """
+        _ = try await evaluateString(in: webView, script: """
         var bare = document.getElementById('bare');
         bare.dispatchEvent(new MouseEvent('mousemove', {bubbles:true, composed:true, clientX:270, clientY:160}));
-        var h = document.querySelector('[data-pilot-annotate-highlight]');
-        [h.style.left,h.style.top,h.style.width,h.style.height].join('|');
+        'moved';
         """)
+        try await Task.sleep(for: .milliseconds(40))
+        let boundedLeaf = try await highlightGeometry(in: webView)
 
         // Pointer-down must lock the same smart target that hover advertised.
         let selectedCard = try await evaluateString(in: webView, script: """
@@ -597,6 +600,139 @@ struct BrowserLassoTests {
         #expect(messageSink.selectors.last == "#card")
     }
 
+    @Test
+    @MainActor
+    func injectedLassoWinsCaptureAgainstPageEventBlockers() async throws {
+        let configuration = WKWebViewConfiguration()
+        let messageSink = BrowserLassoMessageSink()
+        configuration.userContentController.add(
+            messageSink,
+            contentWorld: BrowserAnnotate.contentWorld,
+            name: BrowserAnnotate.messageName
+        )
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: BrowserAnnotate.userScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true,
+            in: BrowserAnnotate.contentWorld
+        ))
+        let webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 400, height: 300),
+            configuration: configuration
+        )
+        let loader = BrowserLassoTestLoader()
+        webView.navigationDelegate = loader
+        let loaded = await loader.load(
+            """
+            <!doctype html><html><head><style>
+            html,body { margin:0; width:400px; height:300px; }
+            #action { position:absolute; left:40px; top:30px; width:140px; height:48px; }
+            </style><script>
+            window.pagePointerDowns = 0;
+            window.addEventListener('mousemove', function (event) {
+              event.stopImmediatePropagation();
+            }, true);
+            window.addEventListener('pointerdown', function (event) {
+              window.pagePointerDowns += 1;
+              event.stopImmediatePropagation();
+            }, true);
+            </script></head><body><button id="action">Blocked page control</button></body></html>
+            """,
+            in: webView
+        )
+        #expect(loaded)
+        guard loaded else { return }
+
+        _ = try await evaluateIsolated(
+            in: webView,
+            script: BrowserAnnotate.setEnabledScript(true, token: "capture-grant")
+        )
+        let result = try await evaluateString(in: webView, script: """
+        var action = document.getElementById('action');
+        action.dispatchEvent(new MouseEvent('mousemove', {bubbles:true, composed:true, clientX:80, clientY:50}));
+        action.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, composed:true, clientX:80, clientY:50}));
+        var h = document.querySelector('[data-pilot-annotate-highlight]');
+        JSON.stringify({display:h ? h.style.display : 'missing', box:!!document.querySelector('[data-pilot-annotate-box]'), pagePointerDowns:window.pagePointerDowns});
+        """)
+
+        #expect(result.contains("\"display\":\"block\""))
+        #expect(result.contains("\"box\":true"))
+        #expect(result.contains("\"pagePointerDowns\":0"))
+    }
+
+    @Test
+    @MainActor
+    func injectedLassoCoalescesPointerStormsToTheLatestTarget() async throws {
+        let configuration = WKWebViewConfiguration()
+        let messageSink = BrowserLassoMessageSink()
+        configuration.userContentController.add(
+            messageSink,
+            contentWorld: BrowserAnnotate.contentWorld,
+            name: BrowserAnnotate.messageName
+        )
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: BrowserAnnotate.userScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true,
+            in: BrowserAnnotate.contentWorld
+        ))
+        let webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 400, height: 300),
+            configuration: configuration
+        )
+        let loader = BrowserLassoTestLoader()
+        webView.navigationDelegate = loader
+        let loaded = await loader.load(
+            """
+            <!doctype html><html><head><style>
+            html,body { margin:0; width:400px; height:300px; }
+            #a,#b { position:absolute; top:20px; width:100px; height:50px; }
+            #a { left:10px; } #b { left:200px; }
+            </style></head><body><button id="a">A</button><button id="b">B</button></body></html>
+            """,
+            in: webView
+        )
+        #expect(loaded)
+        guard loaded else { return }
+
+        _ = try await evaluateIsolated(
+            in: webView,
+            script: BrowserAnnotate.setEnabledScript(true, token: "storm-grant")
+        )
+        _ = try await evaluateIsolated(
+            in: webView,
+            script: """
+            window.__pilotOriginalGetComputedStyle = window.getComputedStyle;
+            window.__pilotStyleReads = 0;
+            window.getComputedStyle = function () {
+              window.__pilotStyleReads += 1;
+              return window.__pilotOriginalGetComputedStyle.apply(window, arguments);
+            };
+            'installed';
+            """
+        )
+        _ = try await evaluateString(in: webView, script: """
+        var a = document.getElementById('a');
+        var b = document.getElementById('b');
+        for (var i = 0; i < 200; i += 1) {
+          var target = i % 2 === 0 ? a : b;
+          var x = i % 2 === 0 ? 20 : 220;
+          target.dispatchEvent(new MouseEvent('mousemove', {bubbles:true, composed:true, clientX:x, clientY:30}));
+        }
+        'dispatched';
+        """)
+        try await Task.sleep(for: .milliseconds(50))
+
+        let styleReads = try await evaluateIsolatedInt(
+            in: webView,
+            script: "window.__pilotStyleReads"
+        )
+        let finalGeometry = try await highlightGeometry(in: webView)
+
+        #expect(styleReads <= 4)
+        #expect(finalGeometry == "200px|20px|100px|50px")
+    }
+
     @MainActor
     private func evaluateString(in webView: WKWebView, script: String) async throws -> String {
         try await webView.evaluateJavaScript(script) as? String ?? ""
@@ -613,6 +749,24 @@ struct BrowserLassoTests {
                 switch result {
                 case .success:
                     continuation.resume(returning: ())
+                case let .failure(error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func evaluateIsolatedInt(in webView: WKWebView, script: String) async throws -> Int {
+        try await withCheckedThrowingContinuation { continuation in
+            webView.evaluateJavaScript(
+                script,
+                in: nil,
+                in: BrowserAnnotate.contentWorld
+            ) { result in
+                switch result {
+                case .success(let value):
+                    continuation.resume(returning: (value as? NSNumber)?.intValue ?? 0)
                 case let .failure(error):
                     continuation.resume(throwing: error)
                 }
