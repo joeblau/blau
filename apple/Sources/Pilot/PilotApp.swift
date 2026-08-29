@@ -214,6 +214,12 @@ struct PilotApp: App {
     @State private var plotterPairingRequest: FrameLinkPairingRequest?
     @State private var remoteInkModel = RemoteInkModel()
     @State private var recordingTargetPaneID: UUID?
+    @State private var mainWindowID: CGWindowID?
+    @State private var extensionWindowID: CGWindowID?
+    /// `NSApp.keyWindow` is nil while Cockpit is in the background. Retain the
+    /// last active Cockpit surface so Walkie still targets the window the user
+    /// most recently worked in instead of falling back to Main.
+    @State private var lastRemoteInputSurface: WorkspacePaneSurface = .main
     /// True while a Copilot peer is currently push-to-talking. Flipped
     /// from `.voiceRecord(.start | .stop)` messages so the Mac UI can
     /// show a "listening" hint even though the audio + transcription
@@ -627,9 +633,15 @@ struct PilotApp: App {
                 }
                 .environment(secureIdentity)
                 .background {
-                    PilotMainWindowReader { windowID in
-                        screenMirror.setMainWindowID(windowID)
-                    }
+                    PilotWindowReader(
+                        onWindowChange: { windowID in
+                            mainWindowID = windowID
+                            screenMirror.setMainWindowID(windowID)
+                        },
+                        onWindowActivate: {
+                            lastRemoteInputSurface = .main
+                        }
+                    )
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .pilotSendIssuePrompt)) { note in
                     // Issues inspector / Browser Annotate → paste a prompt into
@@ -642,7 +654,7 @@ struct PilotApp: App {
                     if BrowserAnnotate.hasCapturedTarget(in: note.userInfo) {
                         terminal = terminalView(for: BrowserAnnotate.targetPaneID(in: note.userInfo))
                     } else {
-                        terminal = activeTerminalView
+                        terminal = activeTerminalView()
                     }
                     guard let terminal else {
                         // No terminal to receive it — beep rather than silently
@@ -749,6 +761,19 @@ struct PilotApp: App {
             ExtensionWindowView(store: store, controller: extensionWorkspaceController)
                 .environment(\.uiZoom, uiZoom)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+                .background {
+                    PilotWindowReader(
+                        onWindowChange: { windowID in
+                            extensionWindowID = windowID
+                            if windowID == nil, lastRemoteInputSurface == .extension {
+                                lastRemoteInputSurface = .main
+                            }
+                        },
+                        onWindowActivate: {
+                            lastRemoteInputSurface = .extension
+                        }
+                    )
+                }
         }
         .modelContainer(modelContainer)
         .defaultSize(width: 820, height: 760)
@@ -771,10 +796,55 @@ struct PilotApp: App {
         .windowResizability(.contentMinSize)
     }
 
-    private func activeTerminalPane(in workspaceID: UUID?) -> Pane? {
+    private func remoteInputSurface() -> WorkspacePaneSurface {
+        // A sheet or Settings can be key while its parent workspace window is
+        // still AppKit's main window, so consult both while Cockpit is active.
+        // Once the phone takes focus, rely on activation events remembered by
+        // `PilotWindowReader`; AppKit may no longer expose a key window.
+        var activeWindows = [NSApp.keyWindow].compactMap { $0 }
+        if NSApp.isActive, let mainWindow = NSApp.mainWindow {
+            activeWindows.append(mainWindow)
+        }
+        for window in activeWindows {
+            let windowID = CGWindowID(window.windowNumber)
+            if let surface = PilotRemoteInputRoutingPolicy.surface(
+                activeWindowID: windowID,
+                mainWindowID: mainWindowID,
+                extensionWindowID: extensionWindowID
+            ) {
+                lastRemoteInputSurface = surface
+                return surface
+            }
+        }
+        return lastRemoteInputSurface
+    }
+
+    private func activeTerminalPane(
+        in workspaceID: UUID?,
+        on surface: WorkspacePaneSurface
+    ) -> Pane? {
         guard let workspaceID,
-              let workspace = store.workspaces.first(where: { $0.id == workspaceID }) else { return nil }
-        return workspace.frontmostTerminalPane
+              let mainWorkspace = store.workspaces.first(where: { $0.id == workspaceID }) else {
+            return nil
+        }
+
+        var extensionWorkspace: Workspace?
+        if surface == .extension {
+            if extensionWorkspaceController.selectedSourceID != workspaceID
+                || extensionWorkspaceController.workspace(forSourceID: workspaceID) == nil {
+                // Keep Extendo's companion selection in lockstep before capturing
+                // the target. Its SwiftUI `.task(id:)` would otherwise update one
+                // run-loop later and speech could land in the previous project.
+                extensionWorkspaceController.synchronize(with: mainWorkspace)
+            }
+            extensionWorkspace = extensionWorkspaceController.workspace(forSourceID: workspaceID)
+        }
+
+        return PilotRemoteInputRoutingPolicy.terminalPane(
+            on: surface,
+            mainWorkspace: mainWorkspace,
+            extensionWorkspace: extensionWorkspace
+        )
     }
 
     private func terminalView(for paneID: UUID?) -> GhosttyMetalView? {
@@ -782,8 +852,21 @@ struct PilotApp: App {
         return GhosttyMetalView.view(for: paneID)
     }
 
-    private var activeTerminalView: GhosttyMetalView? {
-        terminalView(for: activeTerminalPane(in: store.selectedWorkspaceID)?.id)
+    private func activeTerminalView() -> GhosttyMetalView? {
+        let surface = remoteInputSurface()
+        return terminalView(for: activeTerminalPane(
+            in: store.selectedWorkspaceID,
+            on: surface
+        )?.id)
+    }
+
+    private func selectRemoteWorkspace(_ workspaceID: UUID, on surface: WorkspacePaneSurface) {
+        store.selectWorkspace(workspaceID)
+        guard let terminalPane = activeTerminalPane(in: workspaceID, on: surface) else { return }
+        terminalPane.workspace?.selectedPaneID = terminalPane.id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            _ = GhosttyMetalView.focus(paneID: terminalPane.id)
+        }
     }
 
     private var selectedTerminalView: GhosttyMetalView? {
@@ -860,15 +943,9 @@ struct PilotApp: App {
         syncService.onReceive = { (message: SyncMessage) in
             switch message {
             case .selectWorkspace(let sel):
-                store.selectWorkspace(sel.workspaceID)
-                // Ensure the workspace's terminal is selected and focused
-                if let workspace = store.workspaces.first(where: { $0.id == sel.workspaceID }),
-                   let terminalPane = workspace.frontmostTerminalPane {
-                    workspace.selectedPaneID = terminalPane.id
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        _ = GhosttyMetalView.focus(paneID: terminalPane.id)
-                    }
-                }
+                // Workspace selection follows the active Cockpit window. This is
+                // also the setup path immediately before a Walkie recording.
+                selectRemoteWorkspace(sel.workspaceID, on: remoteInputSurface())
             case .selectTab(let sel):
                 // Copilot tab selector picked a pane: focus that workspace and
                 // make the chosen pane its active tab.
@@ -897,11 +974,18 @@ struct PilotApp: App {
                 // text when the iPhone sends `.transcribedSpeech`.
                 switch command.control {
                 case .start:
+                    let surface = remoteInputSurface()
                     let targetWorkspaceID = command.workspaceID ?? store.selectedWorkspaceID
                     if let targetWorkspaceID {
                         store.selectWorkspace(targetWorkspaceID)
                     }
-                    recordingTargetPaneID = activeTerminalPane(in: targetWorkspaceID)?.id
+                    // Capture the concrete pane at hold-start. Window/pane focus
+                    // may change while Whisper finishes, but the utterance still
+                    // belongs to the place where recording began.
+                    recordingTargetPaneID = activeTerminalPane(
+                        in: targetWorkspaceID,
+                        on: surface
+                    )?.id
                     isPeerRecording = true
                 case .stop:
                     isPeerRecording = false
@@ -916,14 +1000,22 @@ struct PilotApp: App {
                 // the current active terminal of the workspace whose
                 // button was held (or the workspace selected when the
                 // message arrives, in case Pilot was launched mid-hold).
+                let fallbackSurface = remoteInputSurface()
                 let targetPaneID = recordingTargetPaneID
-                    ?? activeTerminalPane(in: speech.workspaceID ?? store.selectedWorkspaceID)?.id
+                    ?? activeTerminalPane(
+                        in: speech.workspaceID ?? store.selectedWorkspaceID,
+                        on: fallbackSurface
+                    )?.id
                 recordingTargetPaneID = nil
-                terminalView(for: targetPaneID)?.pasteText(trimmed)
+                guard let terminal = terminalView(for: targetPaneID) else {
+                    NSSound.beep()
+                    return
+                }
+                terminal.pasteText(trimmed)
             case .terminalInput(let input):
                 switch input {
                 case .enter:
-                    activeTerminalView?.sendEnter()
+                    activeTerminalView()?.sendEnter()
                 }
             case .deviceKey(let announce):
                 // Auto-exchange device keys with Copilot (issue #51).

@@ -78,6 +78,65 @@ struct ExtensionWindowSyncTests {
         #expect(PilotWindowLaunchPolicy.requiredCompanion(for: PilotWindowID.main) == nil)
     }
 
+    @Test("Remote input follows the active Cockpit window")
+    func remoteInputWindowRouting() {
+        let mainWindowID: CGWindowID = 41
+        let extensionWindowID: CGWindowID = 82
+
+        #expect(PilotRemoteInputRoutingPolicy.surface(
+            activeWindowID: mainWindowID,
+            mainWindowID: mainWindowID,
+            extensionWindowID: extensionWindowID
+        ) == .main)
+        #expect(PilotRemoteInputRoutingPolicy.surface(
+            activeWindowID: extensionWindowID,
+            mainWindowID: mainWindowID,
+            extensionWindowID: extensionWindowID
+        ) == .extension)
+        #expect(PilotRemoteInputRoutingPolicy.surface(
+            activeWindowID: 123,
+            mainWindowID: mainWindowID,
+            extensionWindowID: extensionWindowID
+        ) == nil)
+        #expect(PilotRemoteInputRoutingPolicy.surface(
+            activeWindowID: nil,
+            mainWindowID: mainWindowID,
+            extensionWindowID: extensionWindowID
+        ) == nil)
+    }
+
+    @Test("Remote input selects the active window's selected terminal pane")
+    func remoteInputPaneRouting() throws {
+        let mainWorkspace = Workspace(name: "Main")
+        let mainTerminal = try #require(mainWorkspace.frontmostTerminalPane)
+
+        let extensionWorkspace = Workspace(name: "Extendo")
+        let previousExtensionTerminal = try #require(extensionWorkspace.frontmostTerminalPane)
+        let selectedExtensionTerminal = extensionWorkspace.addPane(kind: .terminal, side: .right)
+        // Model a selection change that reached the pane model before AppKit's
+        // first-responder callback updated the remembered terminal.
+        extensionWorkspace.frontmostTerminalPaneID = previousExtensionTerminal.id
+        extensionWorkspace.selectedPaneID = selectedExtensionTerminal.id
+
+        #expect(PilotRemoteInputRoutingPolicy.terminalPane(
+            on: .main,
+            mainWorkspace: mainWorkspace,
+            extensionWorkspace: extensionWorkspace
+        )?.id == mainTerminal.id)
+        #expect(PilotRemoteInputRoutingPolicy.terminalPane(
+            on: .extension,
+            mainWorkspace: mainWorkspace,
+            extensionWorkspace: extensionWorkspace
+        )?.id == selectedExtensionTerminal.id)
+        // Never cross-fall back into Main when Extendo is active but has no
+        // corresponding workspace/terminal surface.
+        #expect(PilotRemoteInputRoutingPolicy.terminalPane(
+            on: .extension,
+            mainWorkspace: mainWorkspace,
+            extensionWorkspace: nil
+        ) == nil)
+    }
+
     @Test("Main workspace selection is immediately visible to extension")
     func mainSelectionDrivesExtension() throws {
         let defaults = DefaultsSnapshot()

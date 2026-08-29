@@ -42,27 +42,81 @@ enum PilotWindowLaunchPolicy {
     }
 }
 
-/// Reports the concrete AppKit window that owns the main Pilot surface. The
-/// screen mirror uses its window number (the same ID ScreenCaptureKit exposes)
-/// so a larger extension window can never become the mirrored target.
+/// Resolves remote terminal input without baking Main-window ownership into the
+/// transport protocol. Walkie knows the canonical project ID, while Cockpit is
+/// the only process that knows which local window and pane are active.
 @MainActor
-struct PilotMainWindowReader: NSViewRepresentable {
+enum PilotRemoteInputRoutingPolicy {
+    static func surface(
+        activeWindowID: CGWindowID?,
+        mainWindowID: CGWindowID?,
+        extensionWindowID: CGWindowID?
+    ) -> WorkspacePaneSurface? {
+        guard let activeWindowID else { return nil }
+        if activeWindowID == extensionWindowID { return .extension }
+        if activeWindowID == mainWindowID { return .main }
+        return nil
+    }
+
+    static func terminalPane(
+        on surface: WorkspacePaneSurface,
+        mainWorkspace: Workspace?,
+        extensionWorkspace: Workspace?
+    ) -> Pane? {
+        let workspace = surface == .main ? mainWorkspace : extensionWorkspace
+        guard let workspace else { return nil }
+
+        // Prefer the visibly selected terminal. `frontmostTerminalPane` remains
+        // the intentional fallback when a browser/editor is selected because
+        // remote speech is a voice-to-terminal feature.
+        if let selectedPane = workspace.selectedPane,
+           selectedPane.kind == .terminal,
+           !selectedPane.isCollapsed {
+            return selectedPane
+        }
+        return workspace.frontmostTerminalPane
+    }
+}
+
+/// Reports the concrete AppKit window that owns a Pilot surface. Main uses the
+/// ID to pin screen mirroring; both Main and Extendo use it to route remote
+/// keyboard input to whichever Cockpit window was active most recently.
+@MainActor
+struct PilotWindowReader: NSViewRepresentable {
     var onWindowChange: @MainActor (CGWindowID?) -> Void
+    var onWindowActivate: @MainActor () -> Void
+
+    init(
+        onWindowChange: @escaping @MainActor (CGWindowID?) -> Void,
+        onWindowActivate: @escaping @MainActor () -> Void = {}
+    ) {
+        self.onWindowChange = onWindowChange
+        self.onWindowActivate = onWindowActivate
+    }
 
     func makeNSView(context: Context) -> WindowReaderView {
-        WindowReaderView(onWindowChange: onWindowChange)
+        WindowReaderView(
+            onWindowChange: onWindowChange,
+            onWindowActivate: onWindowActivate
+        )
     }
 
     func updateNSView(_ nsView: WindowReaderView, context: Context) {
         nsView.onWindowChange = onWindowChange
+        nsView.onWindowActivate = onWindowActivate
     }
 
     @MainActor
     final class WindowReaderView: NSView {
         var onWindowChange: @MainActor (CGWindowID?) -> Void
+        var onWindowActivate: @MainActor () -> Void
 
-        init(onWindowChange: @escaping @MainActor (CGWindowID?) -> Void) {
+        init(
+            onWindowChange: @escaping @MainActor (CGWindowID?) -> Void,
+            onWindowActivate: @escaping @MainActor () -> Void
+        ) {
             self.onWindowChange = onWindowChange
+            self.onWindowActivate = onWindowActivate
             super.init(frame: .zero)
         }
 
@@ -72,7 +126,26 @@ struct PilotMainWindowReader: NSViewRepresentable {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSWindow.didBecomeKeyNotification,
+                object: nil
+            )
             onWindowChange(window.map { CGWindowID($0.windowNumber) })
+            guard let window else { return }
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(windowDidBecomeKey(_:)),
+                name: NSWindow.didBecomeKeyNotification,
+                object: window
+            )
+            if window.isKeyWindow {
+                onWindowActivate()
+            }
+        }
+
+        @objc private func windowDidBecomeKey(_: Notification) {
+            onWindowActivate()
         }
     }
 }
