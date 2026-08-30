@@ -224,6 +224,101 @@ struct UsageReportingTests {
         #expect(expired.isExpired(at: now))
     }
 
+    // MARK: - Kimi credential discovery
+
+    /// Writes `credentials/<name>` under a throwaway root, oldest first so the
+    /// modification order the discovery sort relies on is unambiguous.
+    private func makeKimiRoot(
+        _ files: [(name: String, token: String?)]
+    ) throws -> URL {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("kimi-\(UUID().uuidString)", isDirectory: true)
+        let directory = root.appendingPathComponent("credentials", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        for (offset, file) in files.enumerated() {
+            let url = directory.appendingPathComponent(file.name)
+            let body = """
+            {
+              "access_token": "\(file.token ?? "")",
+              "refresh_token": "kimi-refresh-token",
+              "expires_at": \(file.token == nil ? 0 : 1_800_000_060),
+              "token_type": "Bearer"
+            }
+            """
+            try #require(body.data(using: .utf8)).write(to: url)
+            try FileManager.default.setAttributes(
+                [.modificationDate: Date(timeIntervalSince1970: 1_700_000_000
+                    + Double(offset) * 60)],
+                ofItemAtPath: url.path
+            )
+        }
+        return root
+    }
+
+    @Test("An emptied pre-migration file does not hide the environment credential")
+    func kimiEnvironmentCredentialWinsOverBlankedFile() throws {
+        // The exact layout Kimi Code leaves behind after migrating: the fixed
+        // name is kept but blanked, and the live token moves to a per-
+        // environment file.
+        let root = try makeKimiRoot([
+            (name: "kimi-code.json", token: nil),
+            (name: "kimi-code-env-0e4f99c69cc27850.json", token: "env-token"),
+        ])
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let session = try #require(UsageSessions.KimiSession.load(roots: [root]))
+        #expect(session.accessToken == "env-token")
+    }
+
+    @Test("The newest environment credential wins, and the fixed name is tried last")
+    func kimiPrefersNewestEnvironmentCredential() throws {
+        let root = try makeKimiRoot([
+            (name: "kimi-code.json", token: "fixed-token"),
+            (name: "kimi-code-env-aaaa.json", token: "older-env-token"),
+            (name: "kimi-code-env-bbbb.json", token: "newer-env-token"),
+        ])
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let ordered = UsageSessions.KimiSession.credentialFiles(in: root)
+            .map(\.lastPathComponent)
+        #expect(ordered == [
+            "kimi-code-env-bbbb.json",
+            "kimi-code-env-aaaa.json",
+            "kimi-code.json",
+        ])
+
+        let session = try #require(UsageSessions.KimiSession.load(roots: [root]))
+        #expect(session.accessToken == "newer-env-token")
+    }
+
+    @Test("A root holding only a blanked file falls through to the legacy root")
+    func kimiFallsThroughToLegacyRoot() throws {
+        let current = try makeKimiRoot([(name: "kimi-code.json", token: nil)])
+        let legacy = try makeKimiRoot([(name: "kimi-code.json", token: "legacy-token")])
+        defer {
+            try? FileManager.default.removeItem(at: current)
+            try? FileManager.default.removeItem(at: legacy)
+        }
+
+        let session = try #require(
+            UsageSessions.KimiSession.load(roots: [current, legacy])
+        )
+        #expect(session.accessToken == "legacy-token")
+    }
+
+    @Test("A pre-migration install with only the fixed credential still loads")
+    func kimiFixedCredentialStillLoads() throws {
+        let root = try makeKimiRoot([(name: "kimi-code.json", token: "fixed-token")])
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let session = try #require(UsageSessions.KimiSession.load(roots: [root]))
+        #expect(session.accessToken == "fixed-token")
+        #expect(UsageSessions.KimiSession.load(roots: []) == nil)
+    }
+
     @Test("Kimi maps weekly and detailed limits with absolute and relative resets")
     func kimiUsageWindows() throws {
         let receivedAt = Date(timeIntervalSince1970: 1_800_000_000)
