@@ -60,15 +60,29 @@ enum UsageSessions {
             return expiresAt <= date
         }
 
-        /// Load the current credential file first, then the legacy file.
+        /// Load the newest usable credential from the current Kimi Code
+        /// home, falling back to the pre-migration home.
         static func load() -> KimiSession? {
-            for url in credentialURLs() {
-                guard FileManager.default.fileExists(atPath: url.path) else { continue }
-                guard let data = try? Data(contentsOf: url) else { return nil }
-                // A present current credential owns account selection. Do not
-                // silently fall back to a legacy account if it is malformed;
-                // an expired token is surfaced separately by the usage store.
-                return parse(data: data)
+            load(roots: credentialRoots())
+        }
+
+        /// Internal so tests can point discovery at temporary directories
+        /// instead of a developer's real credential store.
+        static func load(roots: [URL]) -> KimiSession? {
+            for root in roots {
+                for url in credentialFiles(in: root) {
+                    guard let data = try? Data(contentsOf: url),
+                          let session = parse(data: data)
+                    else { continue }
+                    // A present current credential still owns account
+                    // selection, so the first root holding a real token wins
+                    // and an expired one is surfaced by the usage store. A
+                    // file whose `access_token` is empty is not a credential
+                    // at all: Kimi Code blanks the pre-migration file instead
+                    // of deleting it, and treating that as "signed out" would
+                    // hide the environment-scoped token beside it.
+                    return session
+                }
             }
             return nil
         }
@@ -84,7 +98,9 @@ enum UsageSessions {
             return KimiSession(accessToken: accessToken, expiresAt: expiresAt)
         }
 
-        private static func credentialURLs() -> [URL] {
+        /// Credential roots in preference order: the current Kimi Code home,
+        /// then the pre-migration Python CLI home.
+        private static func credentialRoots() -> [URL] {
             let environment = ProcessInfo.processInfo.environment
             let home = FileManager.default.homeDirectoryForCurrentUser
             let currentHome = environment["KIMI_CODE_HOME"].flatMap(nonemptyString)
@@ -95,10 +111,47 @@ enum UsageSessions {
                 ?? home.appendingPathComponent(".kimi")
 
             var seen = Set<String>()
-            return [currentHome, legacyHome].compactMap { root in
-                let url = root.appendingPathComponent("credentials/kimi-code.json")
-                return seen.insert(url.standardizedFileURL.path).inserted ? url : nil
+            return [currentHome, legacyHome].filter {
+                seen.insert($0.standardizedFileURL.path).inserted
             }
+        }
+
+        /// Candidate credential files inside one root, newest first.
+        ///
+        /// Kimi Code writes one credential per environment
+        /// (`kimi-code-env-<id>.json`) and leaves the pre-migration
+        /// `kimi-code.json` behind with an emptied token, so the fixed name is
+        /// tried last rather than first. Internal so tests can assert the
+        /// ordering without reading a developer's real credentials.
+        static func credentialFiles(in root: URL) -> [URL] {
+            let directory = root.appendingPathComponent("credentials", isDirectory: true)
+            let entries = (try? FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
+
+            let environmentScoped = entries
+                .filter {
+                    let name = $0.lastPathComponent
+                    return name.hasPrefix("kimi-code-env-") && name.hasSuffix(".json")
+                }
+                // Ties break on name so discovery is deterministic when two
+                // environments are written within the same filesystem tick.
+                .sorted { lhs, rhs in
+                    let left = modificationDate(of: lhs)
+                    let right = modificationDate(of: rhs)
+                    if left != right { return left > right }
+                    return lhs.lastPathComponent < rhs.lastPathComponent
+                }
+
+            return environmentScoped
+                + [directory.appendingPathComponent("kimi-code.json")]
+        }
+
+        private static func modificationDate(of url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
         }
 
         private static func expandedFileURL(_ path: String) -> URL {
