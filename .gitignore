@@ -53,6 +53,10 @@ xcuserdata/
 # End of https://www.toptal.com/developers/gitignore/api/macos,xcode
 .gstack/
 
+### Coding-agent scratch ###
+# Machine-local session state (e.g. .context/codex-session-id). Never shared.
+.context/
+
 ### Web ###
 node_modules/
 workers/web/dist/
