@@ -6,6 +6,22 @@ import Testing
 
 @Suite("Remote desktop credential policy")
 struct RemoteDesktopCredentialPolicyTests {
+    @Test("Only an explicit server rejection invalidates the password")
+    func negotiationErrorsKeepCredentials() {
+        #expect(RemoteDesktopCredentialPolicy.credentialWasRejected(
+            VNCError.authentication(.securityHandshakingFailed(reason: "Incorrect password"))
+        ))
+        for error: VNCError in [
+            .authentication(.ardAuthenticationFailed),
+            .authentication(.encryptionFailed),
+            .authentication(.serverOfferedNoAuthTypes(reason: nil)),
+            .authentication(.clientCouldNotDecideOnSecurityType),
+            .connection(.cancelled),
+        ] {
+            #expect(!RemoteDesktopCredentialPolicy.credentialWasRejected(error))
+        }
+    }
+
     @Test("A password is only persisted once the server accepts it")
     func savesOnlyAfterSuccess() {
         #expect(
@@ -46,6 +62,21 @@ struct RemoteDesktopCredentialPolicyTests {
 @Suite("Remote desktop session manager")
 @MainActor
 struct RemoteDesktopSessionManagerTests {
+    @Test("All four visible machines stay active while other groups age out")
+    func allVisibleMachinesStayActive() {
+        let manager = RemoteDesktopSessionManager()
+        defer { manager.endAllSessions() }
+        let visible = Set((0..<4).map { _ in UUID() })
+        let hidden = UUID()
+        for id in visible.union([hidden]) { _ = manager.session(for: id) }
+        manager.setActiveConnections(visible)
+        for id in visible { #expect(manager.existingSession(for: id)?.backgroundedAt == nil) }
+        #expect(manager.existingSession(for: hidden)?.backgroundedAt != nil)
+        manager.setActiveConnections([hidden])
+        for id in visible { #expect(manager.existingSession(for: id)?.backgroundedAt != nil) }
+        #expect(manager.existingSession(for: hidden)?.backgroundedAt == nil)
+    }
+
     /// The property that makes tab switching free: the same connection id hands
     /// back the same session, so its `VNCConnection` is never rebuilt.
     @Test("The same connection keeps the same session across lookups")
@@ -131,6 +162,49 @@ struct RemoteDesktopSessionManagerTests {
 @Suite("Remote desktop connection lifecycle")
 @MainActor
 struct RemoteDesktopConnectionLifecycleTests {
+    @Test("Disconnect and timeout keep the saved password")
+    func interruptedConnectionKeepsPassword() async throws {
+        let server = try SilentVNCServer()
+        defer { server.stop() }
+        try await waitUntil { server.port != nil }
+        let id = UUID()
+        VNCKeychain.save("saved-test-password", id: id)
+        defer { VNCKeychain.delete(id: id) }
+        try #require(VNCKeychain.load(id: id) == "saved-test-password")
+        let session = RemoteDesktopSession(connectionID: id, timeout: .milliseconds(100))
+        defer { session.disconnect() }
+        connect(session, port: try #require(server.port))
+        session.disconnect()
+        #expect(VNCKeychain.load(id: id) == "saved-test-password")
+        connect(session, port: try #require(server.port))
+        try await waitUntil { !session.isLive }
+        #expect(VNCKeychain.load(id: id) == "saved-test-password")
+        #expect(!session.credentialRejected)
+    }
+
+    @Test("A closed connection keeps the saved password; a server rejection deletes it", arguments: [false, true])
+    func passwordOnlyDeletedOnRejection(rejected: Bool) async throws {
+        let server = try SilentVNCServer()
+        defer { server.stop() }
+        try await waitUntil { server.port != nil }
+        let id = UUID()
+        VNCKeychain.save("saved-test-password", id: id)
+        defer { VNCKeychain.delete(id: id) }
+        try #require(VNCKeychain.load(id: id) == "saved-test-password")
+        let session = RemoteDesktopSession(connectionID: id)
+        defer { session.disconnect() }
+        connect(session, port: try #require(server.port))
+        let connection = try #require(session.activeConnection)
+        let relay = try #require(session.connectionDelegate)
+        let error: VNCError = rejected
+            ? .authentication(.securityHandshakingFailed(reason: "Incorrect password"))
+            : .connection(.closed)
+        relay.connection(connection, stateDidChange: .disconnected(error: error))
+        try await waitUntil { !session.isLive }
+        #expect(session.credentialRejected == rejected)
+        #expect(VNCKeychain.load(id: id) == (rejected ? nil : "saved-test-password"))
+    }
+
     @Test("A server that accepts TCP but stalls the handshake times out")
     func stalledHandshakeTimesOut() async throws {
         let server = try SilentVNCServer()
