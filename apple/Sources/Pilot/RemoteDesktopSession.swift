@@ -57,6 +57,10 @@ enum RemoteDesktopCredentialPolicy {
 @MainActor
 @Observable
 final class RemoteDesktopSession {
+    /// Bounds the entire TCP connection and authentication handshake, including
+    /// servers that accept a socket but never finish speaking RFB.
+    static let connectionTimeout: Duration = .seconds(20)
+
     let connectionID: UUID
 
     private(set) var status: RemoteConnectionStatus = .idle
@@ -73,13 +77,16 @@ final class RemoteDesktopSession {
     @ObservationIgnored private var relay: StatusRelay?
     @ObservationIgnored private var password = ""
     @ObservationIgnored private var shouldSavePassword = false
+    @ObservationIgnored private var connectionTimeoutTask: Task<Void, Never>?
+    private let timeout: Duration
     /// Incremented per connect attempt. Late delegate callbacks from a torn-down
     /// attempt carry a stale token and are ignored, so a dying connection can't
     /// stamp `.failed` over a newer one.
     @ObservationIgnored private var attempt = 0
 
-    init(connectionID: UUID) {
+    init(connectionID: UUID, timeout: Duration = RemoteDesktopSession.connectionTimeout) {
         self.connectionID = connectionID
+        self.timeout = timeout
     }
 
     /// True while the socket is worth keeping — used by the idle sweep.
@@ -137,6 +144,19 @@ final class RemoteDesktopSession {
         backgroundedAt = nil
         status = .connecting
         framebufferGeneration += 1
+        let token = attempt
+        let timeout = timeout
+        connectionTimeoutTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: timeout)
+            } catch {
+                return
+            }
+            guard let self, self.attempt == token, self.status == .connecting else { return }
+            self.teardown(resettingStatusTo: .failed(
+                "The connection timed out. Check that the computer is awake, reachable, and has Screen Sharing enabled, then try again."
+            ))
+        }
         connection.connect()
     }
 
@@ -170,6 +190,9 @@ final class RemoteDesktopSession {
         let action: RemoteDesktopCredentialAction
         switch newStatus {
         case .connected:
+            guard status == .connecting else { return }
+            connectionTimeoutTask?.cancel()
+            connectionTimeoutTask = nil
             action = RemoteDesktopCredentialPolicy.onConnected(
                 savePassword: shouldSavePassword,
                 password: password
@@ -188,23 +211,37 @@ final class RemoteDesktopSession {
         case .leaveAlone: break
         }
 
-        // A rejected password must not stay in memory either, or the form
-        // re-offers it and the user cannot tell it was already refused.
-        if case .failed = newStatus, isAuthenticationFailure {
+        switch newStatus {
+        case .failed, .disconnected:
+            teardown(resettingStatusTo: newStatus)
+        case .connected:
             password = ""
+            status = newStatus
+        case .connecting:
+            // A delayed progress callback must not reopen the spinner after
+            // success, when its deadline has already been cancelled.
+            break
+        case .idle:
+            status = newStatus
         }
-
-        status = newStatus
     }
 
     private func teardown(resettingStatusTo newStatus: RemoteConnectionStatus?) {
         // Invalidate in-flight callbacks before dropping the connection.
         attempt += 1
-        connection?.disconnect()
+        connectionTimeoutTask?.cancel()
+        connectionTimeoutTask = nil
+        let oldConnection = connection
         connection = nil
         relay = nil
+        password = ""
+        shouldSavePassword = false
         framebufferGeneration += 1
         if let newStatus { status = newStatus }
+        // RoyalVNCKit cancels its NWConnection synchronously without waiting
+        // for the peer. Detach first so cancellation cannot revive the UI.
+        oldConnection?.delegate = nil
+        oldConnection?.disconnect()
     }
 }
 
@@ -239,7 +276,9 @@ private final class StatusRelay: NSObject, VNCConnectionDelegate, @unchecked Sen
         case .connected:
             status = .connected
         case .disconnecting:
-            status = .connecting
+            // The following .disconnected callback carries the actual error.
+            // Disconnecting is never a new connection attempt.
+            return
         case .disconnected:
             if let error = connectionState.error {
                 status = .failed(error.localizedDescription)

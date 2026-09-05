@@ -38,6 +38,7 @@
 		1E52F4B58A701BDEFF78E2D0 /* Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC9BB0F198A6D5E8298B3E1 /* Note.swift */; };
 		1F253D4F3DCD296F823A2E74 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7D00A3F70E212149A88CCD63 /* Assets.xcassets */; };
 		204D67F9D5A0A40E355C64B5 /* RuntimeTeardownTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AF0A09467C1DF183A8D54B2 /* RuntimeTeardownTests.swift */; };
+		20A214A6F26B8D0393A49CD4 /* RoyalVNCKit in Frameworks */ = {isa = PBXBuildFile; productRef = BD3BD9706E916ED3B947D127 /* RoyalVNCKit */; };
 		20E32E80EFDFEC4BAE8E5966 /* SecureChannelResponder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1276A49AF5B79B2DF90F9A4F /* SecureChannelResponder.swift */; };
 		20F4C5D96E0C6D3BFAC934A2 /* SignalingClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 341905DD9245C885926FDD10 /* SignalingClientTests.swift */; };
 		224F34F95C680F2F2962C733 /* SnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0512C0240EE6A1F6AC5063 /* SnapshotHelper.swift */; };
@@ -659,6 +660,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C3D97BC707E0B838A878A465 /* ChromiumKit.framework in Frameworks */,
+				20A214A6F26B8D0393A49CD4 /* RoyalVNCKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1293,6 +1295,7 @@
 			);
 			name = PilotTests;
 			packageProductDependencies = (
+				BD3BD9706E916ED3B947D127 /* RoyalVNCKit */,
 			);
 			productName = PilotTests;
 			productReference = 52D5914A6EBA1115A33AE425 /* PilotTests.xctest */;
@@ -3191,6 +3194,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A897E60FF62D36C0B29E3DAB /* XCRemoteSwiftPackageReference "CodeEditSourceEditor" */;
 			productName = CodeEditSourceEditor;
+		};
+		BD3BD9706E916ED3B947D127 /* RoyalVNCKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 42CBA16A25AD5D46E7F1A183 /* XCRemoteSwiftPackageReference "royalvnc" */;
+			productName = RoyalVNCKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -254,6 +254,7 @@ private struct RemoteConnectionPane: View {
                 .foregroundStyle(.white.opacity(0.85))
                 .font(.callout)
             Button("Cancel") { session.disconnect() }
+                .keyboardShortcut(.cancelAction)
                 .buttonStyle(.bordered)
                 .tint(.white)
         }
@@ -307,7 +308,7 @@ private struct RemoteConnectionPane: View {
             }
 
             Button(action: connect) {
-                Text("Connect")
+                Text(error == nil ? "Connect" : "Try Again")
                     .frame(width: 120)
             }
             .keyboardShortcut(.return)
