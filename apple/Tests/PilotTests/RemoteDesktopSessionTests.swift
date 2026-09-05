@@ -1,5 +1,7 @@
 import Foundation
+import Network
 import Testing
+@preconcurrency @testable import RoyalVNCKit
 @testable import Pilot
 
 @Suite("Remote desktop credential policy")
@@ -123,5 +125,173 @@ struct RemoteDesktopSessionManagerTests {
 
         #expect(manager.existingSession(for: id) === session)
         #expect(session.status == .idle)
+    }
+}
+
+@Suite("Remote desktop connection lifecycle")
+@MainActor
+struct RemoteDesktopConnectionLifecycleTests {
+    @Test("A server that accepts TCP but stalls the handshake times out")
+    func stalledHandshakeTimesOut() async throws {
+        let server = try SilentVNCServer()
+        defer { server.stop() }
+        try await waitUntil { server.port != nil }
+        let session = RemoteDesktopSession(connectionID: UUID(), timeout: .milliseconds(300))
+        defer { session.disconnect() }
+        connect(session, port: try #require(server.port))
+        try await waitUntil { !server.clients.isEmpty }
+        try await waitUntil { !session.isLive }
+
+        guard case .failed(let message) = session.status else {
+            Issue.record("A stalled handshake should show a retryable error")
+            return
+        }
+        #expect(message.contains("timed out"))
+        #expect(session.activeConnection == nil)
+        #expect(session.connectionDelegate == nil)
+    }
+
+    @Test("Cancel returns immediately and ignores late success and its old deadline")
+    func cancellationInvalidatesAttempt() async throws {
+        let server = try SilentVNCServer()
+        defer { server.stop() }
+        try await waitUntil { server.port != nil }
+        let session = RemoteDesktopSession(connectionID: UUID(), timeout: .milliseconds(100))
+        connect(session, port: try #require(server.port))
+        let connection = try #require(session.activeConnection)
+        let relay = try #require(session.connectionDelegate)
+
+        session.disconnect()
+        #expect(session.status == .idle)
+        #expect(session.activeConnection == nil)
+        relay.connection(connection, stateDidChange: .connected)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(session.status == .idle)
+    }
+
+    @Test("A retry ignores callbacks from a timed-out attempt and cancels its deadline on success")
+    func retrySurvivesOldCallbacks() async throws {
+        let server = try SilentVNCServer()
+        defer { server.stop() }
+        try await waitUntil { server.port != nil }
+        let session = RemoteDesktopSession(connectionID: UUID(), timeout: .milliseconds(100))
+        defer { session.disconnect() }
+        let port = try #require(server.port)
+        connect(session, port: port)
+        let oldConnection = try #require(session.activeConnection)
+        let oldRelay = try #require(session.connectionDelegate)
+        try await waitUntil { !session.isLive }
+
+        connect(session, port: port)
+        let newConnection = try #require(session.activeConnection)
+        let newRelay = try #require(session.connectionDelegate)
+        oldRelay.connection(oldConnection, stateDidChange: .connected)
+        oldRelay.connection(oldConnection, stateDidChange: .disconnected)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(session.status == .connecting)
+        #expect(session.activeConnection === newConnection)
+
+        newRelay.connection(newConnection, stateDidChange: .connected)
+        try await waitUntil { session.status == .connected }
+        newRelay.connection(newConnection, stateDidChange: .connecting)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(session.status == .connected)
+        #expect(session.activeConnection === newConnection)
+    }
+
+    @Test("Disconnecting never reopens the connecting overlay and final failure releases the socket")
+    func disconnectionDoesNotLookLikeConnection() async throws {
+        let server = try SilentVNCServer()
+        defer { server.stop() }
+        try await waitUntil { server.port != nil }
+        let session = RemoteDesktopSession(connectionID: UUID())
+        defer { session.disconnect() }
+        connect(session, port: try #require(server.port))
+        let connection = try #require(session.activeConnection)
+        let relay = try #require(session.connectionDelegate)
+        relay.connection(connection, stateDidChange: .connected)
+        try await waitUntil { session.status == .connected }
+        relay.connection(connection, stateDidChange: .disconnecting)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(session.status == .connected)
+
+        let error = NSError(domain: "RemoteDesktopTest", code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: "The remote computer closed the connection."])
+        relay.connection(connection, stateDidChange: .disconnected(error: error))
+        try await waitUntil { !session.isLive }
+        #expect(session.status == .failed(error.localizedDescription))
+        #expect(session.activeConnection == nil)
+        relay.connection(connection, stateDidChange: .connecting)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(session.status == .failed(error.localizedDescription))
+    }
+
+    @Test("Replacing an attempt gives the new connection its own full deadline")
+    func replacementHasItsOwnDeadline() async throws {
+        let server = try SilentVNCServer()
+        defer { server.stop() }
+        try await waitUntil { server.port != nil }
+        let session = RemoteDesktopSession(connectionID: UUID(), timeout: .milliseconds(400))
+        defer { session.disconnect() }
+        let port = try #require(server.port)
+        connect(session, port: port)
+        try await Task.sleep(for: .milliseconds(250))
+        connect(session, port: port)
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(session.status == .connecting)
+        try await waitUntil { !session.isLive }
+        guard case .failed(let message) = session.status else {
+            Issue.record("The replacement attempt should have its own timeout")
+            return
+        }
+        #expect(message.contains("timed out"))
+    }
+
+    private func connect(_ session: RemoteDesktopSession, port: Int) {
+        session.connect(host: "127.0.0.1", port: port, username: "", password: "",
+                        savePasswordOnSuccess: false, isClipboardRedirectionEnabled: false)
+    }
+
+    private func waitUntil(_ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(condition(), "Connection lifecycle did not reach the expected state")
+    }
+}
+
+/// Accepts real connections without sending an RFB greeting, reproducing a
+/// reachable computer whose Screen Sharing handshake never completes.
+@MainActor
+private final class SilentVNCServer {
+    private let listener: NWListener
+    private(set) var clients: [NWConnection] = []
+    private(set) var port: Int?
+
+    init() throws {
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        listener = try NWListener(using: parameters)
+        listener.stateUpdateHandler = { [weak self] state in
+            MainActor.assumeIsolated {
+                guard let self, case .ready = state else { return }
+                self.port = self.listener.port.map { Int($0.rawValue) }
+            }
+        }
+        listener.newConnectionHandler = { [weak self] connection in
+            MainActor.assumeIsolated {
+                guard let self else { connection.cancel(); return }
+                self.clients.append(connection)
+                connection.start(queue: .main)
+            }
+        }
+        listener.start(queue: .main)
+    }
+
+    func stop() {
+        listener.cancel()
+        clients.forEach { $0.cancel() }
+        clients.removeAll()
     }
 }
