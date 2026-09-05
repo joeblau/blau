@@ -398,6 +398,9 @@ targets:
       - target: Pilot
       - target: ChromiumKit
         embed: false
+      - package: RoyalVNCKit
+        product: RoyalVNCKit
+        embed: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.blau.pilot.tests

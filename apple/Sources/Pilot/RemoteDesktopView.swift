@@ -1,38 +1,59 @@
 import AppKit
 import SwiftUI
 
-/// Detail-area view for the global Remote Desktop mode. A horizontal tab bar of
-/// saved connections (the same shape as the Notes tab strip) over an embedded
-/// VNC viewer. The "+" opens a picker that previews the machines on the network
-/// offering Screen Sharing (`_rfb._tcp`) plus a manual host entry — mirroring
-/// the editor pane's "new tab → fuzzy finder" gesture.
+/// Renamable groups of four remote screens, with stable blank grid positions.
 struct RemoteDesktopView: View {
     @Bindable var store: WorkspaceStore
-    /// App-lifetime session owner. Injectable so tests can supply their own.
     var sessions: RemoteDesktopSessionManager = .shared
-    @State private var showPicker = false
+    @State private var groups = RemoteDesktopGroups()
+    @State private var pickerGroupID: UUID?
     @State private var discovery = RemoteScreenDiscovery()
+    @State private var renamingGroupID: UUID?
+    @State private var groupName = ""
+
+    init(store: WorkspaceStore, sessions: RemoteDesktopSessionManager = .shared,
+         groups: RemoteDesktopGroups = RemoteDesktopGroups()) {
+        self.store = store
+        self.sessions = sessions
+        _groups = State(initialValue: groups)
+    }
+
+    private var visibleIDs: [UUID] { groups.selectedGroup?.connectionIDs ?? [] }
 
     var body: some View {
-        let connections = store.remoteConnections
         VStack(spacing: 0) {
-            tabBar(connections: connections)
+            groupBar
             Divider()
-            content(connections: connections)
+            grid
         }
+        .background(.black)
         .overlay {
-            if showPicker {
+            if let groupID = pickerGroupID {
                 RemoteComputerPicker(
                     discovery: discovery,
                     onPick: { host, port, nickname in
-                        store.addRemoteConnection(host: host, port: port, nickname: nickname)
-                        store.isRemoteDesktopMode = true
-                        showPicker = false
+                        guard let group = groups.groups.first(where: { $0.id == groupID }),
+                              !group.isFull else { pickerGroupID = nil; return }
+                        let connection = store.addRemoteConnection(host: host, port: port, nickname: nickname)
+                        groups.place(connection.id, in: groupID)
+                        pickerGroupID = nil
                     },
-                    onCancel: { showPicker = false }
+                    onCancel: { pickerGroupID = nil }
                 )
                 .transition(.opacity)
             }
+        }
+        .alert("Rename Group", isPresented: Binding(
+            get: { renamingGroupID != nil },
+            set: { if !$0 { renamingGroupID = nil } }
+        )) {
+            TextField("Group name", text: $groupName)
+            Button("Save") {
+                if let id = renamingGroupID { groups.renameGroup(id, to: groupName) }
+                renamingGroupID = nil
+            }
+            .disabled(groupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Cancel", role: .cancel) { renamingGroupID = nil }
         }
         .confirmationDialog(
             "Remove this connection?",
@@ -43,7 +64,6 @@ struct RemoteDesktopView: View {
             presenting: store.remoteConnectionPendingClose
         ) { connection in
             Button("Remove Connection", role: .destructive) {
-                // Drop the live socket before the row goes; nothing else owns it.
                 sessions.endSession(for: connection.id)
                 store.deleteRemoteConnection(connection)
                 store.remoteConnectionPendingClose = nil
@@ -52,133 +72,166 @@ struct RemoteDesktopView: View {
         } message: { connection in
             Text("“\(connection.displayTitle)” will be removed from your saved connections.")
         }
-        .onChange(of: showPicker) {
-            if showPicker { discovery.start() } else { discovery.stop() }
+        .onChange(of: pickerGroupID) {
+            if pickerGroupID != nil { discovery.start() } else { discovery.stop() }
         }
-        .onChange(of: store.selectedRemoteConnectionID) {
-            sessions.setActive(store.selectedRemoteConnectionID)
+        .onChange(of: store.remoteConnections.map(\.id), initial: true) {
+            groups.reconcile(connectionIDs: store.remoteConnections.map(\.id))
         }
-        .onAppear {
-            sessions.setActive(store.selectedRemoteConnectionID)
-            // Entering the section with nothing saved drops straight into the
-            // picker so the first thing you see is "which computers can I reach".
-            if connections.isEmpty { showPicker = true }
+        .onChange(of: visibleIDs, initial: true) {
+            // Create sessions before marking the whole grid visible.
+            for id in visibleIDs { _ = sessions.session(for: id) }
+            sessions.setActiveConnections(Set(visibleIDs))
+            if !visibleIDs.contains(where: { $0 == store.selectedRemoteConnectionID }) {
+                store.selectedRemoteConnectionID = visibleIDs.first
+            }
         }
         .onDisappear {
-            // Leaving Remote Desktop mode backgrounds every session, including
-            // the one that was visible — nothing is on screen to justify a
-            // stream once this view is gone.
-            sessions.setActive(nil)
+            discovery.stop()
+            sessions.setActiveConnections([])
         }
     }
 
-    private func tabBar(connections: [RemoteDesktopConnection]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(connections) { connection in
-                    RemoteTab(
-                        title: connection.displayTitle,
-                        isSelected: connection.id == store.selectedRemoteConnectionID,
-                        onSelect: { store.selectedRemoteConnectionID = connection.id },
-                        onClose: { store.requestCloseRemoteConnection(connection) }
-                    )
-                    .draggable(connection.id.uuidString)
-                    .dropDestination(for: String.self) { items, _ in
-                        guard let raw = items.first,
-                              let draggedID = UUID(uuidString: raw) else { return false }
-                        store.moveRemoteConnection(draggedID, before: connection.id)
-                        return true
+    private var groupBar: some View {
+        HStack(spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(groups.groups) { group in
+                        Button {
+                            groups.selectedGroupID = group.id
+                        } label: {
+                            Label(group.name, systemImage: "square.grid.2x2")
+                                .lineLimit(1)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(
+                                    group.id == groups.selectedGroupID
+                                        ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.08),
+                                    in: RoundedRectangle(cornerRadius: 7)
+                                )
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 7)
+                                        .strokeBorder(group.id == groups.selectedGroupID
+                                            ? Color.accentColor.opacity(0.5) : .clear, lineWidth: 1)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("Rename Group…") { rename(group) }
+                            Button("Delete Empty Group", role: .destructive) { groups.deleteEmptyGroup(group.id) }
+                                .disabled(!group.connectionIDs.isEmpty || groups.groups.count == 1)
+                        }
+                        .dropDestination(for: String.self) { items, _ in
+                            return moveDroppedMachine(items, to: group.id)
+                        }
                     }
-                }
-
-                Button {
-                    showPicker = true
-                } label: {
-                    Image(systemName: "plus")
-                        .scaledFont(size: 12, weight: .medium)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("New Connection")
-                .dropDestination(for: String.self) { items, _ in
-                    guard let raw = items.first,
-                          let draggedID = UUID(uuidString: raw) else { return false }
-                    store.moveRemoteConnectionToEnd(draggedID)
-                    return true
+                    Button {
+                        let id = groups.addGroup()
+                        if let group = groups.groups.first(where: { $0.id == id }) { rename(group) }
+                    } label: {
+                        Image(systemName: "plus").frame(width: 26, height: 26)
+                    }
+                    .buttonStyle(.plain)
+                    .help("New Group")
+                    .accessibilityLabel("New Group")
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            if let group = groups.selectedGroup {
+                Button { rename(group) } label: { Image(systemName: "pencil") }
+                    .buttonStyle(.plain)
+                    .help("Rename Group")
+                    .accessibilityLabel("Rename Group")
+                Text("\(group.connectionIDs.count)/4")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Button { pickerGroupID = group.id } label: {
+                    Label("Add Computer", systemImage: "plus")
+                }
+                .disabled(group.isFull)
+                .help(group.isFull ? "This group already has four computers" : "Add a computer to this group")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var grid: some View {
+        GeometryReader { geometry in
+            if let group = groups.selectedGroup {
+                let width = max(0, (geometry.size.width - 1) / 2)
+                let height = max(0, (geometry.size.height - 1) / 2)
+                VStack(spacing: 1) {
+                    ForEach(0..<2) { row in
+                        HStack(spacing: 1) {
+                            ForEach(0..<2) { column in
+                                let slot = row * 2 + column
+                                cell(group: group, slot: slot)
+                                    .frame(width: width, height: height)
+                                    .clipped()
+                            }
+                        }
+                    }
+                }
+                .background(Color(nsColor: .separatorColor))
+            }
         }
     }
 
     @ViewBuilder
-    private func content(connections: [RemoteDesktopConnection]) -> some View {
-        if let connection = store.selectedRemoteConnection {
-            // `.id` resets the *form* state (typed password, checkboxes) per
-            // connection. It no longer resets the VNC session: that lives in
-            // `sessions` and outlives both this pane and Remote Desktop mode.
-            RemoteConnectionPane(
-                connection: connection,
-                session: sessions.session(for: connection.id)
-            )
-            .id(connection.id)
-        } else {
-            ContentUnavailableView {
-                Label("No Connection", systemImage: "macbook.and.iphone")
-            } description: {
-                Text("Add a computer with the + button.")
-            } actions: {
-                Button("Find Computers") { showPicker = true }
+    private func cell(group: RemoteDesktopGroup, slot: Int) -> some View {
+        if let id = group.slots[slot], let connection = store.remoteConnections.first(where: { $0.id == id }) {
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "display")
+                    Text(connection.displayTitle).lineLimit(1)
+                    Spacer()
+                    Menu {
+                        ForEach(groups.groups.filter { $0.id != group.id }) { destination in
+                            Button("Move to \(destination.name)") { groups.place(id, in: destination.id) }
+                                .disabled(destination.isFull)
+                        }
+                        Button("Disconnect") { sessions.session(for: id).disconnect() }
+                        Button("Remove Connection…", role: .destructive) { store.requestCloseRemoteConnection(connection) }
+                    } label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .accessibilityLabel("Options for \(connection.displayTitle)")
+                }
+                .font(.callout)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(store.selectedRemoteConnectionID == id
+                    ? Color.accentColor.opacity(0.15) : Color(nsColor: .windowBackgroundColor))
+                .contentShape(Rectangle())
+                .onTapGesture { store.selectedRemoteConnectionID = id }
+                .draggable(id.uuidString)
+                Divider()
+                RemoteConnectionPane(
+                    connection: connection,
+                    session: sessions.session(for: id),
+                    isSelected: store.selectedRemoteConnectionID == id
+                )
+                .id(id)
             }
+        } else {
+            Color.black
+                .dropDestination(for: String.self) { items, _ in
+                    return moveDroppedMachine(items, to: group.id, slot: slot)
+                }
+                .accessibilityLabel("Empty computer slot \(slot + 1)")
         }
     }
-}
 
-/// A single connection tab — same chrome as the Notes `NoteTab`.
-private struct RemoteTab: View {
-    let title: String
-    let isSelected: Bool
-    let onSelect: () -> Void
-    let onClose: () -> Void
+    private func rename(_ group: RemoteDesktopGroup) {
+        groupName = group.name
+        renamingGroupID = group.id
+    }
 
-    @State private var isHovering = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "display")
-                .scaledFont(size: 10, weight: .medium)
-                .foregroundStyle(.secondary)
-            Text(title)
-                .scaledFont(size: 12, weight: isSelected ? .semibold : .regular)
-                .lineLimit(1)
-
-            if isHovering || isSelected {
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .scaledFont(size: 9, weight: .bold)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Remove Connection")
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .frame(maxWidth: 180, alignment: .leading)
-        .background(
-            isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.08),
-            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(isSelected ? Color.accentColor.opacity(0.5) : .clear, lineWidth: 1)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
-        .onHover { isHovering = $0 }
+    private func moveDroppedMachine(_ items: [String], to groupID: UUID, slot: Int? = nil) -> Bool {
+        guard let raw = items.first, let id = UUID(uuidString: raw),
+              store.remoteConnections.contains(where: { $0.id == id }) else { return false }
+        return groups.place(id, in: groupID, slot: slot)
     }
 }
 
@@ -190,6 +243,7 @@ private struct RemoteConnectionPane: View {
     /// Owned by `RemoteDesktopSessionManager`, not by this view — it survives
     /// tab switches and leaving Remote Desktop mode.
     let session: RemoteDesktopSession
+    let isSelected: Bool
 
     @State private var password = ""
     @State private var savePassword = false
@@ -227,6 +281,9 @@ private struct RemoteConnectionPane: View {
             connection.lastConnectedAt = Date()
             _ = connection.modelContext?.saveReporting(operation: "Recording remote desktop connection")
         }
+        .onChange(of: session.credentialRejected) { _, rejected in
+            if rejected { password = "" }
+        }
     }
 
     /// Auto-connect when a password was saved. A session that is already live
@@ -235,15 +292,17 @@ private struct RemoteConnectionPane: View {
     private func restoreSavedPasswordAndConnect() {
         guard !didTryAutoConnect else { return }
         didTryAutoConnect = true
+        // Restore the form even after a network failure. Auto-connect remains
+        // gated below, so returning to a failed session does not retry it.
+        guard let saved = VNCKeychain.load(id: connection.id), !saved.isEmpty else { return }
+        password = saved
+        savePassword = true
         // `.failed` is deliberately excluded: a rejected credential must not be
         // retried on every tab-in, which is the loop this whole change removes.
         switch session.status {
         case .idle, .disconnected: break
         case .connecting, .connected, .failed: return
         }
-        guard let saved = VNCKeychain.load(id: connection.id), !saved.isEmpty else { return }
-        password = saved
-        savePassword = true
         connect()
     }
 
@@ -254,6 +313,7 @@ private struct RemoteConnectionPane: View {
                 .foregroundStyle(.white.opacity(0.85))
                 .font(.callout)
             Button("Cancel") { session.disconnect() }
+                .keyboardShortcut(isSelected ? .cancelAction : nil)
                 .buttonStyle(.bordered)
                 .tint(.white)
         }
@@ -263,7 +323,19 @@ private struct RemoteConnectionPane: View {
     }
 
     private func connectForm(error: String?) -> some View {
-        VStack(spacing: 16) {
+        GeometryReader { geometry in
+            ScrollView {
+                connectFormContents(error: error)
+                    .padding(16)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: geometry.size.height)
+            }
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private func connectFormContents(error: String?) -> some View {
+        VStack(spacing: 12) {
             Image(systemName: "display")
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(.tertiary)
@@ -279,23 +351,23 @@ private struct RemoteConnectionPane: View {
             VStack(spacing: 10) {
                 TextField("Username (optional)", text: Bindable(connection).username)
                     .textFieldStyle(.roundedBorder)
-                    .frame(width: 280)
+                    .frame(maxWidth: 280)
                 SecureField("Password", text: $password)
                     .textFieldStyle(.roundedBorder)
-                    .frame(width: 280)
+                    .frame(maxWidth: 280)
                     .onSubmit(connect)
                 Toggle("Save password & auto-connect", isOn: $savePassword)
                     .toggleStyle(.checkbox)
                     .controlSize(.small)
-                    .frame(width: 280, alignment: .leading)
+                    .frame(maxWidth: 280, alignment: .leading)
                 Toggle("Share clipboard with remote Mac", isOn: $shareClipboard)
                     .toggleStyle(.checkbox)
                     .controlSize(.small)
-                    .frame(width: 280, alignment: .leading)
+                    .frame(maxWidth: 280, alignment: .leading)
                 Text("Off by default. Enabling this lets the remote VNC server read and replace your Mac clipboard.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(width: 280, alignment: .leading)
+                    .frame(maxWidth: 280, alignment: .leading)
             }
 
             if let error {
@@ -307,15 +379,13 @@ private struct RemoteConnectionPane: View {
             }
 
             Button(action: connect) {
-                Text("Connect")
+                Text(error == nil ? "Connect" : "Try Again")
                     .frame(width: 120)
             }
-            .keyboardShortcut(.return)
+            .keyboardShortcut(isSelected ? .defaultAction : nil)
             .buttonStyle(.borderedProminent)
             .disabled(connection.host.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
     }
 
     /// Start a connection. Deliberately does *not* touch the Keychain: the

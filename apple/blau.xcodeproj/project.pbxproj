@@ -13,6 +13,7 @@
 		038924B77A1BEFC708ABD6D7 /* SidebarSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCB9FC6971B239F7DDD3E470 /* SidebarSelection.swift */; };
 		065E28B7F767E99E1FA32890 /* SecureChannelDeadline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68DD092D8ED9F34EC42D8241 /* SecureChannelDeadline.swift */; };
 		067087C5C181973550B9AC7E /* FileFinderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AD843F2429472CDAB91130E /* FileFinderTests.swift */; };
+		07A2C9829077AA22DF1F2F35 /* RemoteDesktopGroupsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 665F5CECA3305F25D381DDC9 /* RemoteDesktopGroupsTests.swift */; };
 		08403915F26DF1ED6FBDDF1E /* AdbBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377AA1E2161E8621F037D693 /* AdbBridge.swift */; };
 		0A99BB2183D7B9BDB1D0E216 /* ChromiumBrowser in Resources */ = {isa = PBXBuildFile; fileRef = 2358496FE464FEA14A409F6B /* ChromiumBrowser */; };
 		0C4AF866FCADDEA813623176 /* ActiveConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1231CC7507263055BB36932 /* ActiveConnection.swift */; };
@@ -38,6 +39,7 @@
 		1E52F4B58A701BDEFF78E2D0 /* Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC9BB0F198A6D5E8298B3E1 /* Note.swift */; };
 		1F253D4F3DCD296F823A2E74 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7D00A3F70E212149A88CCD63 /* Assets.xcassets */; };
 		204D67F9D5A0A40E355C64B5 /* RuntimeTeardownTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AF0A09467C1DF183A8D54B2 /* RuntimeTeardownTests.swift */; };
+		20A214A6F26B8D0393A49CD4 /* RoyalVNCKit in Frameworks */ = {isa = PBXBuildFile; productRef = BD3BD9706E916ED3B947D127 /* RoyalVNCKit */; };
 		20E32E80EFDFEC4BAE8E5966 /* SecureChannelResponder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1276A49AF5B79B2DF90F9A4F /* SecureChannelResponder.swift */; };
 		20F4C5D96E0C6D3BFAC934A2 /* SignalingClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 341905DD9245C885926FDD10 /* SignalingClientTests.swift */; };
 		224F34F95C680F2F2962C733 /* SnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0512C0240EE6A1F6AC5063 /* SnapshotHelper.swift */; };
@@ -95,6 +97,7 @@
 		4DFCFA529F0B751E38234F99 /* ChromiumBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 519911866458F92654EA9EC6 /* ChromiumBrowserView.swift */; };
 		4ED353C5E65DE5D19F2B1A8A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 201310A4047D7610189A9F4D /* SettingsView.swift */; };
 		506D51547D6AA3C40D9B1161 /* UIZoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A2C2E1B521C51A4B0B660B1 /* UIZoom.swift */; };
+		50A1C41CDCF032E29A0B8138 /* RemoteDesktopGroups.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6726E710DC1C8B6D543C3389 /* RemoteDesktopGroups.swift */; };
 		51A6DBC0A515E68AF610C159 /* DockerSocketTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A078CC09B9CE8E8F8633304E /* DockerSocketTransport.swift */; };
 		52F31C5E19C11498E23411AA /* VNCPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F9B09BF0325E4BD7AA424E2 /* VNCPreferencesTests.swift */; };
 		533ABCE758C238874F10EB16 /* WingmanDeliveryState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C5A897F3BEC63D33F4496F /* WingmanDeliveryState.swift */; };
@@ -507,8 +510,10 @@
 		64165F122C0F8FF983D3C7B4 /* AndroidStreamRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndroidStreamRecorder.swift; sourceTree = "<group>"; };
 		6470DA7198630EEEED1F83E5 /* PlotterUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PlotterUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		64D18628BFB58D751B964957 /* SnapshotHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotHelper.swift; sourceTree = "<group>"; };
+		665F5CECA3305F25D381DDC9 /* RemoteDesktopGroupsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDesktopGroupsTests.swift; sourceTree = "<group>"; };
 		66D7FE5081E65EA4C78E83A5 /* MarkdownTableFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTableFormatter.swift; sourceTree = "<group>"; };
 		6705AED63D291136F8D0EB87 /* PrivacyManifestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyManifestTests.swift; sourceTree = "<group>"; };
+		6726E710DC1C8B6D543C3389 /* RemoteDesktopGroups.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDesktopGroups.swift; sourceTree = "<group>"; };
 		67FAA18AA33DB039B0026206 /* SyncMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMessages.swift; sourceTree = "<group>"; };
 		682AB09642BE2C3FA96FD284 /* PlotterSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotterSnapshotStore.swift; sourceTree = "<group>"; };
 		68B65C9369B83AEAD1E5A3DB /* EmulatorBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmulatorBridgeTests.swift; sourceTree = "<group>"; };
@@ -659,6 +664,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C3D97BC707E0B838A878A465 /* ChromiumKit.framework in Frameworks */,
+				20A214A6F26B8D0393A49CD4 /* RoyalVNCKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -788,6 +794,7 @@
 				D0E68F19872CDA3FC75AEAA5 /* PinnedQuickJumpTests.swift */,
 				6705AED63D291136F8D0EB87 /* PrivacyManifestTests.swift */,
 				628D381C1EEC9BD11FE6EB4E /* ProcessRunnerTests.swift */,
+				665F5CECA3305F25D381DDC9 /* RemoteDesktopGroupsTests.swift */,
 				1694615DD708477C21366D52 /* RemoteDesktopSessionTests.swift */,
 				F2E7DF37EA94BAC2FDEAB71B /* RepositoryPollingSchedulerTests.swift */,
 				5AF0A09467C1DF183A8D54B2 /* RuntimeTeardownTests.swift */,
@@ -1049,6 +1056,7 @@
 				1D01836EA0410C1776CF8D4E /* PullRequestListView.swift */,
 				969EAB7D6EE50CCBEE9D783C /* RelativeTime.swift */,
 				ACE63F355D22361D8CCB5F06 /* RemoteDesktopConnection.swift */,
+				6726E710DC1C8B6D543C3389 /* RemoteDesktopGroups.swift */,
 				AC5082604AA603C316EAFADE /* RemoteDesktopSession.swift */,
 				B43EBD7F0CDA66C9C699E451 /* RemoteDesktopView.swift */,
 				0914A44923ED7CBD1EC18FAD /* RemoteDesktopViewer.swift */,
@@ -1293,6 +1301,7 @@
 			);
 			name = PilotTests;
 			packageProductDependencies = (
+				BD3BD9706E916ED3B947D127 /* RoyalVNCKit */,
 			);
 			productName = PilotTests;
 			productReference = 52D5914A6EBA1115A33AE425 /* PilotTests.xctest */;
@@ -1777,6 +1786,7 @@
 				797153D3C7A97CB236CD27D0 /* RelativeTime.swift in Sources */,
 				64F5BBAD2D8C4BF5CDAAC40A /* ReliableMessenger.swift in Sources */,
 				34E418884A5993C311694465 /* RemoteDesktopConnection.swift in Sources */,
+				50A1C41CDCF032E29A0B8138 /* RemoteDesktopGroups.swift in Sources */,
 				447273C509648E43998D2460 /* RemoteDesktopSession.swift in Sources */,
 				D844E2D4F11B2A24F1D4F230 /* RemoteDesktopView.swift in Sources */,
 				38D1B80004FFC5165F685077 /* RemoteDesktopViewer.swift in Sources */,
@@ -1917,6 +1927,7 @@
 				4B923B2355A9DC5F21246781 /* PinnedQuickJumpTests.swift in Sources */,
 				EA50E58FBC3913F75B5535FD /* PrivacyManifestTests.swift in Sources */,
 				261D89B3A20F7A65612CE7F2 /* ProcessRunnerTests.swift in Sources */,
+				07A2C9829077AA22DF1F2F35 /* RemoteDesktopGroupsTests.swift in Sources */,
 				EC281D5C3A06BEBFAFEE5E48 /* RemoteDesktopSessionTests.swift in Sources */,
 				42AD1C88122F979531C2C527 /* RepositoryPollingSchedulerTests.swift in Sources */,
 				204D67F9D5A0A40E355C64B5 /* RuntimeTeardownTests.swift in Sources */,
@@ -3191,6 +3202,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A897E60FF62D36C0B29E3DAB /* XCRemoteSwiftPackageReference "CodeEditSourceEditor" */;
 			productName = CodeEditSourceEditor;
+		};
+		BD3BD9706E916ED3B947D127 /* RoyalVNCKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 42CBA16A25AD5D46E7F1A183 /* XCRemoteSwiftPackageReference "royalvnc" */;
+			productName = RoyalVNCKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

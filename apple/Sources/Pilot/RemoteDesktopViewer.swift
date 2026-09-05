@@ -77,8 +77,8 @@ struct RemoteDesktopViewer: NSViewRepresentable {
             container.addSubview(view)
             framebufferView = view
             installedGeneration = generation
-            // Take first responder so keyboard input is forwarded immediately.
-            container.window?.makeFirstResponder(view)
+            // VNCCAFramebufferView takes focus on mouse-down. Mounting another
+            // screen in a group must not steal input from the current machine.
         }
 
         func detach() {
