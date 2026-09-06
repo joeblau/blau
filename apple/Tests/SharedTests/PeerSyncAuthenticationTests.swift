@@ -5,6 +5,19 @@ import XCTest
 @testable import Copilot
 
 final class PeerSyncAuthenticationTests: XCTestCase {
+    @MainActor
+    func testReliableSendReportsFailureWhenNoPeerIsConnected() async {
+        let service = PeerSyncService(role: .browser, displayName: "Walkie Transport Test")
+        let accepted = await service.sendReliably(.transcribedSpeech(TranscribedSpeech(
+            workspaceID: UUID(),
+            text: "Run the tests",
+            recordingID: UUID()
+        )))
+
+        XCTAssertFalse(accepted, "dictation must remain recoverable when no authenticated peer can receive it")
+        XCTAssertFalse(service.isConnected)
+    }
+
     func testUnknownAndChangedAdvertisersRequireExplicitApproval() {
         let trusted = Curve25519.KeyAgreement.PrivateKey()
             .publicKey.rawRepresentation.base64EncodedString()

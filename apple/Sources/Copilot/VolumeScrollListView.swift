@@ -10,6 +10,7 @@ struct VolumeScrollSection<Item: Identifiable>: Identifiable {
 }
 
 struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
+    @Environment(\.scenePhase) private var scenePhase
     let sections: [VolumeScrollSection<Item>]
     @Binding var selectedID: Item.ID?
     var onHighlightChanged: ((Item) -> Void)?
@@ -111,11 +112,18 @@ struct VolumeScrollListView<Item: Identifiable, RowContent: View>: View {
         .onAppear {
             volumeObserver.onHoldStart = onVolumeHoldStart
             volumeObserver.onHoldEnd = onVolumeHoldEnd
-            volumeObserver.start()
+            if scenePhase == .active { volumeObserver.start() }
         }
         .onDisappear { volumeObserver.stop() }
+        .onChange(of: scenePhase) {
+            if scenePhase == .active {
+                volumeObserver.start()
+            } else {
+                volumeObserver.stop()
+            }
+        }
         .onChange(of: rearmToken) {
-            volumeObserver.rearm()
+            if scenePhase == .active { volumeObserver.rearm() }
         }
     }
 
@@ -199,6 +207,10 @@ struct VolumeGestureClassifier: Sendable {
     static let maximumRepeatDelay: Duration = .milliseconds(250)
 
     private var pending: PendingPresses?
+    private var pendingHeldDirectionChange: (
+        direction: VolumeDirection,
+        instant: ContinuousClock.Instant
+    )?
     private var nextToken = 0
     private(set) var heldDirection: VolumeDirection = .none
 
@@ -219,10 +231,36 @@ struct VolumeGestureClassifier: Sendable {
         guard direction != .none else { return [] }
 
         if isHolding {
-            // Lock the action to the direction that established the hold.
-            // Route/category changes can also move outputVolume; while held,
-            // any event is only evidence that the physical repeat is alive.
-            return [.holdRepeated(heldDirection)]
+            if direction == heldDirection {
+                pendingHeldDirectionChange = nil
+                return [.holdRepeated(heldDirection)]
+            }
+            guard let change = pendingHeldDirectionChange else {
+                // A category or route change can cause a lone opposite
+                // volume update. Wait for another event before switching.
+                pendingHeldDirectionChange = (direction, instant)
+                return [.holdRepeated(heldDirection)]
+            }
+
+            // The user can release Down and start Up before the release
+            // probe completes. Do not interpret that entire Up hold as more
+            // Down repeats: finish recording and classify the new gesture.
+            let ended = VolumeGestureEvent.holdEnded(heldDirection)
+            heldDirection = .none
+            pendingHeldDirectionChange = nil
+            let delay = change.instant.duration(to: instant)
+            if delay >= Self.minimumInitialRepeatDelay,
+               delay <= Self.maximumInitialRepeatDelay {
+                replacePending(
+                    direction: direction,
+                    firstEventAt: change.instant,
+                    lastEventAt: instant,
+                    count: 2
+                )
+                return [ended]
+            }
+            beginPending(direction, at: instant)
+            return [ended, .tap(change.direction)]
         }
 
         guard let pending else {
@@ -275,6 +313,7 @@ struct VolumeGestureClassifier: Sendable {
         guard isHolding else { return nil }
         let direction = heldDirection
         heldDirection = .none
+        pendingHeldDirectionChange = nil
         return .holdEnded(direction)
     }
 
@@ -283,6 +322,7 @@ struct VolumeGestureClassifier: Sendable {
     mutating func reset() -> VolumeDirection {
         let interruptedDirection = heldDirection
         pending = nil
+        pendingHeldDirectionChange = nil
         heldDirection = .none
         return interruptedDirection
     }
@@ -316,10 +356,50 @@ struct VolumeGestureClassifier: Sendable {
     }
 }
 
-// True push-to-talk release detection uses the same public signal iOS exposes
-// for presses: output-volume changes. After repeat events go quiet at a volume
-// limit, the observer moves to a safe probe point. Resumed repeats mean "still
-// held"; no repeats after the probe confirms release.
+/// iOS exposes volume changes, not hardware key-up events. Once repeats go
+/// quiet, move away from the volume limit and allow another repeat interval
+/// before inferring release. Tickets prevent an old probe from ending a new
+/// hold after a repeat, cancellation, or audio-session transition.
+struct VolumeHoldReleaseProbe: Sendable {
+    struct Ticket: Equatable, Sendable {
+        fileprivate let generation: Int
+    }
+
+    static let quietInterval: Duration = .milliseconds(350)
+    static let probeInterval: Duration = .milliseconds(350)
+
+    private enum Phase: Equatable, Sendable {
+        case idle
+        case waiting(Ticket)
+        case probing(Ticket)
+    }
+
+    private var generation = 0
+    private var phase: Phase = .idle
+
+    mutating func observedRepeat() -> Ticket {
+        generation &+= 1
+        let ticket = Ticket(generation: generation)
+        phase = .waiting(ticket)
+        return ticket
+    }
+
+    mutating func begin(_ ticket: Ticket) -> Bool {
+        guard phase == .waiting(ticket) else { return false }
+        phase = .probing(ticket)
+        return true
+    }
+
+    mutating func finish(_ ticket: Ticket) -> Bool {
+        guard phase == .probing(ticket) else { return false }
+        phase = .idle
+        return true
+    }
+
+    mutating func reset() {
+        phase = .idle
+    }
+}
 
 @MainActor
 @Observable
@@ -335,7 +415,9 @@ final class VolumeObserver {
     private var resetTask: Task<Void, Never>?
     private var holdDetectTask: Task<Void, Never>?
     private var releaseTestTask: Task<Void, Never>?
+    private var releaseProbe = VolumeHoldReleaseProbe()
     private var gestureClassifier = VolumeGestureClassifier()
+    private var observationGeneration = 0
     private var pendingTapDirections: [VolumeDirection] = []
     private weak var volumeView: MPVolumeView?
     private let session = AVAudioSession.sharedInstance()
@@ -344,10 +426,6 @@ final class VolumeObserver {
 
     private let tapHaptic = UIImpactFeedbackGenerator(style: .medium)
     private let holdHaptic = UINotificationFeedbackGenerator()
-
-    /// True while we've reset to midpoint to test if the user released.
-    /// Events during this phase are "still holding" signals, not new holds.
-    private var isTestingRelease = false
 
     private var isVolumeHeld: Bool { gestureClassifier.isHolding }
 
@@ -368,10 +446,19 @@ final class VolumeObserver {
         previousVolume = session.outputVolume
         if !isVolumeHeld { setVolumeMidpoint() }
 
+        subscribeToVolumeChanges()
+    }
+
+    private func subscribeToVolumeChanges() {
+        observationGeneration &+= 1
+        let generation = observationGeneration
         cancellable = session.publisher(for: \.outputVolume)
             .sink { @Sendable [weak self] newVolume in
                 Task { @MainActor [weak self] in
-                    self?.handleVolumeChange(newVolume)
+                    guard let self,
+                          self.cancellable != nil,
+                          self.observationGeneration == generation else { return }
+                    self.handleVolumeChange(newVolume)
                 }
             }
     }
@@ -381,21 +468,23 @@ final class VolumeObserver {
     /// then calls `setActive(false)` on stop; without re-arming here the
     /// hardware volume buttons stop driving `outputVolume` and the observer
     /// goes silent after the first recording (works-exactly-once bug). The
-    /// KVO subscription itself stays alive — only the session needs re-arming.
-    /// Call once transcription has fully stopped.
+    /// Refresh KVO as well so queued updates from the previous audio route
+    /// cannot be mistaken for a new gesture. Call after transcription stops.
     func rearm() {
-        let interruptedDirection = gestureClassifier.reset()
-        isTestingRelease = false
-        holdDetectTask?.cancel(); holdDetectTask = nil
-        releaseTestTask?.cancel(); releaseTestTask = nil
+        // stop() may have run while transcription was finalizing. A late
+        // completion must not reactivate monitoring after this view left.
+        guard cancellable != nil else { return }
+        cancellable?.cancel()
+        resetTask?.cancel()
+        resetTask = nil
         pendingProgrammaticVolume = nil
-        pendingTapDirections.removeAll(keepingCapacity: true)
         activateVolumeObservationSession()
         previousVolume = session.outputVolume
         setVolumeMidpoint()
-        if interruptedDirection != .none {
-            onHoldEnd?(interruptedDirection)
-        }
+        subscribeToVolumeChanges()
+        // Preserve a gesture that began while the previous recording was
+        // finalizing, including an Up hold that must execute only once.
+        if isVolumeHeld { scheduleReleaseTest() }
     }
 
     func consumeTapDirections() -> [VolumeDirection] {
@@ -453,19 +542,14 @@ final class VolumeObserver {
                 holdDetectTask = nil
                 resetTask?.cancel()
                 resetTask = nil
-                isTestingRelease = false
+                releaseProbe.reset()
                 holdHaptic.notificationOccurred(.success)
                 onHoldStart?(direction)
                 scheduleReleaseTest()
             case .holdRepeated:
-                if isTestingRelease {
-                    isTestingRelease = false
-                    releaseTestTask?.cancel()
-                    releaseTestTask = nil
-                }
                 scheduleReleaseTest()
             case .holdEnded(let direction):
-                isTestingRelease = false
+                releaseProbe.reset()
                 releaseTestTask?.cancel()
                 releaseTestTask = nil
                 holdHaptic.notificationOccurred(.warning)
@@ -490,38 +574,27 @@ final class VolumeObserver {
         }
     }
 
-    /// After 2 seconds of silence during a hold, test if the user released
-    /// by moving to a probe volume and checking for resumed events.
+    /// Both waits exceed the classifier's maximum repeat interval, while
+    /// avoiding the previous three-second delay after the user let go.
     private func scheduleReleaseTest() {
         releaseTestTask?.cancel()
+        let ticket = releaseProbe.observedRepeat()
         releaseTestTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            guard let self, !Task.isCancelled, self.isVolumeHeld else { return }
+            try? await Task.sleep(for: VolumeHoldReleaseProbe.quietInterval)
+            guard let self, !Task.isCancelled, self.isVolumeHeld,
+                  self.releaseProbe.begin(ticket) else { return }
 
-            // No events for 2 seconds. Move to a probe volume to test release.
-            self.isTestingRelease = true
-            guard self.setReleaseProbeVolume() else {
-                // Without moving the slider there is no valid release probe.
-                // Keep the hold alive and retry instead of firing a false end.
-                self.isTestingRelease = false
-                self.releaseTestTask = nil
-                self.scheduleReleaseTest()
-                return
+            if self.setReleaseProbeVolume() {
+                try? await Task.sleep(for: VolumeHoldReleaseProbe.probeInterval)
             }
+            // If the volume control disappeared, there is no way to prove
+            // the button is still held. Finish the recording instead of
+            // retrying forever with the microphone left open.
+            guard !Task.isCancelled, self.releaseProbe.finish(ticket) else { return }
 
-            // Wait 1 second for events to resume.
-            try? await Task.sleep(for: .seconds(1))
-            guard !Task.isCancelled else { return }
-
-            if self.isTestingRelease {
-                // No events arrived after reset. User released.
-                self.isTestingRelease = false
-                if let event = self.gestureClassifier.endHold() {
-                    self.apply([event])
-                }
+            if let event = self.gestureClassifier.endHold() {
+                self.apply([event])
             }
-            // If isTestingRelease was cleared by publish(), user is still
-            // holding and scheduleReleaseTest was already called.
         }
     }
 
@@ -568,7 +641,9 @@ final class VolumeObserver {
     }
 
     private func setVolumeMidpoint() {
-        guard !isVolumeHeld else { return }
+        // A reset scheduled by an earlier tap must not interfere with the
+        // initial-repeat cadence of the next gesture.
+        guard !isVolumeHeld, gestureClassifier.pendingResolution == nil else { return }
         guard let slider = volumeView?.subviews.compactMap({ $0 as? UISlider }).first else {
             return
         }
@@ -601,7 +676,8 @@ final class VolumeObserver {
         resetTask = nil
         holdDetectTask = nil
         releaseTestTask = nil
-        isTestingRelease = false
+        releaseProbe.reset()
+        observationGeneration &+= 1
         previousVolume = nil
         pendingProgrammaticVolume = nil
         pendingTapDirections.removeAll(keepingCapacity: true)

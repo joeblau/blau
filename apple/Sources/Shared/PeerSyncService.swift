@@ -97,6 +97,18 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         }
     }
 
+    /// Reports whether the authenticated transport accepted the message. The
+    /// caller can retain dictation when the connection disappears during stop.
+    /// This is a transport result, not an acknowledgement from the remote UI.
+    func sendReliably(_ message: SyncMessage) async -> Bool {
+        guard let data = try? JSONEncoder().encode(message) else { return false }
+        return await withCheckedContinuation { continuation in
+            transportQueue.async { [weak self] in
+                continuation.resume(returning: self?.sendAuthenticated(data, mode: .reliable) ?? false)
+            }
+        }
+    }
+
     @MainActor
     func resolvePairingRequest(approved: Bool) {
         guard let request = pairingRequest else { return }
@@ -154,7 +166,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         pendingPairing = nil
         activePeer = nil
         authenticator.resetSession()
-        Task { @MainActor [weak self] in
+        DispatchQueue.main.async { [weak self] in
             self?.isConnected = false
             self?.statusText = "Stopped"
             self?.pairingRequest = nil
@@ -199,11 +211,18 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         transportQueue.asyncAfter(deadline: .now() + 2, execute: work)
     }
 
-    private func sendAuthenticated(_ data: Data, mode: MCSessionSendDataMode) {
+    @discardableResult
+    private func sendAuthenticated(_ data: Data, mode: MCSessionSendDataMode) -> Bool {
         guard let activePeer,
               session.connectedPeers.contains(activePeer),
-              let envelope = authenticator.sealMessage(data) else { return }
-        try? session.send(envelope, toPeers: [activePeer], with: mode)
+              let envelope = authenticator.sealMessage(data) else { return false }
+        do {
+            try session.send(envelope, toPeers: [activePeer], with: mode)
+            return true
+        } catch {
+            updateStatus("Could not send to Cockpit: \(error.localizedDescription)")
+            return false
+        }
     }
 
     private func sendRaw(_ data: Data, to peer: MCPeerID) {
@@ -211,7 +230,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
     }
 
     private func updateStatus(_ status: String) {
-        Task { @MainActor [weak self] in
+        DispatchQueue.main.async { [weak self] in
             self?.statusText = status
         }
     }
@@ -255,7 +274,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
             completion: completion
         )
         schedulePairingTimeout(for: request.id)
-        Task { @MainActor [weak self] in
+        DispatchQueue.main.async { [weak self] in
             self?.statusText = isKeyChange
                 ? "Approval required for sync identity change"
                 : "Approval required to pair \(displayName)"
@@ -291,7 +310,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
             self.pairingTimeoutWork = nil
             self.pendingPairing = nil
             pending.completion(false)
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 guard self?.pairingRequest?.id == requestID else { return }
                 self?.pairingRequest = nil
                 self?.statusText = "Sync pairing timed out; searching again"
@@ -309,7 +328,7 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
         pairingTimeoutWork?.cancel()
         pairingTimeoutWork = nil
         pending.completion(false)
-        Task { @MainActor [weak self] in
+        DispatchQueue.main.async { [weak self] in
             guard self?.pairingRequest?.id == pending.request.id else { return }
             self?.pairingRequest = nil
             self?.statusText = status
@@ -362,7 +381,7 @@ private extension PeerSyncService {
             if activePeer == peerID {
                 activePeer = nil
                 authenticator.resetSession()
-                Task { @MainActor [weak self] in
+                DispatchQueue.main.async { [weak self] in
                     self?.isConnected = false
                     self?.statusText = "Disconnected from \(peerID.displayName)"
                 }
@@ -385,7 +404,7 @@ private extension PeerSyncService {
             sendRaw(response, to: peerID)
 
         case .authenticated:
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 self?.isConnected = true
                 self?.statusText = "Connected securely to \(peerID.displayName)"
             }
@@ -396,7 +415,9 @@ private extension PeerSyncService {
                 updateStatus("Rejected invalid sync message")
                 return
             }
-            Task { @MainActor [weak self] in
+            // MCSession's reliable messages arrive on our serial transport
+            // queue. Preserve that order all the way to the UI command handler.
+            DispatchQueue.main.async { [weak self] in
                 self?.onReceive?(message)
             }
         }

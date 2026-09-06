@@ -8,6 +8,39 @@ import Testing
 @Suite("Remote desktop groups")
 @MainActor
 struct RemoteDesktopGroupsTests {
+    @Test("Restoring groups never writes preferences during a SwiftUI render")
+    func restoringLayoutDoesNotSave() throws {
+        try withGroups { groups, defaults in
+            groups.reconcile(connectionIDs: [UUID(), UUID()])
+            let selected = groups.addGroup()
+            groups.renameGroup(selected, to: "Build Macs")
+            let writesBeforeRestore = defaults.writeCount
+
+            let restored = RemoteDesktopGroups(defaults: defaults)
+
+            #expect(restored.groups == groups.groups)
+            #expect(restored.selectedGroupID == selected)
+            #expect(defaults.writeCount == writesBeforeRestore)
+        }
+    }
+
+    @Test("Selecting the current group does not rewrite preferences")
+    func unchangedSelectionDoesNotSave() throws {
+        try withGroups { groups, defaults in
+            groups.reconcile(connectionIDs: [UUID()])
+            let first = try #require(groups.selectedGroupID)
+            let second = groups.addGroup()
+            let writesBeforeSelection = defaults.writeCount
+
+            groups.selectedGroupID = second
+            #expect(defaults.writeCount == writesBeforeSelection)
+
+            groups.selectedGroupID = first
+            #expect(defaults.writeCount == writesBeforeSelection + 1)
+            #expect(RemoteDesktopGroups(defaults: defaults).selectedGroupID == first)
+        }
+    }
+
     @Test("Existing machines are grouped four at a time with blank remaining slots")
     func existingConnectionsArePreserved() throws {
         try withGroups { groups, _ in
@@ -90,11 +123,90 @@ struct RemoteDesktopGroupsTests {
         }
     }
 
-    private func withGroups(_ body: (RemoteDesktopGroups, UserDefaults) throws -> Void) throws {
+    @Test("Selecting a computer reveals its group and preserves its exact slot")
+    func selectingComputerRevealsGroup() throws {
+        try withGroups { groups, _ in
+            let ids = (0..<6).map { _ in UUID() }
+            groups.reconcile(connectionIDs: ids)
+            let layoutBeforeSelection = groups.groups
+            let selected = groups.selectConnection(ids[5])
+
+            #expect(selected == ids[5])
+            #expect(groups.selectedGroupID == groups.groups[1].id)
+            #expect(groups.selectedGroup?.slots == [ids[4], ids[5], nil, nil])
+            #expect(groups.groups == layoutBeforeSelection)
+        }
+    }
+
+    @Test("An externally selected computer wins over the restored group's first computer")
+    func restoredGroupDoesNotOverrideExternalSelection() throws {
+        try withGroups { groups, defaults in
+            let ids = (0..<6).map { _ in UUID() }
+            groups.reconcile(connectionIDs: ids)
+            let originalGroupID = groups.selectedGroupID
+            let restored = RemoteDesktopGroups(defaults: defaults)
+            #expect(restored.selectedGroupID == originalGroupID)
+
+            restored.reconcile(connectionIDs: ids)
+            let selected = restored.selectConnection(ids[5])
+            #expect(selected == ids[5])
+            #expect(restored.selectedGroupID == restored.groups[1].id)
+        }
+    }
+
+    @Test("Local group selection preserves a member or chooses its first occupied slot")
+    func selectingGroupChoosesVisibleComputer() throws {
+        try withGroups { groups, _ in
+            let ids = (0..<6).map { _ in UUID() }
+            groups.reconcile(connectionIDs: ids)
+            let first = groups.groups[0].id
+            let second = groups.groups[1].id
+
+            let preserved = groups.selectGroup(first, preserving: ids[2])
+            #expect(preserved == ids[2])
+            let switched = groups.selectGroup(second, preserving: ids[2])
+            #expect(switched == ids[4])
+            #expect(groups.selectedGroupID == second)
+
+            let empty = groups.addGroup()
+            let blankSelection = groups.selectGroup(empty, preserving: ids[4])
+            #expect(blankSelection == nil)
+            #expect(groups.selectedGroupID == empty)
+        }
+    }
+
+    @Test("Unknown or unchanged computer selection does not rewrite group preferences")
+    func missingOrUnchangedSelectionDoesNotSave() throws {
+        try withGroups { groups, defaults in
+            let ids = [UUID(), UUID()]
+            groups.reconcile(connectionIDs: ids)
+            let writesBeforeSelection = defaults.writeCount
+
+            let selected = groups.selectConnection(ids[1])
+            let missing = groups.selectConnection(UUID())
+            #expect(selected == ids[1])
+            #expect(missing == ids[0])
+            #expect(defaults.writeCount == writesBeforeSelection)
+        }
+    }
+
+    private func withGroups(_ body: (RemoteDesktopGroups, CountingGroupDefaults) throws -> Void) throws {
         let suite = "RemoteDesktopGroupsTests-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
+        let defaults = try #require(CountingGroupDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         try body(RemoteDesktopGroups(defaults: defaults), defaults)
+    }
+}
+
+private final class CountingGroupDefaults: UserDefaults, @unchecked Sendable {
+    private let lock = NSLock()
+    private var writes = 0
+
+    var writeCount: Int { lock.withLock { writes } }
+
+    override func set(_ value: Any?, forKey defaultName: String) {
+        lock.withLock { writes += 1 }
+        super.set(value, forKey: defaultName)
     }
 }
 

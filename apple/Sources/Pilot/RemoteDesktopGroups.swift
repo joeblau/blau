@@ -17,7 +17,9 @@ struct RemoteDesktopGroup: Codable, Equatable, Identifiable {
 final class RemoteDesktopGroups {
     private(set) var groups: [RemoteDesktopGroup] = []
     var selectedGroupID: UUID? {
-        didSet { save() }
+        didSet {
+            if selectedGroupID != oldValue { save() }
+        }
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -32,12 +34,39 @@ final class RemoteDesktopGroups {
         self.defaults = defaults
         if let data = defaults.data(forKey: Self.storageKey),
            let layout = try? JSONDecoder().decode(Layout.self, from: data) {
-            groups = layout.groups
-            selectedGroupID = layout.selectedGroupID
+            // Restore backing storage without observation or persistence. This
+            // model can be created during a SwiftUI render; saving here would
+            // emit defaults notifications and immediately invalidate that render.
+            _groups = layout.groups
+            _selectedGroupID = layout.selectedGroupID
         }
     }
 
     var selectedGroup: RemoteDesktopGroup? { groups.first { $0.id == selectedGroupID } }
+
+    /// Selecting a computer from Walkie reveals its existing group without
+    /// changing its slot or replacing it with that group's first computer.
+    @discardableResult
+    func selectConnection(_ connectionID: UUID?) -> UUID? {
+        if let connectionID,
+           let group = groups.first(where: { $0.connectionIDs.contains(connectionID) }) {
+            selectedGroupID = group.id
+            return connectionID
+        }
+        return selectedGroup?.connectionIDs.first
+    }
+
+    /// A local group switch keeps its selected computer when possible and
+    /// otherwise selects the first occupied slot, including nil for a blank group.
+    @discardableResult
+    func selectGroup(_ groupID: UUID, preserving connectionID: UUID?) -> UUID? {
+        guard let group = groups.first(where: { $0.id == groupID }) else {
+            return selectConnection(connectionID)
+        }
+        selectedGroupID = groupID
+        if let connectionID, group.connectionIDs.contains(connectionID) { return connectionID }
+        return group.connectionIDs.first
+    }
 
     /// Seed existing saved machines in order, four per group. Deletions clear
     /// their slots without shifting any other machine's screen position.

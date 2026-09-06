@@ -25,6 +25,7 @@ enum VoiceRecordControl: String, Codable, Sendable {
 struct VoiceRecordCommand: Codable, Sendable {
     let control: VoiceRecordControl
     let workspaceID: UUID?
+    var recordingID: UUID? = nil
 }
 
 /// Final transcript produced on Copilot (iPhone). Sent to Pilot at the
@@ -33,6 +34,14 @@ struct VoiceRecordCommand: Codable, Sendable {
 struct TranscribedSpeech: Codable, Sendable {
     let workspaceID: UUID?
     let text: String
+    var recordingID: UUID? = nil
+}
+
+/// Execute only the input that received this recording's transcript, even if
+/// the user has focused a different pane since dictation began.
+struct ExecuteTranscript: Codable, Sendable {
+    let recordingID: UUID
+    let workspaceID: UUID?
 }
 
 enum TerminalInput: String, Codable, Sendable {
@@ -54,6 +63,7 @@ enum SyncMessage: Codable, Sendable {
     case voiceRecord(VoiceRecordCommand)
     case transcribedSpeech(TranscribedSpeech)
     case terminalInput(TerminalInput)
+    case executeTranscript(ExecuteTranscript)
     /// Announces this device's long-term public key to the paired peer so the
     /// two sides exchange keys automatically over the encrypted Multipeer
     /// channel — no manual entry (issue #51).
