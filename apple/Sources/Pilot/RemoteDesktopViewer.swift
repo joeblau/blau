@@ -18,9 +18,11 @@ struct RemoteDesktopViewer: NSViewRepresentable {
     /// Read from the session in the caller's `body` so SwiftUI re-runs
     /// `updateNSView` when the framebuffer is created, resized, or dropped.
     let framebufferGeneration: Int
+    var onActivate: () -> Void = {}
 
     func makeNSView(context: Context) -> NSView {
-        let container = NSView()
+        let container = RemoteFramebufferContainerView()
+        container.onActivate = onActivate
         container.wantsLayer = true
         context.coordinator.attach(to: container, session: session)
         context.coordinator.sync(generation: framebufferGeneration)
@@ -28,6 +30,7 @@ struct RemoteDesktopViewer: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? RemoteFramebufferContainerView)?.onActivate = onActivate
         context.coordinator.sync(generation: framebufferGeneration)
     }
 
@@ -75,6 +78,7 @@ struct RemoteDesktopViewer: NSViewRepresentable {
             )
             view.autoresizingMask = [.width, .height]
             container.addSubview(view)
+            (container as? RemoteFramebufferContainerView)?.framebufferView = view
             framebufferView = view
             installedGeneration = generation
             // VNCCAFramebufferView takes focus on mouse-down. Mounting another
@@ -89,6 +93,7 @@ struct RemoteDesktopViewer: NSViewRepresentable {
 
         private func removeFramebufferView() {
             guard let framebufferView else { return }
+            (container as? RemoteFramebufferContainerView)?.framebufferView = nil
             // `VNCCAFramebufferView.init` installs itself as the connection's
             // delegate and forwards through a weak reference. Hand the session's
             // relay back *before* this view dies, or the connection's weak
@@ -98,5 +103,25 @@ struct RemoteDesktopViewer: NSViewRepresentable {
             self.framebufferView = nil
             installedGeneration = nil
         }
+    }
+}
+
+/// Observe which computer receives a mouse-down without installing a gesture
+/// recognizer or intercepting the click. RoyalVNCKit still receives the exact
+/// hit view and retains responsibility for remote mouse input and keyboard focus.
+@MainActor
+private final class RemoteFramebufferContainerView: NSView {
+    var onActivate: () -> Void = {}
+    weak var framebufferView: NSView?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let target = super.hitTest(point)
+        guard let target, let framebufferView,
+              target === framebufferView || target.isDescendant(of: framebufferView),
+              let event = NSApp?.currentEvent, let window, event.window === window,
+              event.type == .leftMouseDown || event.type == .rightMouseDown
+                || event.type == .otherMouseDown else { return target }
+        onActivate()
+        return target
     }
 }

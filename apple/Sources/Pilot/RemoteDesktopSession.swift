@@ -88,6 +88,7 @@ final class RemoteDesktopSession {
     @ObservationIgnored private var password = ""
     @ObservationIgnored private var shouldSavePassword = false
     @ObservationIgnored private var connectionTimeoutTask: Task<Void, Never>?
+    @ObservationIgnored private var keyboardInput = RemoteDesktopKeyboardInput()
     private let timeout: Duration
     /// Incremented per connect attempt. Late delegate callbacks from a torn-down
     /// attempt carry a stale token and are ignored, so a dying connection can't
@@ -110,6 +111,25 @@ final class RemoteDesktopSession {
     var framebuffer: VNCFramebuffer? { connection?.framebuffer }
     var activeConnection: VNCConnection? { connection }
     var connectionDelegate: VNCConnectionDelegate? { relay }
+
+    /// Capture this when dictation begins. A disconnect or reconnect invalidates
+    /// the ID even when the saved machine and its SwiftUI tab stay the same.
+    var inputSessionID: UUID? {
+        guard status == .connected, connection?.connectionState.status == .connected else { return nil }
+        return keyboardInput.sessionID
+    }
+
+    /// Returns whether text was enqueued on the captured live connection;
+    /// VNC does not acknowledge whether the remote application accepted it.
+    func sendText(_ text: String, sessionID: UUID) -> Bool {
+        guard inputSessionID == sessionID else { return false }
+        return keyboardInput.sendText(text, sessionID: sessionID)
+    }
+
+    func sendEnter(sessionID: UUID) -> Bool {
+        guard inputSessionID == sessionID else { return false }
+        return keyboardInput.sendEnter(sessionID: sessionID)
+    }
 
     func connect(
         host: String,
@@ -229,6 +249,18 @@ final class RemoteDesktopSession {
         case .connected:
             password = ""
             status = newStatus
+            if let connection {
+                keyboardInput.beginSession { [weak connection] event in
+                    guard let connection, connection.connectionState.status == .connected else { return false }
+                    let key = VNCKeyCode(event.keysym)
+                    if event.isDown {
+                        connection.keyDown(key)
+                    } else {
+                        connection.keyUp(key)
+                    }
+                    return true
+                }
+            }
         case .connecting:
             // A delayed progress callback must not reopen the spinner after
             // success, when its deadline has already been cancelled.
@@ -241,6 +273,7 @@ final class RemoteDesktopSession {
     private func teardown(resettingStatusTo newStatus: RemoteConnectionStatus?) {
         // Invalidate in-flight callbacks before dropping the connection.
         attempt += 1
+        keyboardInput.endSession()
         connectionTimeoutTask?.cancel()
         connectionTimeoutTask = nil
         let oldConnection = connection

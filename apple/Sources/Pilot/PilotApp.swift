@@ -213,18 +213,13 @@ struct PilotApp: App {
     @State private var plotterClientCount = 0
     @State private var plotterPairingRequest: FrameLinkPairingRequest?
     @State private var remoteInkModel = RemoteInkModel()
-    @State private var recordingTargetPaneID: UUID?
+    @State private var walkieInput = PilotWalkieInputState()
     @State private var mainWindowID: CGWindowID?
     @State private var extensionWindowID: CGWindowID?
     /// `NSApp.keyWindow` is nil while Cockpit is in the background. Retain the
     /// last active Cockpit surface so Walkie still targets the window the user
     /// most recently worked in instead of falling back to Main.
     @State private var lastRemoteInputSurface: WorkspacePaneSurface = .main
-    /// True while a Copilot peer is currently push-to-talking. Flipped
-    /// from `.voiceRecord(.start | .stop)` messages so the Mac UI can
-    /// show a "listening" hint even though the audio + transcription
-    /// happen on the iPhone now.
-    @State private var isPeerRecording: Bool = false
     @State private var didSetupSync = false
     /// Badges background workspaces when their GitHub Actions complete.
     @State private var actionWatcher = WorkspaceActionWatcher()
@@ -518,7 +513,7 @@ struct PilotApp: App {
                 localAudioOutput: headphoneDetector.audioOutput,
                 isPlotterConnected: plotterClientCount > 0,
                 remoteInkModel: remoteInkModel,
-                isPeerRecording: isPeerRecording
+                isPeerRecording: walkieInput.isRecording
             )
                 .environment(\.uiZoom, uiZoom)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -588,7 +583,10 @@ struct PilotApp: App {
                     sendLocalDeviceStatus()
                 }
                 .onChange(of: syncService.isConnected) {
-                    guard syncService.isConnected else { return }
+                    guard syncService.isConnected else {
+                        walkieInput.reset()
+                        return
+                    }
                     sendLocalDeviceStatus()
                     secureIdentity.refreshPeer()
                     // Confirm the already-approved pin to the authenticated peer.
@@ -860,11 +858,26 @@ struct PilotApp: App {
         )?.id)
     }
 
+    private var walkieDelivery: PilotWalkieDelivery {
+        PilotWalkieDelivery(store: store, terminalPaneID: { workspaceID in
+            activeTerminalPane(in: workspaceID, on: remoteInputSurface())?.id
+        })
+    }
+
     private func selectRemoteWorkspace(_ workspaceID: UUID, on surface: WorkspacePaneSurface) {
+        if workspaceID == WorkspaceStore.remoteDesktopWorkspaceID {
+            store.enterRemoteDesktopMode()
+            return
+        }
         store.selectWorkspace(workspaceID)
         guard let terminalPane = activeTerminalPane(in: workspaceID, on: surface) else { return }
         terminalPane.workspace?.selectedPaneID = terminalPane.id
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            // Rapid volume taps can select another workspace before SwiftUI
+            // installs this view. An older delayed focus must not undo them.
+            guard store.selectedWorkspaceID == workspaceID,
+                  terminalPane.workspace?.selectedPaneID == terminalPane.id,
+                  remoteInputSurface() == surface else { return }
             _ = GhosttyMetalView.focus(paneID: terminalPane.id)
         }
     }
@@ -943,18 +956,22 @@ struct PilotApp: App {
         syncService.onReceive = { (message: SyncMessage) in
             switch message {
             case .selectWorkspace(let sel):
-                // Workspace selection follows the active Cockpit window. This is
-                // also the setup path immediately before a Walkie recording.
+                // Workspace selection follows the active Cockpit window.
                 selectRemoteWorkspace(sel.workspaceID, on: remoteInputSurface())
             case .selectTab(let sel):
-                // Copilot tab selector picked a pane: focus that workspace and
-                // make the chosen pane its active tab.
+                if sel.workspaceID == WorkspaceStore.remoteDesktopWorkspaceID {
+                    _ = store.selectRemoteDesktopTab(sel.tabID)
+                    return
+                }
+                // Focus the workspace and tab selected on Copilot.
                 store.selectWorkspace(sel.workspaceID)
-                if let workspace = store.workspaces.first(where: { $0.id == sel.workspaceID }) {
+                if let workspace = store.workspaces.first(where: { $0.id == sel.workspaceID }),
+                   workspace.panes.contains(where: { $0.id == sel.tabID }) {
                     workspace.selectedPaneID = sel.tabID
-                    // Only terminal panes are focusable in the Ghostty registry;
-                    // harmless no-op for browser/device panes.
+                    // Ghostty focus is a no-op for browser/device panes.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        guard store.selectedWorkspaceID == sel.workspaceID,
+                              workspace.selectedPaneID == sel.tabID else { return }
                         _ = GhosttyMetalView.focus(paneID: sel.tabID)
                     }
                 }
@@ -967,56 +984,20 @@ struct PilotApp: App {
             case .mouseClick:
                 MouseBridge.shared.click()
             case .voiceRecord(let command):
-                // Audio capture + transcription now live on Copilot.
-                // Pilot uses this message only to switch to the
-                // workspace whose button is being held (snappy UI) and
-                // to remember which terminal pane should receive the
-                // text when the iPhone sends `.transcribedSpeech`.
                 switch command.control {
                 case .start:
-                    let surface = remoteInputSurface()
-                    let targetWorkspaceID = command.workspaceID ?? store.selectedWorkspaceID
-                    if let targetWorkspaceID {
-                        store.selectWorkspace(targetWorkspaceID)
-                    }
-                    // Capture the concrete pane at hold-start. Window/pane focus
-                    // may change while Whisper finishes, but the utterance still
-                    // belongs to the place where recording began.
-                    recordingTargetPaneID = activeTerminalPane(
-                        in: targetWorkspaceID,
-                        on: surface
-                    )?.id
-                    isPeerRecording = true
+                    walkieDelivery.start(command, state: &walkieInput)
                 case .stop:
-                    isPeerRecording = false
+                    walkieInput.stop(recordingID: command.recordingID, workspaceID: command.workspaceID)
                 }
             case .transcribedSpeech(let speech):
-                let trimmed = speech.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else {
-                    recordingTargetPaneID = nil
-                    return
-                }
-                // Prefer the pane captured at hold-start, fall back to
-                // the current active terminal of the workspace whose
-                // button was held (or the workspace selected when the
-                // message arrives, in case Pilot was launched mid-hold).
-                let fallbackSurface = remoteInputSurface()
-                let targetPaneID = recordingTargetPaneID
-                    ?? activeTerminalPane(
-                        in: speech.workspaceID ?? store.selectedWorkspaceID,
-                        on: fallbackSurface
-                    )?.id
-                recordingTargetPaneID = nil
-                guard let terminal = terminalView(for: targetPaneID) else {
+                if !walkieDelivery.receive(speech, state: &walkieInput), !speech.text.isEmpty {
                     NSSound.beep()
-                    return
                 }
-                terminal.pasteText(trimmed)
-            case .terminalInput(let input):
-                switch input {
-                case .enter:
-                    activeTerminalView()?.sendEnter()
-                }
+            case .executeTranscript(let command):
+                walkieDelivery.execute(command, state: &walkieInput)
+            case .terminalInput(.enter):
+                walkieDelivery.enterSelection()
             case .deviceKey(let announce):
                 // Auto-exchange device keys with Copilot (issue #51).
                 secureIdentity.receive(announce)
@@ -1039,8 +1020,8 @@ struct PilotApp: App {
                     lastBroadcast.summaries = nil
                     return
                 }
-                let summaries = store.summaries
-                let selectedID = store.selectedWorkspaceID
+                let summaries = store.syncSummaries
+                let selectedID = store.selectedSyncWorkspaceID
                 guard summaries != lastBroadcast.summaries
                         || selectedID != lastBroadcast.selectedID else { return }
                 lastBroadcast.summaries = summaries

@@ -105,8 +105,9 @@ struct SyncMessagesTests {
     @Test("VoiceRecordCommand round-trip")
     func voiceRecordCommandRoundTrip() throws {
         let id = UUID()
+        let recordingID = UUID()
         for control in [VoiceRecordControl.start, VoiceRecordControl.stop] {
-            let command = VoiceRecordCommand(control: control, workspaceID: id)
+            let command = VoiceRecordCommand(control: control, workspaceID: id, recordingID: recordingID)
             let message = SyncMessage.voiceRecord(command)
             let data = try encoder.encode(message)
             let decoded = try decoder.decode(SyncMessage.self, from: data)
@@ -114,6 +115,7 @@ struct SyncMessagesTests {
             if case .voiceRecord(let decodedCommand) = decoded {
                 #expect(decodedCommand.control == control)
                 #expect(decodedCommand.workspaceID == id)
+                #expect(decodedCommand.recordingID == recordingID)
             } else {
                 Issue.record("Expected voiceRecord case for \(control)")
             }
@@ -129,8 +131,90 @@ struct SyncMessagesTests {
 
         if case .voiceRecord(let decodedCommand) = decoded {
             #expect(decodedCommand.workspaceID == nil)
+            #expect(decodedCommand.recordingID == nil)
         } else {
             Issue.record("Expected voiceRecord case")
+        }
+    }
+
+    @Test("TranscribedSpeech preserves the recording ID and exact transcript")
+    func transcribedSpeechRoundTrip() throws {
+        let workspaceID = UUID()
+        let recordingID = UUID()
+        let text = "Review the changes in Café.swift, then run the tests."
+        let message = SyncMessage.transcribedSpeech(TranscribedSpeech(
+            workspaceID: workspaceID,
+            text: text,
+            recordingID: recordingID
+        ))
+        let decoded = try decoder.decode(SyncMessage.self, from: encoder.encode(message))
+
+        guard case .transcribedSpeech(let speech) = decoded else {
+            Issue.record("Expected transcribedSpeech case")
+            return
+        }
+        #expect(speech.workspaceID == workspaceID)
+        #expect(speech.recordingID == recordingID)
+        #expect(speech.text == text)
+    }
+
+    @Test("ExecuteTranscript preserves its recording and optional workspace")
+    func executeTranscriptRoundTrip() throws {
+        let recordingID = UUID()
+        for workspaceID in [UUID(), nil] {
+            let message = SyncMessage.executeTranscript(ExecuteTranscript(
+                recordingID: recordingID,
+                workspaceID: workspaceID
+            ))
+            let decoded = try decoder.decode(SyncMessage.self, from: encoder.encode(message))
+
+            guard case .executeTranscript(let command) = decoded else {
+                Issue.record("Expected executeTranscript case")
+                continue
+            }
+            #expect(command.recordingID == recordingID)
+            #expect(command.workspaceID == workspaceID)
+        }
+    }
+
+    @Test("Legacy recording start and stop decode without a recording ID")
+    func legacyVoiceCommandsRemainCompatible() throws {
+        let workspaceID = UUID()
+        for control in [VoiceRecordControl.start, VoiceRecordControl.stop] {
+            let json = """
+            {"voiceRecord":{"_0":{"control":"\(control.rawValue)","workspaceID":"\(workspaceID.uuidString)"}}}
+            """
+            let decoded = try decoder.decode(SyncMessage.self, from: Data(json.utf8))
+
+            guard case .voiceRecord(let command) = decoded else {
+                Issue.record("Expected legacy voiceRecord case")
+                continue
+            }
+            #expect(command.control == control)
+            #expect(command.workspaceID == workspaceID)
+            #expect(command.recordingID == nil)
+        }
+    }
+
+    @Test("Legacy speech decodes without a recording ID or explicit workspace")
+    func legacySpeechRemainsCompatible() throws {
+        let workspaceID = UUID()
+        let fixtures = [
+            """
+            {"transcribedSpeech":{"_0":{"text":"Run the tests","workspaceID":"\(workspaceID.uuidString)"}}}
+            """,
+            #"{"transcribedSpeech":{"_0":{"text":"Run the tests"}}}"#,
+        ]
+        for (index, json) in fixtures.enumerated() {
+            let decoded = try decoder.decode(SyncMessage.self, from: Data(json.utf8))
+
+            guard case .transcribedSpeech(let speech) = decoded else {
+                Issue.record("Expected legacy transcribedSpeech case")
+                continue
+            }
+            #expect(speech.workspaceID == (index == 0 ? workspaceID : nil))
+            #expect(speech.recordingID == nil)
+            #expect(speech.text == "Run the tests")
         }
     }
 }

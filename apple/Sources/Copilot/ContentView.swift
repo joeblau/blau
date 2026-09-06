@@ -1,38 +1,5 @@
 import SwiftUI
 
-struct CopilotRecordingAttempt: Equatable, Sendable {
-    let id: UUID
-    let workspaceID: UUID?
-    var didStart = false
-}
-
-struct CopilotRecordingAttemptState: Equatable, Sendable {
-    private(set) var current: CopilotRecordingAttempt?
-
-    @discardableResult
-    mutating func begin(workspaceID: UUID?, id: UUID = UUID()) -> CopilotRecordingAttempt {
-        let attempt = CopilotRecordingAttempt(id: id, workspaceID: workspaceID)
-        current = attempt
-        return attempt
-    }
-
-    mutating func markStarted(id: UUID) -> CopilotRecordingAttempt? {
-        guard current?.id == id else { return nil }
-        current?.didStart = true
-        return current
-    }
-
-    mutating func end() -> CopilotRecordingAttempt? {
-        defer { current = nil }
-        return current
-    }
-
-    mutating func cancel(id: UUID? = nil) {
-        guard id == nil || current?.id == id else { return }
-        current = nil
-    }
-}
-
 enum CopilotVolumeHoldAction: Equatable, Sendable {
     case record(workspaceID: UUID?)
     case send(workspaceID: UUID?)
@@ -59,20 +26,34 @@ struct ContentView: View {
 
     @State private var workspaces: [WorkspaceSummary] = []
     @State private var selectedID: UUID?
-    /// A unique token distinguishes "no workspace selected" from "no active
-    /// attempt" and prevents a released hold from completing asynchronously.
-    @State private var recordingAttempt = CopilotRecordingAttemptState()
-    @State private var transcription = TranscriptionService()
-    /// Bumped after each recording cycle to re-arm volume observation, since
-    /// `transcription.stop()` deactivates the shared audio session.
-    @State private var rearmTrigger = 0
+    @State private var selectionState = CopilotWorkspaceSelectionState()
+    @State private var transcription: TranscriptionService
+    @State private var walkie: CopilotWalkieTalkie
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showModelDownloadConfirmation = false
-    @State private var pendingRecordingWorkspaceID: UUID?
     @State private var showSpeechStorage = false
     @AppStorage("transcription.allowRestrictedNetwork") private var allowRestrictedNetwork = false
     /// Auto-generated identity key, auto-exchanged with Pilot over the
     /// encrypted channel (issue #51). Drives the Settings "Identity & Keys".
     @State private var secureIdentity = SecureIdentity(role: .copilot)
+
+    init(syncService: PeerSyncService, watchDelegate: PhoneSessionDelegate,
+         demoMode: Bool = UserDefaults.standard.bool(forKey: "demoMode")) {
+        self.syncService = syncService
+        self.watchDelegate = watchDelegate
+        self.demoMode = demoMode
+        let transcription = TranscriptionService()
+        _transcription = State(initialValue: transcription)
+        _walkie = State(initialValue: CopilotWalkieTalkie(
+            start: { await transcription.start(allowRestrictedNetwork: $0) },
+            finish: {
+                await transcription.stop()
+                return transcription.combinedText
+            },
+            send: { await syncService.sendReliably($0) },
+            isConnected: { syncService.isConnected }
+        ))
+    }
 
     /// In demo mode we treat the peer as connected so the populated
     /// workspace list and trackpad inset render. The live `isConnected`
@@ -90,6 +71,9 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom) {
                 trackpadInset
             }
+            .safeAreaInset(edge: .top) {
+                walkieStatus
+            }
         }
         .environment(secureIdentity)
         .task {
@@ -103,12 +87,19 @@ struct ContentView: View {
             sendDeviceStatus()
         }
         .onChange(of: syncService.isConnected) {
-            guard syncService.isConnected else { return }
+            guard syncService.isConnected else {
+                walkie.interrupt()
+                return
+            }
             sendDeviceStatus()
             secureIdentity.refreshPeer()
             // Confirm the already-approved pin to the authenticated peer.
             secureIdentity.announce()
         }
+        .onChange(of: scenePhase) {
+            if scenePhase != .active { walkie.interrupt() }
+        }
+        .onDisappear { walkie.interrupt() }
         .overlay(alignment: .top) {
             if transcription.isModelLoading {
                 HStack(spacing: 10) {
@@ -123,7 +114,7 @@ struct ContentView: View {
                     Spacer()
                     Button("Cancel") {
                         transcription.cancelModelLoad()
-                        recordingAttempt.cancel()
+                        walkie.interrupt()
                     }
                 }
                 .padding(12)
@@ -133,15 +124,12 @@ struct ContentView: View {
         }
         .alert("Download Speech Model?", isPresented: $showModelDownloadConfirmation) {
             Button("Not Now", role: .cancel) {
-                pendingRecordingWorkspaceID = nil
             }
             Button("Download on Wi-Fi") {
-                pendingRecordingWorkspaceID = nil
                 prepareSpeechModel(allowRestrictedNetwork: false)
             }
             Button("Use Cellular") {
                 allowRestrictedNetwork = true
-                pendingRecordingWorkspaceID = nil
                 prepareSpeechModel(allowRestrictedNetwork: true)
             }
         } message: {
@@ -218,85 +206,63 @@ struct ContentView: View {
             sections: workspaceSections,
             selectedID: $selectedID,
             onHighlightChanged: { workspace in
+                selectionState.select(workspace.id)
                 syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspace.id)))
             },
             onVolumeHoldStart: { direction in
-                switch CopilotVolumeHoldAction(
-                    direction: direction,
-                    selectedWorkspaceID: selectedID
-                ) {
+                switch CopilotVolumeHoldAction(direction: direction, selectedWorkspaceID: selectedID) {
                 case .record(let workspaceID):
-                    // Hold volume DOWN to record into the selected workspace.
                     if transcription.isModelLoaded || transcription.hasCachedModel {
-                        beginRecording(workspaceID: workspaceID)
+                        walkie.beginRecording(workspaceID: workspaceID, allowRestrictedNetwork: allowRestrictedNetwork)
                     } else {
-                        pendingRecordingWorkspaceID = workspaceID
+                        walkie.recordingUnavailable(workspaceID: workspaceID)
                         showModelDownloadConfirmation = true
                     }
                 case .send(let workspaceID):
-                    // Select first so Enter is delivered to the workspace this
-                    // gesture targeted even if Cockpit's latest state update is
-                    // still in flight. Reliable peer messages preserve order.
-                    if let workspaceID {
-                        syncService.send(.selectWorkspace(SelectWorkspace(workspaceID: workspaceID)))
-                    }
-                    syncService.send(.terminalInput(.enter))
+                    walkie.execute(workspaceID: workspaceID)
                 case nil:
                     break
                 }
             },
             onVolumeHoldEnd: { direction in
-                // Only the record gesture (hold-down) has work to finish on
-                // release; hold-up (Enter) already fired on hold-start.
                 guard direction == .down else { return }
-                pendingRecordingWorkspaceID = nil
-                let attempt = recordingAttempt.end()
-                // No recording was attempted (the model-download alert showed
-                // instead): leave an approved download running and send
-                // nothing — Pilot never got a .start, so a .stop would be a
-                // phantom and the transcript would be the last cycle's.
-                guard let attempt else { return }
-                Task {
-                    await transcription.stop()
-                    // Re-arm volume observation now that stop() has
-                    // deactivated the shared audio session; otherwise the
-                    // hardware buttons stay dead after the first recording.
-                    rearmTrigger += 1
-                    guard attempt.didStart else { return }
-                    syncService.send(.voiceRecord(
-                        VoiceRecordCommand(control: .stop, workspaceID: attempt.workspaceID)
-                    ))
-                    let text = transcription.combinedText
-                    guard !text.isEmpty else { return }
-                    syncService.send(.transcribedSpeech(
-                        TranscribedSpeech(workspaceID: attempt.workspaceID, text: text)
-                    ))
-                }
+                walkie.endRecording()
             },
-            rearmToken: rearmTrigger
+            rearmToken: walkie.rearmToken
         ) { workspace, isHighlighted in
             workspaceRow(workspace, isHighlighted: isHighlighted)
         }
     }
 
-    private func beginRecording(workspaceID: UUID?) {
-        let attempt = recordingAttempt.begin(workspaceID: workspaceID)
-        Task {
-            let started = await transcription.start(allowRestrictedNetwork: allowRestrictedNetwork)
-            guard started else {
-                // Keep the unstarted attempt until release. Its teardown
-                // re-arms volume observation if AVAudioSession was activated
-                // and then the microphone stream failed to become ready.
-                return
+    @ViewBuilder
+    private var walkieStatus: some View {
+        if !demoMode, walkie.phase != .idle || walkie.statusMessage != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                switch walkie.phase {
+                case .preparing:
+                    Label("Preparing microphone…", systemImage: "mic")
+                case .recording:
+                    Label("Recording — release Volume Down to send", systemImage: "mic.fill")
+                        .foregroundStyle(.red)
+                case .finishing:
+                    Label("Finishing transcription…", systemImage: "waveform")
+                case .idle:
+                    if let message = walkie.statusMessage { Text(message) }
+                }
+                if walkie.phase == .idle, !walkie.transcript.isEmpty {
+                    Text(walkie.transcript)
+                        .font(.caption)
+                        .lineLimit(3)
+                        .textSelection(.enabled)
+                    ShareLink("Copy or Share Transcript", item: walkie.transcript)
+                        .font(.caption)
+                }
             }
-            guard let startedAttempt = recordingAttempt.markStarted(id: attempt.id) else {
-                return
-            }
-            // Show Pilot's listening state only after the model and microphone
-            // are actually ready; cancelled downloads never create a false state.
-            syncService.send(.voiceRecord(
-                VoiceRecordCommand(control: .start, workspaceID: startedAttempt.workspaceID)
-            ))
+            .font(.footnote)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(.regularMaterial)
         }
     }
 
@@ -407,11 +373,11 @@ struct ContentView: View {
             switch message {
             case .workspaceState(let state):
                 workspaces = state.workspaces
-                selectedID = state.selectedWorkspaceID
+                selectedID = selectionState.receive(state)
             case .deviceKey(let announce):
                 secureIdentity.receive(announce)
             case .selectWorkspace, .selectTab, .deviceStatus, .mouseMove, .mouseClick,
-                 .voiceRecord, .transcribedSpeech, .terminalInput:
+                 .voiceRecord, .transcribedSpeech, .terminalInput, .executeTranscript:
                 break
             }
         }

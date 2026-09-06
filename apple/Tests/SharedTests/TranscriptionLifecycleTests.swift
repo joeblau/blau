@@ -74,33 +74,6 @@ struct TranscriptionLifecycleTests {
         #expect(retry)
     }
 
-    @Test("released recording attempts cannot start late without a workspace")
-    func nilWorkspaceRecordingAttempt() throws {
-        var state = CopilotRecordingAttemptState()
-        let firstID = UUID()
-        let first = state.begin(workspaceID: nil, id: firstID)
-
-        #expect(state.current == first)
-        let endedFirstValue = state.end()
-        let endedFirst = try #require(endedFirstValue)
-        #expect(endedFirst.workspaceID == nil)
-        #expect(!endedFirst.didStart)
-        #expect(state.markStarted(id: firstID) == nil)
-
-        let secondID = UUID()
-        state.begin(workspaceID: nil, id: secondID)
-        #expect(state.markStarted(id: firstID) == nil)
-        let startedSecondValue = state.markStarted(id: secondID)
-        let startedSecond = try #require(startedSecondValue)
-        #expect(startedSecond.didStart)
-
-        let endedSecondValue = state.end()
-        let endedSecond = try #require(endedSecondValue)
-        #expect(endedSecond.id == secondID)
-        #expect(endedSecond.workspaceID == nil)
-        #expect(endedSecond.didStart)
-    }
-
     @Test("0.18 model layout migrates only with the Argmax tokenizer component")
     func legacyCacheMigration() throws {
         let fixture = try ModelCacheFixture()
@@ -211,6 +184,169 @@ struct TranscriptionLifecycleTests {
         await service.stop()
         #expect(!service.isTranscribing)
         #expect(stream.stopCount == 1)
+    }
+
+    @Test("release retains transcript callbacks still waiting to update the UI")
+    func releaseRetainsQueuedTranscript() async throws {
+        let fixture = try ModelCacheFixture()
+        defer { fixture.remove() }
+        let updates = UpdateBox()
+        let service = makeService(fixture: fixture, updates: updates)
+
+        #expect(await service.start())
+        updates.update?(TranscriptionStreamUpdate(
+            isRecording: true,
+            confirmedText: "run the",
+            partialText: "tests"
+        ))
+        // Deliberately do not yield to the callback's main-actor task.
+        await service.stop()
+        #expect(service.combinedText == "run the tests")
+    }
+
+    @Test("release decodes short recordings even before a streaming transcript exists")
+    func releaseFinalizesShortRecording() async throws {
+        let fixture = try ModelCacheFixture()
+        defer { fixture.remove() }
+        let stream = ControlledStream(behavior: .readyUntilStopped)
+        let service = makeService(fixture: fixture, stream: stream, finalize: {
+            #expect(stream.stopCount == 1)
+            #expect(stream.hasFinishedRunning)
+            return "ship it"
+        })
+
+        #expect(await service.start())
+        #expect(service.combinedText.isEmpty)
+        await service.stop()
+        #expect(service.combinedText == "ship it")
+        #expect(service.partialText.isEmpty)
+        #expect(service.modelErrorMessage == nil)
+    }
+
+    @Test("release waits for final words and prevents overlapping recording or stop")
+    func releaseWaitsForFinalDecode() async throws {
+        let fixture = try ModelCacheFixture()
+        defer { fixture.remove() }
+        let updates = UpdateBox()
+        let finalizer = ControlledFinalizer()
+        let service = makeService(
+            fixture: fixture,
+            updates: updates,
+            finalize: { await finalizer.finish() }
+        )
+
+        #expect(await service.start())
+        updates.update?(TranscriptionStreamUpdate(
+            isRecording: true,
+            confirmedText: "run the",
+            partialText: "unit"
+        ))
+        let stopProbe = ControlledCallProbe()
+        let stop = Task {
+            await service.stop()
+            stopProbe.markReturned()
+        }
+        await finalizer.waitUntilRequested()
+        #expect(!stopProbe.didReturn)
+        #expect(!(await service.start()))
+        #expect(service.combinedText == "run the unit")
+
+        let secondStopEntered = ControlledSignal()
+        let secondStopProbe = ControlledCallProbe()
+        let secondStop = Task {
+            secondStopEntered.signal()
+            await service.stop()
+            secondStopProbe.markReturned()
+        }
+        await secondStopEntered.wait()
+        #expect(!secondStopProbe.didReturn)
+        #expect(await finalizer.callCount == 1)
+
+        // A late preview must not overwrite the final decoder's result.
+        updates.update?(TranscriptionStreamUpdate(
+            isRecording: false,
+            confirmedText: "run the",
+            partialText: "unit tes"
+        ))
+        await finalizer.resolve("run the unit tests")
+        await stop.value
+        await secondStop.value
+        #expect(service.combinedText == "run the unit tests")
+        #expect(service.partialText.isEmpty)
+        #expect(secondStopProbe.didReturn)
+        #expect(await finalizer.callCount == 1)
+    }
+
+    @Test("failed final decoding cannot send an incomplete command")
+    func finalDecodeFailureClearsIncompleteCommand() async throws {
+        let fixture = try ModelCacheFixture()
+        defer { fixture.remove() }
+        let updates = UpdateBox()
+        let service = makeService(fixture: fixture, updates: updates, finalize: {
+            throw TestFailure.finalDecodeFailed
+        })
+
+        #expect(await service.start())
+        updates.update?(TranscriptionStreamUpdate(
+            isRecording: true,
+            confirmedText: "remove the",
+            partialText: ""
+        ))
+        await service.stop()
+        #expect(service.combinedText.isEmpty)
+        #expect(service.modelErrorMessage?.contains("Could not finish transcription") == true)
+    }
+
+    @Test("unexpected stream exits discard incomplete commands", arguments: [false, true])
+    func unexpectedStreamExitClearsIncompleteCommand(throwsError: Bool) async throws {
+        let fixture = try ModelCacheFixture()
+        defer { fixture.remove() }
+        let stream = ControlledStream(behavior: .readyUntilStopped)
+        let updates = UpdateBox()
+        let service = makeService(fixture: fixture, stream: stream, updates: updates, finalize: {
+            Issue.record("A failed stream must not finalize an incomplete recording")
+            return "incomplete command"
+        })
+
+        #expect(await service.start())
+        updates.update?(TranscriptionStreamUpdate(
+            isRecording: true,
+            confirmedText: "remove the",
+            partialText: ""
+        ))
+        await waitUntil { service.combinedText == "remove the" }
+        stream.endUnexpectedly(throwsError: throwsError)
+        await waitUntil { service.modelErrorMessage != nil }
+        #expect(!service.isTranscribing)
+        #expect(service.combinedText.isEmpty)
+
+        // A callback that was still in flight cannot restore the failed
+        // recording's preview when its button is subsequently released.
+        updates.update?(TranscriptionStreamUpdate(
+            isRecording: false,
+            confirmedText: "remove the",
+            partialText: "old"
+        ))
+        await service.stop()
+        #expect(service.combinedText.isEmpty)
+        #expect(service.modelErrorMessage?.contains("Transcription stopped") == true)
+    }
+
+    @Test("releasing before microphone readiness never finalizes old audio")
+    func releaseBeforeReadinessSkipsFinalDecode() async throws {
+        let fixture = try ModelCacheFixture()
+        defer { fixture.remove() }
+        let stream = ControlledStream(behavior: .waitWithoutReadiness)
+        let service = makeService(fixture: fixture, stream: stream, finalize: {
+            Issue.record("An unstarted recording must not finalize a previous audio buffer")
+            return "stale audio"
+        })
+
+        let start = Task { await service.start() }
+        await stream.waitUntilRunning()
+        await service.stop()
+        #expect(!(await start.value))
+        #expect(service.combinedText.isEmpty)
     }
 
     @Test("denied microphone permission never starts a stream")
@@ -396,7 +532,9 @@ struct TranscriptionLifecycleTests {
         loader: ControlledModelLoader? = nil,
         permission: @escaping @Sendable () async -> Bool = { true },
         stream: ControlledStream = ControlledStream(behavior: .readyUntilStopped),
-        audioSession: ControlledAudioSession? = nil
+        audioSession: ControlledAudioSession? = nil,
+        updates: UpdateBox? = nil,
+        finalize: @escaping @Sendable () async throws -> String? = { nil }
     ) -> TranscriptionService {
         let entry = fixture.cache.validEntry!
         return TranscriptionService(
@@ -411,9 +549,11 @@ struct TranscriptionLifecycleTests {
             permissionRequest: permission,
             streamFactory: { loaded, update in
                 #expect(loaded.cacheEntry == entry)
+                updates?.update = update
                 return TranscriptionStreamHandle(
                     run: { try await stream.run(update: update) },
-                    stop: { await stream.stop() }
+                    stop: { await stream.stop() },
+                    finalize: finalize
                 )
             },
             activateAudioSession: { audioSession?.activate() },
@@ -428,6 +568,8 @@ struct TranscriptionLifecycleTests {
 
 private enum TestFailure: Error {
     case unexpectedDownload
+    case finalDecodeFailed
+    case streamStopped
 }
 
 private actor PermissionGate {
@@ -479,6 +621,8 @@ private final class ControlledStream: @unchecked Sendable {
     private let stream: AsyncStream<Void>
     private var runs = 0
     private var stops = 0
+    private var didFinishRunning = false
+    private var shouldThrowOnExit = false
     private var stopReleased = false
     private var stopReleaseContinuation: CheckedContinuation<Void, Never>?
 
@@ -492,9 +636,11 @@ private final class ControlledStream: @unchecked Sendable {
 
     var runCount: Int { lock.withLock { runs } }
     var stopCount: Int { lock.withLock { stops } }
+    var hasFinishedRunning: Bool { lock.withLock { didFinishRunning } }
 
     func run(update: @escaping @Sendable (TranscriptionStreamUpdate) -> Void) async throws {
         lock.withLock { runs += 1 }
+        defer { lock.withLock { didFinishRunning = true } }
         switch behavior {
         case .returnBeforeReady:
             return
@@ -508,6 +654,12 @@ private final class ControlledStream: @unchecked Sendable {
             break
         }
         for await _ in stream {}
+        if lock.withLock({ shouldThrowOnExit }) { throw TestFailure.streamStopped }
+    }
+
+    func endUnexpectedly(throwsError: Bool) {
+        lock.withLock { shouldThrowOnExit = throwsError }
+        continuation.finish()
     }
 
     func stop() async {
@@ -542,6 +694,25 @@ private final class ControlledStream: @unchecked Sendable {
             }
             if alreadyReleased { continuation.resume() }
         }
+    }
+}
+
+private actor ControlledFinalizer {
+    private(set) var callCount = 0
+    private var continuation: CheckedContinuation<String, Never>?
+
+    func finish() async -> String {
+        callCount += 1
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilRequested() async {
+        while callCount == 0 { await Task.yield() }
+    }
+
+    func resolve(_ text: String) {
+        continuation?.resume(returning: text)
+        continuation = nil
     }
 }
 

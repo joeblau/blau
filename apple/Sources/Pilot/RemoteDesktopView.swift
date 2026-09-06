@@ -5,7 +5,7 @@ import SwiftUI
 struct RemoteDesktopView: View {
     @Bindable var store: WorkspaceStore
     var sessions: RemoteDesktopSessionManager = .shared
-    @State private var groups = RemoteDesktopGroups()
+    @State private var groups: RemoteDesktopGroups
     @State private var pickerGroupID: UUID?
     @State private var discovery = RemoteScreenDiscovery()
     @State private var renamingGroupID: UUID?
@@ -77,14 +77,16 @@ struct RemoteDesktopView: View {
         }
         .onChange(of: store.remoteConnections.map(\.id), initial: true) {
             groups.reconcile(connectionIDs: store.remoteConnections.map(\.id))
+            synchronizeSelection()
+        }
+        .onChange(of: store.selectedRemoteConnectionID, initial: true) {
+            synchronizeSelection()
         }
         .onChange(of: visibleIDs, initial: true) {
+            synchronizeSelection()
             // Create sessions before marking the whole grid visible.
             for id in visibleIDs { _ = sessions.session(for: id) }
             sessions.setActiveConnections(Set(visibleIDs))
-            if !visibleIDs.contains(where: { $0 == store.selectedRemoteConnectionID }) {
-                store.selectedRemoteConnectionID = visibleIDs.first
-            }
         }
         .onDisappear {
             discovery.stop()
@@ -98,7 +100,9 @@ struct RemoteDesktopView: View {
                 HStack(spacing: 6) {
                     ForEach(groups.groups) { group in
                         Button {
-                            groups.selectedGroupID = group.id
+                            store.selectedRemoteConnectionID = groups.selectGroup(
+                                group.id, preserving: store.selectedRemoteConnectionID
+                            )
                         } label: {
                             Label(group.name, systemImage: "square.grid.2x2")
                                 .lineLimit(1)
@@ -127,6 +131,7 @@ struct RemoteDesktopView: View {
                     }
                     Button {
                         let id = groups.addGroup()
+                        store.selectedRemoteConnectionID = nil
                         if let group = groups.groups.first(where: { $0.id == id }) { rename(group) }
                     } label: {
                         Image(systemName: "plus").frame(width: 26, height: 26)
@@ -210,7 +215,12 @@ struct RemoteDesktopView: View {
                 RemoteConnectionPane(
                     connection: connection,
                     session: sessions.session(for: id),
-                    isSelected: store.selectedRemoteConnectionID == id
+                    isSelected: store.selectedRemoteConnectionID == id,
+                    onActivate: {
+                        if store.selectedRemoteConnectionID != id {
+                            store.selectedRemoteConnectionID = id
+                        }
+                    }
                 )
                 .id(id)
             }
@@ -226,6 +236,20 @@ struct RemoteDesktopView: View {
     private func rename(_ group: RemoteDesktopGroup) {
         groupName = group.name
         renamingGroupID = group.id
+    }
+
+    private func synchronizeSelection() {
+        // Initial SwiftUI change callbacks can arrive in either order. Seed
+        // a newly selected saved computer before resolving group membership.
+        if let selectedID = store.selectedRemoteConnectionID,
+           store.remoteConnections.contains(where: { $0.id == selectedID }),
+           !groups.groups.contains(where: { $0.connectionIDs.contains(selectedID) }) {
+            groups.reconcile(connectionIDs: store.remoteConnections.map(\.id))
+        }
+        let selectedID = groups.selectConnection(store.selectedRemoteConnectionID)
+        if store.selectedRemoteConnectionID != selectedID {
+            store.selectedRemoteConnectionID = selectedID
+        }
     }
 
     private func moveDroppedMachine(_ items: [String], to groupID: UUID, slot: Int? = nil) -> Bool {
@@ -244,6 +268,7 @@ private struct RemoteConnectionPane: View {
     /// tab switches and leaving Remote Desktop mode.
     let session: RemoteDesktopSession
     let isSelected: Bool
+    let onActivate: () -> Void
 
     @State private var password = ""
     @State private var savePassword = false
@@ -260,7 +285,8 @@ private struct RemoteConnectionPane: View {
             case .connecting, .connected:
                 RemoteDesktopViewer(
                     session: session,
-                    framebufferGeneration: session.framebufferGeneration
+                    framebufferGeneration: session.framebufferGeneration,
+                    onActivate: onActivate
                 )
                 .background(Color.black)
 

@@ -20,6 +20,31 @@ struct TranscriptionStreamUpdate: Sendable {
 struct TranscriptionStreamHandle: @unchecked Sendable {
     let run: @Sendable () async throws -> Void
     let stop: @Sendable () async -> Void
+    /// Called after recording and its streaming decoder have both stopped.
+    let finalize: @Sendable () async throws -> String?
+
+    init(
+        run: @escaping @Sendable () async throws -> Void,
+        stop: @escaping @Sendable () async -> Void,
+        finalize: @escaping @Sendable () async throws -> String? = { nil }
+    ) {
+        self.run = run
+        self.stop = stop
+        self.finalize = finalize
+    }
+}
+
+private final class TranscriptionStreamUpdates: @unchecked Sendable {
+    private let lock = NSLock()
+    private var latest: TranscriptionStreamUpdate?
+
+    func store(_ update: TranscriptionStreamUpdate) {
+        lock.withLock { latest = update }
+    }
+
+    var current: TranscriptionStreamUpdate? {
+        lock.withLock { latest }
+    }
 }
 
 private final class TranscriptionReadiness: @unchecked Sendable {
@@ -158,6 +183,8 @@ final class TranscriptionService: @unchecked Sendable {
     private var streamStopRelay: TranscriptionStopRelay?
     private var streamTask: Task<Void, Never>?
     private var streamReadiness: TranscriptionReadiness?
+    private var streamUpdates: TranscriptionStreamUpdates?
+    private var streamFinalizer: (@Sendable () async throws -> String?)?
     private var transcriptionGeneration = 0
     private var streamStopCompletion: TranscriptionStopCompletion?
     private var audioSessionGeneration: Int?
@@ -382,6 +409,7 @@ final class TranscriptionService: @unchecked Sendable {
         // release would re-send that stale text to the terminal.
         partialText = ""
         finalText = ""
+        modelErrorMessage = nil
 
         if !isModelLoaded {
             guard await loadModel(allowRestrictedNetwork: allowRestrictedNetwork) else { return false }
@@ -402,7 +430,11 @@ final class TranscriptionService: @unchecked Sendable {
 
         let readiness = TranscriptionReadiness()
         let stopRelay = TranscriptionStopRelay()
+        let updates = TranscriptionStreamUpdates()
         let update: @Sendable (TranscriptionStreamUpdate) -> Void = { [weak self] update in
+            // Retain callbacks synchronously: releasing the button may reach
+            // the main actor before the callback's UI update does.
+            updates.store(update)
             if update.isRecording { readiness.resolve(.ready) }
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -410,8 +442,10 @@ final class TranscriptionService: @unchecked Sendable {
                     if update.isRecording { await stopRelay.stop() }
                     return
                 }
-                self.finalText = update.confirmedText
-                self.partialText = update.partialText
+                if let latest = updates.current {
+                    self.finalText = latest.confirmedText
+                    self.partialText = latest.partialText
+                }
             }
         }
 
@@ -426,6 +460,8 @@ final class TranscriptionService: @unchecked Sendable {
         stopRelay.install(handle.stop)
         streamStopRelay = stopRelay
         streamReadiness = readiness
+        streamUpdates = updates
+        streamFinalizer = handle.finalize
 
         let task = Task { [weak self] in
             do {
@@ -479,9 +515,17 @@ final class TranscriptionService: @unchecked Sendable {
     ) {
         guard generation == transcriptionGeneration, streamReadiness === readiness else { return }
         let wasReady = readiness.currentOutcome == .ready
+        // Only an explicit stop may finalize a recording. An unexpected exit
+        // leaves an incomplete preview that must never become a command; also
+        // invalidate callbacks already queued by the failed decoder.
+        transcriptionGeneration += 1
+        finalText = ""
+        partialText = ""
         streamStopRelay = nil
         streamTask = nil
         streamReadiness = nil
+        streamUpdates = nil
+        streamFinalizer = nil
         isTranscribing = false
         deactivateAudioSessionIfOwned(by: generation)
         if let error {
@@ -532,13 +576,36 @@ final class TranscriptionService: @unchecked Sendable {
         let readiness = streamReadiness
         let stopRelay = streamStopRelay
         let task = streamTask
+        let updates = streamUpdates
+        let finalizer = streamFinalizer
+        let wasReady = readiness?.currentOutcome == .ready
         streamReadiness = nil
         streamStopRelay = nil
         streamTask = nil
+        streamUpdates = nil
+        streamFinalizer = nil
         readiness?.resolve(.cancelled)
         task?.cancel()
         await stopRelay?.stop()
         if let task { await task.value }
+        if wasReady {
+            if let latest = updates?.current {
+                finalText = latest.confirmedText
+                partialText = latest.partialText
+            }
+            do {
+                if let text = try await finalizer?() {
+                    finalText = text
+                    partialText = ""
+                }
+            } catch {
+                // An incomplete command must not be sent or executed when
+                // the final decode fails.
+                finalText = ""
+                partialText = ""
+                modelErrorMessage = "Could not finish transcription: \(error.localizedDescription)"
+            }
+        }
         if stopGeneration == transcriptionGeneration {
             deactivateAudioSessionIfOwned(by: stoppedGeneration)
         }
@@ -646,7 +713,8 @@ final class TranscriptionService: @unchecked Sendable {
             silenceThreshold: 0.3,
             compressionCheckWindow: 60,
             useVAD: true,
-            stateChangeCallback: { _, state in
+            stateChangeCallback: { [loaded] _, state in
+                guard let kit = loaded.kit else { return }
                 // Argmax flips `State.isRecording` immediately before it asks
                 // AVAudioEngine to start. Require the default processor's engine
                 // to be running as well, so a synchronous engine-start failure
@@ -677,8 +745,37 @@ final class TranscriptionService: @unchecked Sendable {
         )
 
         return TranscriptionStreamHandle(
-            run: { try await transcriber.startStreamTranscription() },
-            stop: { await transcriber.stopStreamTranscription() }
+            run: {
+                do {
+                    try await transcriber.startStreamTranscription()
+                } catch {
+                    await transcriber.stopStreamTranscription()
+                    throw error
+                }
+                // A cancellation can arrive while Argmax is awaiting its own
+                // permission check. Always stop any engine it started late.
+                await transcriber.stopStreamTranscription()
+            },
+            stop: { await transcriber.stopStreamTranscription() },
+            finalize: { [loaded] in
+                guard let kit = loaded.kit else {
+                    throw TranscriptionServiceError.incompleteCache
+                }
+                // Argmax's stream stop does not flush the final audio. Its
+                // realtime decoder also skips buffers of one second or less.
+                // Decode the captured recording after the streaming task has
+                // exited so short utterances and the last words are included.
+                // The service owns the loaded-model wrapper and serializes
+                // these decoders before allowing another recording to start.
+                let samples = Array(kit.audioProcessor.audioSamples)
+                guard !samples.isEmpty,
+                      kit.audioProcessor.relativeEnergy.contains(where: { $0 > 0.3 }) else {
+                    return ""
+                }
+                let results = try await kit.transcribe(audioArray: samples, decodeOptions: options)
+                return results.map(\.text).joined(separator: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
         )
     }
 
