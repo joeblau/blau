@@ -99,13 +99,12 @@ final class PeerSyncService: NSObject, @unchecked Sendable {
 
     /// Reports whether the authenticated transport accepted the message. The
     /// caller can retain dictation when the connection disappears during stop.
+    /// Cancellation prevents submission while the command is still queued.
     /// This is a transport result, not an acknowledgement from the remote UI.
     func sendReliably(_ message: SyncMessage) async -> Bool {
         guard let data = try? JSONEncoder().encode(message) else { return false }
-        return await withCheckedContinuation { continuation in
-            transportQueue.async { [weak self] in
-                continuation.resume(returning: self?.sendAuthenticated(data, mode: .reliable) ?? false)
-            }
+        return await PeerSyncReliableSend.perform(on: transportQueue) { [weak self] in
+            self?.sendAuthenticated(data, mode: .reliable) ?? false
         }
     }
 

@@ -270,6 +270,60 @@ struct CopilotWalkieTalkieTests {
         #expect(harness.events == [.select(workspaceID)])
     }
 
+    @Test("interruption cancels Enter awaiting transport acceptance", arguments: [false, true])
+    func interruptionCancelsQueuedTranscriptExecution(deferred: Bool) async throws {
+        let harness = WalkieHarness()
+        harness.executionSendResult = WalkieGate<Bool>()
+        let controller = harness.makeController()
+        let workspaceID = UUID()
+        try await harness.startRecording(controller, workspaceID: workspaceID)
+        let recordingID = try #require(harness.startedRecordingID)
+
+        controller.endRecording()
+        await harness.finishEntered.wait()
+        if deferred { controller.execute(workspaceID: workspaceID) }
+        harness.finishResult.resolve("git status")
+        if !deferred {
+            try await waitForWalkie { controller.phase == .idle }
+            controller.execute(workspaceID: workspaceID)
+        }
+        try await waitForWalkie { harness.executionSendEntered }
+
+        controller.interrupt()
+        harness.executionSendResult?.resolve(true)
+        try await waitForWalkie { harness.executionSendReturned && controller.phase == .idle }
+        #expect(controller.transcript == "git status")
+        #expect(harness.finishCalls == 1)
+        #expect(harness.events == [
+            .start(workspaceID, recordingID),
+            .stop(workspaceID, recordingID),
+            .speech(workspaceID, recordingID, "git status"),
+        ])
+
+        // Cancelling an unaccepted send must leave the transcript eligible
+        // for a later explicit Up hold, without duplicating accepted Enter.
+        controller.execute(workspaceID: workspaceID)
+        try await waitForWalkie { harness.events.count == 4 }
+        controller.execute(workspaceID: workspaceID)
+        await drainWalkieTasks()
+        #expect(harness.events.filter { $0 == .execute(workspaceID, recordingID) }.count == 1)
+    }
+
+    @Test("interruption cancels plain Enter awaiting transport acceptance")
+    func interruptionCancelsQueuedPlainEnter() async throws {
+        let harness = WalkieHarness()
+        harness.executionSendResult = WalkieGate<Bool>()
+        let controller = harness.makeController()
+        let workspaceID = UUID()
+        controller.execute(workspaceID: workspaceID)
+        try await waitForWalkie { harness.executionSendEntered }
+
+        controller.interrupt()
+        harness.executionSendResult?.resolve(true)
+        try await waitForWalkie { harness.executionSendReturned }
+        #expect(harness.events == [.select(workspaceID)])
+    }
+
     @Test("interruption before the execution task runs sends no command")
     func interruptionBeforeExecutionStarts() async {
         let harness = WalkieHarness()
@@ -354,10 +408,13 @@ private final class WalkieHarness {
     let finishResult = WalkieGate<String>()
     var startSendResult: WalkieGate<Bool>?
     var selectionSendResult: WalkieGate<Bool>?
+    var executionSendResult: WalkieGate<Bool>?
     var connected = true
     var acceptSpeech = true
     var startReturned = false
     var selectionSendReturned = false
+    var executionSendEntered = false
+    var executionSendReturned = false
     var startNetworkOverrides: [Bool] = []
     var finishCalls = 0
     var events: [Event] = []
@@ -394,6 +451,7 @@ private final class WalkieHarness {
                     events.append(.speech(speech.workspaceID, speech.recordingID, speech.text))
                     return acceptSpeech
                 case .executeTranscript(let command):
+                    guard await acceptExecution() else { return false }
                     events.append(.execute(command.workspaceID, command.recordingID))
                 case .selectWorkspace(let command):
                     events.append(.select(command.workspaceID))
@@ -403,6 +461,7 @@ private final class WalkieHarness {
                         return result
                     }
                 case .terminalInput(.enter):
+                    guard await acceptExecution() else { return false }
                     events.append(.enter)
                 default:
                     events.append(.other)
@@ -411,6 +470,15 @@ private final class WalkieHarness {
             },
             isConnected: { [self] in connected }
         )
+    }
+
+    private func acceptExecution() async -> Bool {
+        guard let executionSendResult else { return true }
+        executionSendEntered = true
+        let accepted = await executionSendResult.wait()
+        executionSendReturned = true
+        // Model the transport's final cancellation check before submission.
+        return accepted && !Task.isCancelled
     }
 
     func startRecording(_ controller: CopilotWalkieTalkie, workspaceID: UUID?) async throws {

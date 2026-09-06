@@ -121,9 +121,7 @@ final class CopilotWalkieTalkie {
             self.pendingExecution = nil
             if let pending, self.recording?.didSend == true {
                 if pending.workspaceID == attempt.workspaceID {
-                    await self.performExecution(
-                        workspaceID: pending.workspaceID, generation: self.interruptionGeneration
-                    )
+                    await self.startExecution(workspaceID: pending.workspaceID).value
                 } else {
                     self.statusMessage = "Select the recorded workspace and hold Volume Up to execute."
                 }
@@ -141,12 +139,21 @@ final class CopilotWalkieTalkie {
             return
         }
         guard executionTask == nil else { return }
+        startExecution(workspaceID: workspaceID)
+    }
+
+    @discardableResult
+    private func startExecution(workspaceID: UUID?) -> Task<Void, Never> {
+        // Deferred Enter must be cancellable without cancelling finishTask,
+        // which keeps the final transcript available after an interruption.
         let generation = interruptionGeneration
-        executionTask = Task { [weak self] in
+        let task = Task { [weak self] in
             guard let self else { return }
             await self.performExecution(workspaceID: workspaceID, generation: generation)
             self.executionTask = nil
         }
+        executionTask = task
+        return task
     }
 
     /// Disconnect/background interrupts a hold, but never auto-executes it.
