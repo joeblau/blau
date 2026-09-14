@@ -87,6 +87,37 @@ struct BrowserEngineTests {
         #expect(second.runtimeRetryRequestID == 0)
     }
 
+    @Test("Address drafts do not change the loaded page's favicon")
+    func faviconFollowsCommittedPageWhileEditingAddress() throws {
+        let state = BrowserState()
+        let page = try #require(URL(string: "https://loaded.example/page"))
+        let icon = try #require(URL(string: "https://loaded.example/icon.png"))
+        state.commitFaviconPage(page)
+        state.updateFaviconURLs([icon], for: page)
+
+        state.isAddressEditing = true
+        state.urlText = "https://draft.example"
+
+        #expect(state.faviconPageURL == page.absoluteString)
+        #expect(state.faviconURLs == [icon.absoluteString])
+    }
+
+    @Test("Navigation clears old icons and rejects late metadata from the previous page")
+    func faviconRejectsPreviousNavigation() throws {
+        let state = BrowserState()
+        let oldPage = try #require(URL(string: "https://old.example"))
+        let newPage = try #require(URL(string: "https://new.example"))
+        let oldIcon = try #require(URL(string: "https://old.example/icon.png"))
+        state.commitFaviconPage(oldPage)
+        state.updateFaviconURLs([oldIcon], for: oldPage)
+
+        state.commitFaviconPage(newPage)
+        #expect(state.faviconURLs.isEmpty)
+        state.updateFaviconURLs([oldIcon], for: oldPage)
+        #expect(state.faviconURLs.isEmpty)
+        #expect(state.faviconPageURL == newPage.absoluteString)
+    }
+
     @Test("Screenshot demo state includes Chromium without a network URL")
     @MainActor
     func demoStateKeepsChromiumOfflineAndDeterministic() throws {

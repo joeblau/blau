@@ -97,6 +97,7 @@ BOOL ChromiumKitApplyDownloadQuarantine(NSURL *fileURL, NSError **error) {
 - (void)cefDidCreate;
 - (void)cefDidChangeURL:(NSURL *)URL;
 - (void)cefDidChangeTitle:(nullable NSString *)title;
+- (void)cefDidChangeFaviconURLs:(NSArray<NSURL *> *)URLs;
 - (void)cefDidChangeLoading:(BOOL)loading
                   canGoBack:(BOOL)canGoBack
                canGoForward:(BOOL)canGoForward;
@@ -604,6 +605,8 @@ class BrowserClient final : public CefClient,
                          const CefString& url) override;
     void OnTitleChange(CefRefPtr<CefBrowser> browser,
                        const CefString& title) override;
+    void OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
+                           const std::vector<CefString>& icon_urls) override;
     void OnLoadingProgressChange(CefRefPtr<CefBrowser> browser,
                                  double progress) override;
     void OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
@@ -1410,6 +1413,20 @@ void BrowserClient::OnTitleChange(CefRefPtr<CefBrowser> browser,
     }
 }
 
+void BrowserClient::OnFaviconURLChange(
+    CefRefPtr<CefBrowser> browser,
+    const std::vector<CefString>& icon_urls) {
+    CEF_REQUIRE_UI_THREAD();
+    if (!closing_ && IsCurrent(browser)) {
+        NSMutableArray<NSURL *> *URLs = [NSMutableArray array];
+        for (const CefString& icon_url : icon_urls) {
+            NSURL *URL = [NSURL URLWithString:NSStringFromCef(icon_url)];
+            if (URL) [URLs addObject:URL];
+        }
+        [host_ cefDidChangeFaviconURLs:URLs];
+    }
+}
+
 void BrowserClient::OnLoadingProgressChange(CefRefPtr<CefBrowser> browser,
                                             double progress) {
     CEF_REQUIRE_UI_THREAD();
@@ -1910,6 +1927,14 @@ void BrowserClient::Layout() {
         [delegate chromiumBrowserHostView:self didChangeTitle:title];
     }
 }
+- (void)cefDidChangeFaviconURLs:(NSArray<NSURL *> *)URLs {
+    if (self.lifecycleState != ChromiumBrowserLifecycleStateCreated) return;
+    id<ChromiumBrowserHostViewDelegate> delegate = self.delegate;
+    if ([delegate respondsToSelector:
+            @selector(chromiumBrowserHostView:didChangeFaviconURLs:)]) {
+        [delegate chromiumBrowserHostView:self didChangeFaviconURLs:URLs];
+    }
+}
 - (void)cefDidChangeLoading:(BOOL)loading
                   canGoBack:(BOOL)canGoBack
                canGoForward:(BOOL)canGoForward {
@@ -2173,6 +2198,7 @@ void BrowserClient::Layout() {
 - (void)cefDidCreate {}
 - (void)cefDidChangeURL:(NSURL *)URL {}
 - (void)cefDidChangeTitle:(NSString *)title {}
+- (void)cefDidChangeFaviconURLs:(NSArray<NSURL *> *)URLs {}
 - (void)cefDidChangeLoading:(BOOL)loading
                   canGoBack:(BOOL)canGoBack
                canGoForward:(BOOL)canGoForward {}

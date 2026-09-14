@@ -839,6 +839,18 @@ struct ChromiumBrowserView: NSViewRepresentable {
             MainActor.assumeIsolated {
                 _ = browserView
                 state.acceptCommittedURL(url)
+                state.commitFaviconPage(url)
+            }
+        }
+
+        @objc(chromiumBrowserHostView:didChangeFaviconURLs:)
+        nonisolated func chromiumBrowserHostView(
+            _ browserView: ChromiumBrowserHostView,
+            didChangeFaviconURLs urls: [URL]
+        ) {
+            MainActor.assumeIsolated {
+                guard host === browserView else { return }
+                state.updateFaviconURLs(urls, for: browserView.url)
             }
         }
 

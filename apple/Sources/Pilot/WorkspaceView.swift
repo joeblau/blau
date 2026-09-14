@@ -484,147 +484,6 @@ private struct PaneResizeHandle: View {
     }
 }
 
-struct TabItemContent: View {
-    let pane: Pane
-    let isSelected: Bool
-    let isHovering: Bool
-    let isWorkspaceActive: Bool
-    let canClose: Bool
-    let onClose: () -> Void
-    let onHide: () -> Void
-    let onUnhide: () -> Void
-
-    var body: some View {
-        if pane.isCollapsed {
-            collapsedContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            expandedContent
-        }
-    }
-
-    @ViewBuilder
-    private var collapsedContent: some View {
-        if pane.kind == .terminal {
-            headerButton(systemName: "eye", help: "Show Terminal. Hidden terminals keep running.", action: onUnhide)
-        } else {
-            headerButton(systemName: "eye", help: "Unhide \(paneTitle)", action: onUnhide)
-        }
-    }
-
-    private var expandedContent: some View {
-        HStack(spacing: 6) {
-            if isHovering && canClose {
-                headerButton(systemName: "xmark", help: "Close \(paneTitle)", action: onClose)
-                    .background(.white.opacity(0.1), in: Circle())
-                    .transition(.opacity)
-            }
-
-            Image(systemName: pane.kind.systemImageName)
-                .scaledFont(size: 11)
-                .foregroundStyle(isSelected ? .primary : .secondary)
-
-            Text(pane.displayTitle)
-                .scaledFont(size: 12)
-                .lineLimit(1)
-                .foregroundStyle(isSelected ? .primary : .secondary)
-
-            if pane.kind == .terminal {
-                TerminalAgentBadge(pane: pane, isWorkspaceActive: isWorkspaceActive)
-                TerminalDirtyBadge(pane: pane, isWorkspaceActive: isWorkspaceActive)
-            }
-
-            Spacer(minLength: 0)
-
-            if isHovering {
-                headerButton(systemName: "eye.slash", help: "Hide \(paneTitle)", action: onHide)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeInOut(duration: 0.15), value: isHovering)
-    }
-
-    private var paneTitle: String {
-        pane.kind.displayName
-    }
-
-    private func headerButton(systemName: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .scaledFont(size: 9, weight: .bold)
-                .foregroundStyle(.secondary)
-                .frame(width: 18, height: 18)
-        }
-        .buttonStyle(.plain)
-        .help(help)
-    }
-}
-
-/// Accent capsule naming the coding agent (Claude, Codex, …) currently open in
-/// a terminal pane, shown right after "Terminal". Polls the shell's process tree
-/// every couple of seconds while its workspace is active; renders nothing when
-/// no supported agent is open.
-private struct TerminalAgentBadge: View {
-    let pane: Pane
-    let isWorkspaceActive: Bool
-    @State private var agent: TerminalAgent?
-
-    var body: some View {
-        Group {
-            if let agent {
-                Text(agent.displayName)
-                    .scaledFont(size: 10, weight: .semibold)
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(Color.accentColor.opacity(0.15), in: Capsule())
-                    .help("\(agent.displayName) is open in this terminal")
-            }
-        }
-        .animation(.easeInOut(duration: 0.2), value: agent)
-        // Restart polling when activation flips; only the visible workspace polls.
-        .task(id: isWorkspaceActive) {
-            guard isWorkspaceActive else { return }
-            while !Task.isCancelled {
-                agent = pane.liveShellAgent()
-                try? await Task.sleep(for: .seconds(2))
-            }
-        }
-    }
-}
-
-/// "Clean" / "Dirty" word shown after "Terminal" in a terminal tab header,
-/// reflecting whether the shell's current directory sits in a git work tree with
-/// uncommitted changes. Polls `git status` every few seconds while its workspace
-/// is active (it reads the shell's live cwd, so it tracks `cd` and file edits);
-/// renders nothing when the directory isn't a git repo.
-private struct TerminalDirtyBadge: View {
-    let pane: Pane
-    let isWorkspaceActive: Bool
-    @State private var isDirty: Bool?
-
-    var body: some View {
-        Group {
-            if let isDirty {
-                Text(isDirty ? "Dirty" : "Clean")
-                    .scaledFont(size: 11, weight: .medium)
-                    .foregroundStyle(isDirty ? Color.orange : Color.green)
-            }
-        }
-        // Restart polling when activation flips; only the visible workspace polls.
-        .task(id: isWorkspaceActive) {
-            guard isWorkspaceActive else { return }
-            while !Task.isCancelled {
-                let directory = pane.liveShellCurrentDirectory() ?? pane.currentDirectory
-                let status: Bool? = directory.isEmpty ? nil : await GitStatus.isDirty(directory: directory)
-                if Task.isCancelled { break }
-                isDirty = status
-                try? await Task.sleep(for: .seconds(3))
-            }
-        }
-    }
-}
-
 private struct CollapsedPaneSlit: View {
     let pane: Pane
     let isVertical: Bool
@@ -1240,6 +1099,9 @@ struct WebViewRepresentable: NSViewRepresentable {
                     if self.state.urlText != absolute {
                         self.state.urlText = absolute
                     }
+                    guard webView.url == url else { return }
+                    self.state.commitFaviconPage(url)
+                    self.refreshFavicon(in: webView)
                 }
             }
             navStateObservations.forEach { $0.invalidate() }
@@ -1339,6 +1201,7 @@ struct WebViewRepresentable: NSViewRepresentable {
             // (after any provisional redirects).
             if let url = webView.url {
                 state.urlText = url.absoluteString
+                state.commitFaviconPage(url)
             }
             updateNavState(webView)
             // Arm before slow or perpetual subresources can delay `didFinish`.
@@ -1352,6 +1215,7 @@ struct WebViewRepresentable: NSViewRepresentable {
                 state.pendingURL = nil
             }
             updateNavState(webView)
+            refreshFavicon(in: webView)
             // Retry without rotating a grant captured by an early selection.
             if state.annotateMode, annotateGrant == nil {
                 setAnnotateMode(true, in: webView)
@@ -1366,6 +1230,27 @@ struct WebViewRepresentable: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             state.isLoading = false
             updateNavState(webView)
+        }
+
+        private func refreshFavicon(in webView: WKWebView) {
+            let script = """
+            (() => ({
+                url: document.URL,
+                icons: Array.from(document.querySelectorAll('link[rel]'))
+                    .filter(link => link.rel.toLowerCase().split(/\\s+/)
+                        .some(rel => rel === 'icon' || rel === 'apple-touch-icon'))
+                    .slice(0, 16).map(link => link.href)
+            }))()
+            """
+            webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { [weak self, weak webView] result in
+                guard let self, let webView,
+                      case .success(let value) = result,
+                      let metadata = value as? [String: Any],
+                      let page = metadata["url"] as? String,
+                      let url = URL(string: page), webView.url == url,
+                      let icons = metadata["icons"] as? [String] else { return }
+                self.state.updateFaviconURLs(icons.compactMap(URL.init(string:)), for: url)
+            }
         }
 
         private func updateNavState(_ webView: WKWebView) {

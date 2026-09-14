@@ -65,6 +65,7 @@
 		2D467D25E5DB354DC43D8451 /* LocalServerScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A912031A64F684013037FBB /* LocalServerScanner.swift */; };
 		2D4B2E82B3713A77B0B6F66A /* GitStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D720FB31D52FB4E99A5ECF /* GitStatus.swift */; };
 		2D93C2B4E2FF1359886202D1 /* AndroidDeviceRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07B4E2F4DFBAE2F243679243 /* AndroidDeviceRegistry.swift */; };
+		2E1091CA6610E191E39D9793 /* BrowserFaviconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8739E45153BC5942C78B97 /* BrowserFaviconView.swift */; };
 		2E624D4B2A0F134879E100B7 /* BrowserControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417A1D5CD6F4498B76045117 /* BrowserControllerTests.swift */; };
 		2F2BE7ECB4B80D469DB1762F /* DockerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCBA04D1CBADD27FB9995CA /* DockerView.swift */; };
 		3335F7682ED3D7B2F7BC9E35 /* AgenticUseModelPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55ED623DB1E559C312D29D1 /* AgenticUseModelPalette.swift */; };
@@ -260,6 +261,7 @@
 		CD6B0E1C2898529AD3264324 /* MarkdownImageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A64FF0359F80DD198C9FF2A /* MarkdownImageTests.swift */; };
 		CF0427ED034B7A71489D82F9 /* PeerSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F6F7A1A452CDA8B641B61C /* PeerSyncService.swift */; };
 		CF25C25C1E10668E3348460F /* PilotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F684D74A8F12B03954CC49B3 /* PilotApp.swift */; };
+		CFFC08F19F69D8600BFDBBA8 /* BrowserFaviconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07C3755447AC30CD167756E6 /* BrowserFaviconTests.swift */; };
 		D0614091089D4F0F461285ED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1D8AC628F3F55D563872C7 /* ContentView.swift */; };
 		D0FFBBC93C69BA053BFCFDA3 /* ColorChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0E9B23F9E541C22DC648C34 /* ColorChip.swift */; };
 		D22B1E8E45E784E2C30F24E6 /* WingmanDeliveryState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C5A897F3BEC63D33F4496F /* WingmanDeliveryState.swift */; };
@@ -286,6 +288,7 @@
 		E974BEB84F83FBDAD2A14AB3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E42AFD4B9A8EB5AE10637F0C /* Assets.xcassets */; };
 		EA50E58FBC3913F75B5535FD /* PrivacyManifestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6705AED63D291136F8D0EB87 /* PrivacyManifestTests.swift */; };
 		EA6044046223AE65A20D870B /* MarkdownStyler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3773008E360B991866932E4A /* MarkdownStyler.swift */; };
+		EB552FB72A5FD1FF49F3F29E /* WorkspaceTabItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 586BBCE8D618B620C7D8F31C /* WorkspaceTabItem.swift */; };
 		EBB73BC8A608563AC9359478 /* SecureChannelDeadline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68DD092D8ED9F34EC42D8241 /* SecureChannelDeadline.swift */; };
 		EC281D5C3A06BEBFAFEE5E48 /* RemoteDesktopSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1694615DD708477C21366D52 /* RemoteDesktopSessionTests.swift */; };
 		EE64F8C4836AA5F4DF66ECFC /* ChromiumKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA4E1F9E882FC561420A0F98 /* ChromiumKit.framework */; };
@@ -427,6 +430,7 @@
 		0578F76421F30F46E1700879 /* DockerEngineClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockerEngineClient.swift; sourceTree = "<group>"; };
 		066424360600310F328FDB6C /* ChromiumSecurityPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromiumSecurityPolicy.swift; sourceTree = "<group>"; };
 		07B4E2F4DFBAE2F243679243 /* AndroidDeviceRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndroidDeviceRegistry.swift; sourceTree = "<group>"; };
+		07C3755447AC30CD167756E6 /* BrowserFaviconTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserFaviconTests.swift; sourceTree = "<group>"; };
 		0914A44923ED7CBD1EC18FAD /* RemoteDesktopViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDesktopViewer.swift; sourceTree = "<group>"; };
 		093AA0A444F56B7FF0D4F41A /* PeerSyncAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerSyncAuthentication.swift; sourceTree = "<group>"; };
 		09CBC9A2EAF71B52D91F96DB /* GitHubTasksStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubTasksStore.swift; sourceTree = "<group>"; };
@@ -517,6 +521,7 @@
 		52E5A0E3E8E06FADFB1713B1 /* performance-budgets.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "performance-budgets.json"; sourceTree = "<group>"; };
 		54378CCC8B919AFA650CF9E1 /* PlotterWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = PlotterWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		586A8AC25F272D21EAB4475E /* Plotter.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Plotter.entitlements; sourceTree = "<group>"; };
+		586BBCE8D618B620C7D8F31C /* WorkspaceTabItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceTabItem.swift; sourceTree = "<group>"; };
 		59ACD0EC6D1C5209F8539B04 /* DockerContainerDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockerContainerDecodingTests.swift; sourceTree = "<group>"; };
 		5A2C2E1B521C51A4B0B660B1 /* UIZoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIZoom.swift; sourceTree = "<group>"; };
 		5AD2F4B3EA572C1217200CD4 /* EditorPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorPaneView.swift; sourceTree = "<group>"; };
@@ -572,6 +577,7 @@
 		89D37D60DA58FCD2D67F65ED /* Wingman Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Wingman Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B4486B0848D4DDEE5E23D18 /* Pilot.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Pilot.entitlements; sourceTree = "<group>"; };
 		8DD5385AC266C06E11D7F333 /* AndroidPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndroidPaneView.swift; sourceTree = "<group>"; };
+		8F8739E45153BC5942C78B97 /* BrowserFaviconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserFaviconView.swift; sourceTree = "<group>"; };
 		92E2CDF8F11C49CE7F927643 /* WorkspaceActionWatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceActionWatcherTests.swift; sourceTree = "<group>"; };
 		93E831A131F5C50AD8808B7E /* WorkspaceActionWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceActionWatcher.swift; sourceTree = "<group>"; };
 		96606929062ABD51131A3148 /* PersistenceReporting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceReporting.swift; sourceTree = "<group>"; };
@@ -789,6 +795,7 @@
 				CFE61FC7F3AA23A4F0BA98F7 /* AgenticUsageProviderTests.swift */,
 				F777746FD4E9041FC410B4D1 /* AwakeSessionTests.swift */,
 				417A1D5CD6F4498B76045117 /* BrowserControllerTests.swift */,
+				07C3755447AC30CD167756E6 /* BrowserFaviconTests.swift */,
 				F41F5AC980B9260EDB78A608 /* BrowserStartPageVisibilityTests.swift */,
 				3A48C1A9A5DC234114F5FFF5 /* ChromiumArtifactManifestTests.swift */,
 				B8E99A4A29F7BBAC9258F4BE /* ChromiumBrowserCommandTests.swift */,
@@ -1000,6 +1007,7 @@
 			isa = PBXGroup;
 			children = (
 				C2CBBCF17697E060CCB469C9 /* BrowserController.swift */,
+				8F8739E45153BC5942C78B97 /* BrowserFaviconView.swift */,
 				D76CFD688C6FEFB4356EDBF2 /* BrowserStartPageView.swift */,
 				519911866458F92654EA9EC6 /* ChromiumBrowserView.swift */,
 				B2E46609CEDC37F12E7438DC /* ChromiumDiagnostics.swift */,
@@ -1113,6 +1121,7 @@
 				A3D4506DC7264DF2BCDC04A3 /* WorkspaceSidebarRow.swift */,
 				84A1B8A2C645FBE23187ECBA /* WorkspaceStore.swift */,
 				D9873045458D0E40A63F763D /* WorkspaceStore+Walkie.swift */,
+				586BBCE8D618B620C7D8F31C /* WorkspaceTabItem.swift */,
 				24FF780CFDAA867F7C2DD4AF /* WorkspaceView.swift */,
 				F7FFA6C0F5C641534FE63EA1 /* AgenticUse */,
 				1E7A6CE6BFDE442CA75D9E91 /* Android */,
@@ -1764,6 +1773,7 @@
 				C8C6EDD45816AF4326BED863 /* AwakeSessionController.swift in Sources */,
 				9E60C6698CA50CF143C01A12 /* BrowserAnnotate.swift in Sources */,
 				AE068A5674AD0A3891323445 /* BrowserController.swift in Sources */,
+				2E1091CA6610E191E39D9793 /* BrowserFaviconView.swift in Sources */,
 				0D500EBE09A6E38A272B0733 /* BrowserStartPageView.swift in Sources */,
 				11BBFCFDEBA450ADCF3B4CD2 /* CheckForSoftwareUpdatesView.swift in Sources */,
 				4DFCFA529F0B751E38234F99 /* ChromiumBrowserView.swift in Sources */,
@@ -1878,6 +1888,7 @@
 				75082D1F457C44C73B1622AD /* WorkspaceSidebarRow.swift in Sources */,
 				15F3171260AFE2EEFAE41DDD /* WorkspaceStore+Walkie.swift in Sources */,
 				7C8C2A101382F27189DA38D6 /* WorkspaceStore.swift in Sources */,
+				EB552FB72A5FD1FF49F3F29E /* WorkspaceTabItem.swift in Sources */,
 				61F220E0506458F5A49CEDE8 /* WorkspaceView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1944,6 +1955,7 @@
 				943CBE0202EF7CF72D8D03D9 /* AgenticUsageProviderTests.swift in Sources */,
 				53F09B5CF259CF89A261DE0B /* AwakeSessionTests.swift in Sources */,
 				2E624D4B2A0F134879E100B7 /* BrowserControllerTests.swift in Sources */,
+				CFFC08F19F69D8600BFDBBA8 /* BrowserFaviconTests.swift in Sources */,
 				FFDC16C3D0A160CCB1BCBDCF /* BrowserStartPageVisibilityTests.swift in Sources */,
 				F3990AA449C461C6AC42E400 /* ChromiumArtifactManifestTests.swift in Sources */,
 				DC02E641BA680D1D40A7CE6B /* ChromiumBrowserCommandTests.swift in Sources */,

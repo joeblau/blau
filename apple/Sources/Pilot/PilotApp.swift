@@ -191,6 +191,28 @@ struct PilotPaneCreationCommands: Commands {
     }
 }
 
+/// Pane navigation follows the key window's workspace, including Extendo.
+/// Menu commands also remain reachable when a terminal or browser has focus.
+struct PilotPaneNavigationCommands: Commands {
+    @FocusedValue(Workspace.self) private var workspace
+
+    var body: some Commands {
+        CommandGroup(after: .windowArrangement) {
+            Button("Previous Panel") {
+                workspace?.selectPreviousPane()
+            }
+            .keyboardShortcut("[", modifiers: [.command, .shift])
+            .disabled((workspace?.panes.count ?? 0) < 2)
+
+            Button("Next Panel") {
+                workspace?.selectNextPane()
+            }
+            .keyboardShortcut("]", modifiers: [.command, .shift])
+            .disabled((workspace?.panes.count ?? 0) < 2)
+        }
+    }
+}
+
 @main
 struct PilotApp: App {
     let modelContainer: ModelContainer
@@ -672,6 +694,7 @@ struct PilotApp: App {
         .commands {
             PilotWindowCommands()
             PilotCloseCommands()
+            PilotPaneNavigationCommands()
             CommandGroup(after: .appInfo) {
                 CheckForSoftwareUpdatesView(updater: updaterController.updater)
             }
