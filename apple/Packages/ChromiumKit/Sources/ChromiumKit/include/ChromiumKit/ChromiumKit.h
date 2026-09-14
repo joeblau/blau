@@ -93,6 +93,8 @@ typedef NS_ENUM(NSInteger, ChromiumDownloadState) {
 - (void)chromiumBrowserHostView:(ChromiumBrowserHostView *)browserView
                  didChangeTitle:(nullable NSString *)title;
 - (void)chromiumBrowserHostView:(ChromiumBrowserHostView *)browserView
+          didChangeFaviconURLs:(NSArray<NSURL *> *)URLs;
+- (void)chromiumBrowserHostView:(ChromiumBrowserHostView *)browserView
                didChangeLoading:(BOOL)isLoading;
 - (void)chromiumBrowserHostView:(ChromiumBrowserHostView *)browserView
               didChangeProgress:(double)progress;

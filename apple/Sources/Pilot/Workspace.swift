@@ -462,6 +462,8 @@ final class BrowserState {
     @Transient var canGoForward: Bool = false
     @Transient var isLoading: Bool = false
     @Transient var title: String = ""
+    /// Favicon metadata follows the loaded page, independently of address edits.
+    @Transient private var faviconMetadata = BrowserFaviconMetadata()
     @Transient var estimatedProgress: Double = 0
     @Transient var showDevTools: Bool = false
     @Transient var needsInspectorToggle: Bool = false
@@ -554,6 +556,22 @@ final class BrowserState {
         }
         urlText = url.absoluteString
         pendingAddressSubmission = url.absoluteString
+    }
+
+    var faviconPageURL: String? { faviconMetadata.pageURL }
+    var faviconURLs: [String] { faviconMetadata.urls }
+
+    func commitFaviconPage(_ url: URL) {
+        guard faviconPageURL != url.absoluteString else { return }
+        faviconMetadata.pageURL = url.absoluteString
+        faviconMetadata.urls = []
+    }
+
+    func updateFaviconURLs(_ urls: [URL], for pageURL: URL?) {
+        guard let pageURL, pageURL.absoluteString == faviconPageURL else { return }
+        let next = urls.prefix(16).map(\.absoluteString)
+        guard faviconURLs != next else { return }
+        faviconMetadata.urls = next
     }
 
     func requestNavigationCommand(_ command: String) {
