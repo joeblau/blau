@@ -4,9 +4,20 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@theme {
+    --animate-marquee: marquee 32s linear infinite;
+
+    @keyframes marquee {
+        to {
+            transform: translateX(-50%);
+        }
+    }
+}
+
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+    --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
