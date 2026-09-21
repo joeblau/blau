@@ -1,0 +1,45 @@
+{
+  "name": "blau",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "bun run cf-typegen && opennextjs-cloudflare build",
+    "build:next": "next build",
+    "check": "bun run cf-typegen && next typegen && tsc --noEmit",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "lint": "eslint .",
+    "preview": "opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare deploy",
+    "deploy:list": "wrangler deployments list",
+    "rollback": "wrangler rollback",
+    "audit": "bun audit",
+    "ci": "bun run lint && bun run check && bun run build && bun run audit"
+  },
+  "dependencies": {
+    "@opennextjs/cloudflare": "1.20.6",
+    "next": "16.3.5",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "typescript": "6.0.3",
+    "wrangler": "4.135.0",
+    "@eslint/js": "10.0.1",
+    "eslint": "10.8.1",
+    "globals": "17.11.0",
+    "typescript-eslint": "8.67.0"
+  },
+  "packageManager": "bun@1.3.14",
+  "overrides": {
+    "esbuild": "0.28.1",
+    "fast-uri": "3.1.8",
+    "js-yaml": "4.3.2",
+    "postcss": "8.5.26",
+    "sharp": "0.35.4",
+    "undici": "7.29.0"
+  }
+}
