@@ -29,7 +29,7 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile
-      - name: Lint, typecheck, build, and audit
+      - name: Lint, typecheck, test, build, and audit
         run: bun run ci
       - name: Verify Cloudflare credentials
         env:

@@ -34,9 +34,8 @@ environment:
 - `CLOUDFLARE_API_TOKEN` secret: a token with Workers Scripts: Write for the account
   containing the `blau.app` zone,
   plus Workers Routes: Write and Zone: Read restricted to `blau.app`.
-- `CLOUDFLARE_ACCOUNT_ID` secret or variable: set this if the token has access to
-  multiple accounts. Wrangler automatically selects the account when only one
-  is available.
+- `CLOUDFLARE_ACCOUNT_ID` secret or variable, if set, must match the Joe Blau
+  account in `wrangler.jsonc`: `2b04333c55d653550f69d1c732b92d98`.
 
 Secrets from another repository are not automatically inherited. Never commit
 credentials or local `.env` / `.dev.vars` files.
@@ -51,13 +50,28 @@ bun run deploy
 
 ## Routing
 
-The `blau-app` Worker handles `blau.app/*` in front of the existing `blau-web`
-Custom Domain. `/` and `/_next/` use OpenNext. `/made` and `/made/` serve the
-Astro homepage through the `MADE_SITE` service binding; all other paths go to
-that Worker unchanged. Keep `blau-web` deployed in the same Cloudflare account.
-Its source remains in [joeblau/made](https://github.com/joeblau/made).
+`blau-app` handles `blau.app/*`. The homepage and global `/_next/*` namespace
+stay with this Next.js app. Each mount and all paths beneath it forward the
+original request through an HTTP service binding:
 
-To preview `/made` locally, also run that repository's Astro Worker using
-Wrangler on another port. The service binding connects automatically.
+| Path | Worker |
+| --- | --- |
+| `/made` | `blau-made` |
+| `/previral` | `blau-previral` |
+| `/shotreel` | `blau-shortreel` |
+| `/stint` | `blau-stint` |
+| `/stream` | `blau-stream` |
+
+Matches require the `blau.app` hostname and a complete path segment. Other
+paths retain the existing MADE fallback. The `rendezvous.blau.app` service
+keeps its existing hostname and is not mounted here.
+
+Each child app is built for its prefix. Deploy child Workers before deploying
+router changes. See [routing and verification](docs/routing.md) for the local
+preview setup, companion changes, and rollout checks.
+
+`bun run test` runs router tests as part of CI. `bun run test:apps` checks all
+five mounted apps against a connected preview (or `PREVIEW_URL=https://blau.app`).
+`bun run test:mount` retains the detailed ShortReel build-artifact check.
 
 The app follows the [OpenNext Cloudflare guide](https://opennext.js.org/cloudflare/get-started).

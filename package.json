@@ -9,12 +9,15 @@
     "check": "bun run cf-typegen && next typegen && tsc --noEmit",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "lint": "eslint .",
+    "test": "bun test ./tests",
+    "test:mount": "bun scripts/verify-shortreel.mjs",
+    "test:apps": "bun scripts/verify-apps.mjs",
     "preview": "opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare deploy",
     "deploy:list": "wrangler deployments list",
     "rollback": "wrangler rollback",
     "audit": "bun audit",
-    "ci": "bun run lint && bun run check && bun run build && bun run audit"
+    "ci": "bun run lint && bun run check && bun run test && bun run build && bun run audit"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
