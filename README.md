@@ -1,7 +1,8 @@
 # blau.app
 
-A Next.js homepage saying **Hello world**, built with Bun and OpenNext and
-deployed to Cloudflare Workers.
+A directory of developer tools, marketing tools, and entertainment, built with
+Next.js, shadcn/ui, and Tailwind CSS. Bun and OpenNext deploy the site to
+Cloudflare Workers.
 
 ## Development
 
