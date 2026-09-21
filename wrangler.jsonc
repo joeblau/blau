@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "blau-app",
+  "account_id": "2b04333c55d653550f69d1c732b92d98",
   "main": "worker.ts",
   "compatibility_date": "2026-09-20",
   "compatibility_flags": ["nodejs_compat"],
@@ -15,7 +16,11 @@
   },
   "services": [
     { "binding": "WORKER_SELF_REFERENCE", "service": "blau-app" },
-    { "binding": "MADE_SITE", "service": "blau-web" }
+    { "binding": "MADE_SITE", "service": "blau-made" },
+    { "binding": "WEB_SHORTREEL", "service": "blau-shortreel" },
+    { "binding": "PREVIRAL_SITE", "service": "blau-previral" },
+    { "binding": "STINT_SITE", "service": "blau-stint" },
+    { "binding": "STREAM_SITE", "service": "blau-stream" }
   ],
   "observability": {
     "enabled": true,
